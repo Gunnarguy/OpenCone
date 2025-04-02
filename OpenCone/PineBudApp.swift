@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SwiftRAGApp: App {
+struct OpenConeApp: App {
     // Create services
     private let fileProcessorService = FileProcessorService()
     private let textProcessorService = TextProcessorService()
