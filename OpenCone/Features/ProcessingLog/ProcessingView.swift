@@ -229,7 +229,7 @@ struct LogExportView: View {
             return
         }
         
-        let filename = "SwiftRAG_Logs_\(formattedDate()).txt"
+        let filename = "OpenCone_Logs_\(formattedDate()).txt"
         guard let data = logs.data(using: .utf8) else { return }
         
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)

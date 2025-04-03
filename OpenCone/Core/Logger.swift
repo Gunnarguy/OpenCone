@@ -50,7 +50,7 @@ class Logger: ObservableObject { // Added ObservableObject conformance
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         
-        var logText = "SwiftRAG Logs - \(dateFormatter.string(from: Date()))\n\n"
+        var logText = "OpenCone Logs - \(dateFormatter.string(from: Date()))\n\n"
         
         for entry in logEntries {
             let timestamp = dateFormatter.string(from: entry.timestamp)

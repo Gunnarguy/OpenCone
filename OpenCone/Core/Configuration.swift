@@ -1,6 +1,6 @@
 import Foundation
 
-/// Configuration settings for the SwiftRAG application
+/// Configuration settings for the OpenCone application
 struct Configuration {
     // OpenAI Configuration
     static let openAIAPIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""

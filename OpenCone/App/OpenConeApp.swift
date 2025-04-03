@@ -152,7 +152,7 @@ struct LoadingView: View {
                 .frame(width: 80, height: 80)
                 .foregroundColor(.blue)
             
-            Text("SwiftRAG")
+            Text("OpenCone")
                 .font(.largeTitle.bold())
             
             Text("Retrieval Augmented Generation")
@@ -290,10 +290,10 @@ struct WelcomeView: View {
                 .frame(width: 100, height: 100)
                 .foregroundColor(.blue)
             
-            Text("Welcome to SwiftRAG")
+            Text("Welcome to OpenCone")
                 .font(.largeTitle.bold())
             
-            Text("SwiftRAG is a Retrieval Augmented Generation system for iOS that helps you process documents, generate vector embeddings, and perform semantic search.")
+            Text("OpenCone is a Retrieval Augmented Generation system for iOS that helps you process documents, generate vector embeddings, and perform semantic search.")
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -321,7 +321,7 @@ struct WelcomeView: View {
             Text("API Keys Required")
                 .font(.largeTitle.bold())
             
-            Text("SwiftRAG needs API keys for OpenAI and Pinecone to function. These keys will be stored securely.")
+            Text("OpenCone needs API keys for OpenAI and Pinecone to function. These keys will be stored securely.")
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -387,7 +387,7 @@ struct WelcomeView: View {
             Text("Ready to Go!")
                 .font(.largeTitle.bold())
             
-            Text("You're all set to start using SwiftRAG! Click Start to begin exploring your documents.")
+            Text("You're all set to start using OpenCone! Click Start to begin exploring your documents.")
                 .font(.headline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)

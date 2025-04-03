@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Main view for the SwiftRAG application with tab navigation
+/// Main view for the OpenCone application with tab navigation
 struct MainView: View {
     @StateObject private var documentsViewModel: DocumentsViewModel
     @StateObject private var searchViewModel: SearchViewModel

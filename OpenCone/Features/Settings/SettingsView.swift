@@ -100,7 +100,7 @@ struct SettingsView: View {
             // App Info
             Section(header: Text("About")) {
                 HStack {
-                    Text("SwiftRAG")
+                    Text("OpenCone")
                         .font(.headline)
                     Spacer()
                     Text("1.0.0")
