@@ -437,12 +437,18 @@ class DocumentsViewModel: ObservableObject {
     private func extractText(from document: DocumentModel, stats: inout DocumentProcessingStats) async throws -> (text: String, mimeType: String) {
         let textExtractionStart = Date()
         
-        // Removed autoreleasepool as it's not compatible with async/await here
-        // return try await autoreleasepool { // Original line
-            let (text, mimeType) = try await fileProcessorService.processFile(at: document.filePath)
-            let textExtractionEnd = Date()
+        // Ensure we have security access before processing
+        guard document.filePath.startAccessingSecurityScopedResource() else {
+            logger.log(level: .error, message: "Failed to start accessing security-scoped resource for processing", context: document.fileName)
+            throw ProcessingError.textExtractionFailed // Or a more specific error
+        }
+        defer { document.filePath.stopAccessingSecurityScopedResource() }
+        
+        // Call the file processor service
+        let (text, mimeType) = try await fileProcessorService.processFile(at: document.filePath)
+        let textExtractionEnd = Date()
             
-            guard let documentText = text, let documentMimeType = mimeType, !documentText.isEmpty else {
+        guard let documentText = text, let documentMimeType = mimeType, !documentText.isEmpty else {
                 throw ProcessingError.textExtractionFailed
             }
             

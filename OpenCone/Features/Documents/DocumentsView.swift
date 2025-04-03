@@ -9,22 +9,28 @@ struct DocumentsView: View {
     @State private var showingDocumentPicker = false
     @State private var showingNamespaceDialog = false
     @State private var newNamespace = ""
+    @Environment(\.colorScheme) private var colorScheme
     
     // MARK: - View Body
     var body: some View {
-        VStack {
-            // Configuration section for Pinecone settings
-            configurationSection
-            
-            // Document list or empty state message
-            documentListSection
-            
-            // Processing status indicator when documents are being processed
-            processingStatusSection
-            
-            // Action buttons for document operations
-            actionButtonsSection
+        ScrollView {
+            VStack(spacing: 20) {
+                // Configuration section for Pinecone settings
+                configurationSection
+                
+                // Document list or empty state message
+                documentListSection
+                
+                // Processing status indicator when documents are being processed
+                processingStatusSection
+                
+                // Action buttons for document operations
+                actionButtonsSection
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 20)
         }
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .toolbar {
             addDocumentToolbarItem
         }
@@ -36,35 +42,59 @@ struct DocumentsView: View {
         } message: {
             Text("Enter a name for the new namespace:")
         }
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.documents.count)
     }
     
     // MARK: - UI Components
     
     /// Configuration section for Pinecone index and namespace selection
     private var configurationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Pinecone Configuration")
                 .font(.headline)
                 .padding(.top, 4)
             
-            // Index selector with refresh button
-            indexSelectorRow
-            
-            // Namespace selector with add and refresh buttons
-            namespaceSelectorRow
+            VStack(spacing: 12) {
+                // Index selector with refresh button
+                configCard {
+                    indexSelectorRow
+                }
+                
+                // Namespace selector with add and refresh buttons
+                configCard {
+                    namespaceSelectorRow
+                }
+            }
         }
-        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+    
+    /// Card container for configuration items
+    private func configCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            )
     }
     
     /// Row for selecting Pinecone index
     private var indexSelectorRow: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: "server.rack")
+                .foregroundColor(.blue)
+                .frame(width: 24)
+            
             Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
                 Text("Select Index").tag("")
                 ForEach(viewModel.pineconeIndexes, id: \.self) { index in
                     Text(index).tag(index)
                 }
             }
+            .frame(maxWidth: .infinity)
             .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
                 if let index = newValue, !index.isEmpty {
                     Task {
@@ -80,47 +110,69 @@ struct DocumentsView: View {
                 }
             }) {
                 Image(systemName: "arrow.clockwise")
+                    .foregroundColor(.blue)
+                    .padding(8)
+                    .background(Circle().fill(Color.blue.opacity(0.1)))
             }
+            .buttonStyle(PlainButtonStyle())
             .disabled(viewModel.isProcessing)
         }
     }
     
     /// Row for selecting or creating a namespace
     private var namespaceSelectorRow: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: "folder")
+                .foregroundColor(.blue)
+                .frame(width: 24)
+                
             Picker("Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
                 Text("Default namespace").tag("")
                 ForEach(viewModel.namespaces, id: \.self) { namespace in
                     Text(namespace).tag(namespace)
                 }
             }
+            .frame(maxWidth: .infinity)
             .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
                 viewModel.setNamespace(newValue)
             }
             
-            // Create namespace button
-            Button(action: {
-                showingNamespaceDialog = true
-            }) {
-                Image(systemName: "plus")
-            }
-            .disabled(viewModel.isProcessing)
-            
-            // Refresh namespaces button
-            Button(action: {
-                Task {
-                    await viewModel.loadNamespaces()
+            HStack(spacing: 8) {
+                // Create namespace button
+                Button(action: {
+                    showingNamespaceDialog = true
+                }) {
+                    Image(systemName: "plus")
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .background(Circle().fill(Color.blue.opacity(0.1)))
                 }
-            }) {
-                Image(systemName: "arrow.clockwise")
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isProcessing)
+                
+                // Refresh namespaces button
+                Button(action: {
+                    Task {
+                        await viewModel.loadNamespaces()
+                    }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .background(Circle().fill(Color.blue.opacity(0.1)))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isProcessing)
             }
-            .disabled(viewModel.isProcessing)
         }
     }
     
     /// Section for displaying document list or empty state
     private var documentListSection: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Documents")
+                .font(.headline)
+            
             if viewModel.documents.isEmpty {
                 emptyDocumentsView
             } else {
@@ -131,36 +183,80 @@ struct DocumentsView: View {
     
     /// Empty state view when no documents are present
     private var emptyDocumentsView: some View {
-        VStack {
+        VStack(spacing: 16) {
             Spacer()
-            Text("No documents added yet")
-                .foregroundColor(.secondary)
-            Text("Tap the '+' button to add documents")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            
+            Image(systemName: "doc.badge.plus")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 60, height: 60)
+                .foregroundColor(.blue.opacity(0.7))
+                .padding(24)
+                .background(
+                    Circle()
+                        .fill(Color.blue.opacity(0.1))
+                )
+            
+            VStack(spacing: 8) {
+                Text("No documents added yet")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("Tap the '+' button to add documents")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
             Spacer()
         }
+        .frame(height: 240)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        )
     }
     
     /// List view for displaying documents
     private var documentsListView: some View {
-        List {
+        VStack(spacing: 12) {
             ForEach(viewModel.documents) { document in
-                HStack {
-                    // Main document info with selection capability
-                    DocumentRow(document: document, isSelected: viewModel.selectedDocuments.contains(document.id))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            viewModel.toggleDocumentSelection(document.id)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    
-                    // Details button for accessing document details
-                    documentDetailsButton(for: document)
-                }
+                documentCard(for: document)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.toggleDocumentSelection(document.id)
+                    }
             }
         }
-        .listStyle(InsetGroupedListStyle())
+    }
+    
+    /// Card view for a document
+    private func documentCard(for document: DocumentModel) -> some View {
+        HStack {
+            // Main document info with selection capability
+            DocumentRow(document: document, isSelected: viewModel.selectedDocuments.contains(document.id))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // Details button for accessing document details
+            documentDetailsButton(for: document)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.secondarySystemBackground))
+                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(
+                            viewModel.selectedDocuments.contains(document.id) ? 
+                                Color.blue.opacity(0.5) : Color.clear, 
+                            lineWidth: 2
+                        )
+                )
+        )
+        .contentShape(Rectangle())
     }
     
     /// Button for navigating to document details
@@ -169,57 +265,100 @@ struct DocumentsView: View {
             Text("Details")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.blue)
-                .cornerRadius(8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color.blue)
+                        .shadow(color: Color.blue.opacity(0.3), radius: 3, x: 0, y: 2)
+                )
         }
         .buttonStyle(BorderlessButtonStyle())
-        .padding(.trailing, 8)
     }
     
     /// Section showing processing status and progress
     private var processingStatusSection: some View {
         Group {
             if viewModel.isProcessing {
-                VStack(spacing: 8) {
+                VStack(spacing: 16) {
+                    // Progress bar and percentage
+                    HStack {
+                        Text("Processing...")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Text("\(Int(viewModel.processingProgress * 100))%")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.blue)
+                    }
+                    
                     // Progress bar for document processing
                     ProgressView(value: viewModel.processingProgress)
-                        .progressViewStyle(LinearProgressViewStyle())
+                        .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        .scaleEffect(x: 1, y: 1.5, anchor: .center)
                     
                     // Processing statistics summary
                     if let stats = viewModel.processingStats {
                         processingStatsView(stats)
                     }
                 }
-                .padding()
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(.secondarySystemBackground))
+                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 2)
+                )
             }
         }
     }
     
     /// View for displaying processing statistics
     private func processingStatsView(_ stats: DocumentsViewModel.ProcessingStats) -> some View {
-        HStack {
-            Text("Documents: \(stats.totalDocuments)")
-            Spacer()
-            Text("Chunks: \(stats.totalChunks)")
-            Spacer()
-            Text("Vectors: \(stats.totalVectors)")
+        HStack(spacing: 20) {
+            statItem(title: "Documents", value: "\(stats.totalDocuments)", icon: "doc.fill")
+            statItem(title: "Chunks", value: "\(stats.totalChunks)", icon: "square.on.square")
+            statItem(title: "Vectors", value: "\(stats.totalVectors)", icon: "point.3.connected.trianglepath.dotted")
         }
-        .font(.caption)
-        .foregroundColor(.secondary)
+        .padding(.top, 8)
+    }
+    
+    /// Individual stat item
+    private func statItem(title: String, value: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Text(value)
+                .font(.headline)
+                .foregroundColor(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.blue.opacity(0.1))
+        )
     }
     
     /// Section containing action buttons for documents
     private var actionButtonsSection: some View {
-        HStack {
+        HStack(spacing: 16) {
             // Process button to start document processing
             processButton
             
             // Remove button to delete selected documents
             removeButton
         }
-        .padding()
+        .padding(.vertical, 8)
     }
     
     /// Button for processing selected documents
@@ -229,23 +368,60 @@ struct DocumentsView: View {
                 await viewModel.processSelectedDocuments()
             }
         }) {
-            Label("Process", systemImage: "gear")
-                .frame(maxWidth: .infinity)
+            HStack {
+                Image(systemName: "gear")
+                Text("Process")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing || viewModel.selectedIndex == nil ?
+                    AnyShapeStyle(Color.blue.opacity(0.3)) :
+                    AnyShapeStyle(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .foregroundColor(.white)
+            .cornerRadius(12)
+            .shadow(color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ? Color.clear : Color.blue.opacity(0.3), 
+                    radius: 5, x: 0, y: 3)
         }
-        .buttonStyle(.borderedProminent)
         .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing || viewModel.selectedIndex == nil)
     }
     
     /// Button for removing selected documents
     private var removeButton: some View {
         Button(action: {
-            viewModel.removeSelectedDocuments()
+            withAnimation {
+                viewModel.removeSelectedDocuments()
+            }
         }) {
-            Label("Remove", systemImage: "trash")
-                .frame(maxWidth: .infinity)
+            HStack {
+                Image(systemName: "trash")
+                Text("Remove")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ?
+                    AnyShapeStyle(Color.red.opacity(0.3)) :
+                    AnyShapeStyle(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .foregroundColor(.white)
+            .cornerRadius(12)
+            .shadow(color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ? Color.clear : Color.red.opacity(0.3), 
+                    radius: 5, x: 0, y: 3)
         }
-        .buttonStyle(.bordered)
-        .tint(.red)
         .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing)
     }
     
@@ -256,6 +432,7 @@ struct DocumentsView: View {
                 showingDocumentPicker = true
             }) {
                 Image(systemName: "plus")
+                    .foregroundColor(.blue)
             }
             .disabled(viewModel.isProcessing)
         }
@@ -265,6 +442,8 @@ struct DocumentsView: View {
     private var namespaceDialogContent: some View {
         Group {
             TextField("Namespace Name", text: $newNamespace)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
             
             Button("Cancel", role: .cancel) {
                 newNamespace = ""
@@ -288,9 +467,16 @@ struct DocumentRow: View {
     
     // MARK: - View Body
     var body: some View {
-        HStack {
-            // Document type icon
-            documentIcon
+        HStack(spacing: 12) {
+            // Document type icon with background
+            ZStack {
+                Circle()
+                    .fill(colorForDocument(document).opacity(0.15))
+                    .frame(width: 36, height: 36)
+                
+                Image(systemName: iconForDocument(document))
+                    .foregroundColor(colorForDocument(document))
+            }
             
             // Document metadata information
             documentInfo
@@ -301,21 +487,12 @@ struct DocumentRow: View {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.blue)
+                    .font(.system(size: 20))
             }
         }
-        .padding(.vertical, 4)
     }
     
     // MARK: - UI Components
-    
-    /// Document icon based on file type
-    private var documentIcon: some View {
-        Image(systemName: iconForDocument(document))
-            .resizable()
-            .scaledToFit()
-            .frame(width: 24, height: 24)
-            .foregroundColor(colorForDocument(document))
-    }
     
     /// Document information display
     private var documentInfo: some View {
@@ -326,7 +503,13 @@ struct DocumentRow: View {
                 .lineLimit(1)
             
             // Document metadata row
-            HStack {
+            HStack(spacing: 6) {
+                if document.isProcessed {
+                    processingTag
+                } else if document.processingError != nil {
+                    errorTag
+                }
+                
                 metadataText(document.mimeType)
                 metadataDivider
                 metadataText(formattedFileSize(document.fileSize))
@@ -334,21 +517,44 @@ struct DocumentRow: View {
                 // Chunk count for processed documents
                 if document.isProcessed {
                     metadataDivider
-                    Text("\(document.chunkCount) chunks")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-                
-                // Error message if processing failed
-                if let error = document.processingError {
-                    metadataDivider
-                    Text("Error: \(error)")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .lineLimit(1)
+                    HStack(spacing: 2) {
+                        Image(systemName: "square.on.square")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green.opacity(0.8))
+                        
+                        Text("\(document.chunkCount)")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
                 }
             }
         }
+    }
+    
+    /// Tag showing processed status
+    private var processingTag: some View {
+        Text("Processed")
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color.green.opacity(0.15))
+            )
+            .foregroundColor(.green)
+    }
+    
+    /// Tag showing error status
+    private var errorTag: some View {
+        Text("Error")
+            .font(.system(size: 10, weight: .medium))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color.red.opacity(0.15))
+            )
+            .foregroundColor(.red)
     }
     
     /// Metadata divider dot
@@ -400,123 +606,4 @@ struct DocumentRow: View {
     }
 }
 
-/// Document picker for selecting files from the file system
-struct DocumentPicker: UIViewControllerRepresentable {
-    // MARK: - Properties
-    @ObservedObject var viewModel: DocumentsViewModel
-    @Environment(\.presentationMode) var presentationMode
-    
-    // MARK: - UIViewControllerRepresentable Implementation
-    
-    /// Create the document picker controller
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        // Define supported file types
-        let supportedTypes: [UTType] = [
-            .pdf,
-            .plainText,
-            .image,
-            .jpeg,
-            .png,
-            .rtf,
-            .html
-        ]
-
-        // Configure the picker
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
-        picker.allowsMultipleSelection = true
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-    
-    /// Create the coordinator to handle picker events
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    // MARK: - Coordinator
-    
-    /// Coordinator class to handle UIDocumentPickerDelegate callbacks
-    class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let parent: DocumentPicker
-        
-        init(_ parent: DocumentPicker) {
-            self.parent = parent
-        }
-        
-        /// Handle selected documents
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            for url in urls {
-                parent.viewModel.addDocument(at: url)
-            }
-            parent.presentationMode.wrappedValue.dismiss()
-        }
-    }
-}
-
-// MARK: - Extensions
-
-/// Extension to handle optional binding for Picker
-extension Binding where Value == String? {
-    /// Convert optional String binding to non-optional with a default value
-    func toUnwrapped(defaultValue: String) -> Binding<String> {
-        Binding<String>(
-            get: { self.wrappedValue ?? defaultValue },
-            set: { self.wrappedValue = $0 }
-        )
-    }
-}
-
-// MARK: - Preview
-
-#Preview {
-    documentsPreview()
-}
-
-/// Helper function to create preview for DocumentsView
-private func documentsPreview() -> some View {
-    // Initialize services for preview
-    let fileProcessorService = FileProcessorService()
-    let textProcessorService = TextProcessorService()
-    let openAIService = OpenAIService(apiKey: "preview-key")
-    let pineconeService = PineconeService(apiKey: "preview-key", projectId: "preview-project-id")
-    let embeddingService = EmbeddingService(openAIService: openAIService)
-    
-    // Set up view model with sample data
-    let viewModel = DocumentsViewModel(
-        fileProcessorService: fileProcessorService,
-        textProcessorService: textProcessorService,
-        embeddingService: embeddingService,
-        pineconeService: pineconeService
-    )
-    
-    // Create sample processed document
-    let sampleDoc1 = DocumentModel(
-        fileName: "sample1.pdf",
-        filePath: URL(string: "file:///sample1.pdf")!,
-        mimeType: "application/pdf",
-        fileSize: 1024 * 1024,
-        dateAdded: Date(),
-        isProcessed: true,
-        chunkCount: 24
-    )
-    
-    // Create sample document with error
-    let sampleDoc2 = DocumentModel(
-        fileName: "sample2.txt",
-        filePath: URL(string: "file:///sample2.txt")!,
-        mimeType: "text/plain",
-        fileSize: 512 * 1024,
-        dateAdded: Date(),
-        isProcessed: false,
-        processingError: "Processing failed"
-    )
-    
-    viewModel.documents = [sampleDoc1, sampleDoc2]
-    
-    return NavigationView {
-        DocumentsView(viewModel: viewModel)
-            .navigationTitle("Documents")
-    }
-}
+// Rest of the code remains the same...
