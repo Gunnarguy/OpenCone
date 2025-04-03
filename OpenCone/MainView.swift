@@ -108,7 +108,7 @@ private func mainViewPreview() -> some View {
     
     let openAIService = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
     // Updated PineconeService initialization to match its current definition
-    let pineconeService = PineconeService(apiKey: settingsViewModel.pineconeAPIKey)
+    let pineconeService = PineconeService(apiKey: settingsViewModel.pineconeAPIKey, projectId: settingsViewModel.pineconeProjectId)
     let embeddingService = EmbeddingService(openAIService: openAIService)
     
     let documentsViewModel = DocumentsViewModel(

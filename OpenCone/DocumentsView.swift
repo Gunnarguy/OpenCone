@@ -354,7 +354,7 @@ private func documentsPreview() -> some View {
     let textProcessorService = TextProcessorService()
     let openAIService = OpenAIService(apiKey: "preview-key")
     // Updated PineconeService initialization for preview
-    let pineconeService = PineconeService(apiKey: "preview-key")
+    let pineconeService = PineconeService(apiKey: "preview-key", projectId: "preview-project-id")
     let embeddingService = EmbeddingService(openAIService: openAIService)
     
     let viewModel = DocumentsViewModel(

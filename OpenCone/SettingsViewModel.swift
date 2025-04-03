@@ -70,6 +70,7 @@ class SettingsViewModel: ObservableObject {
     
     /// Save all settings
     func saveSettings() {
+        logger.log(level: .info, message: "SettingsViewModel: saveSettings() called.")
         saveAPIKeys()
         
         // Save configuration settings
@@ -81,7 +82,7 @@ class SettingsViewModel: ObservableObject {
         // Save appearance settings
         UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode")
         
-        logger.log(level: .info, message: "Settings saved")
+        logger.log(level: .info, message: "SettingsViewModel: Settings saved to UserDefaults.")
     }
     
     /// Reset settings to defaults

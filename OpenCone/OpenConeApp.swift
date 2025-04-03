@@ -8,6 +8,7 @@ struct OpenConeApp: App {
     
     // Create view models with dependency injection
     @StateObject private var settingsViewModel = SettingsViewModel()
+    private let logger = Logger.shared // Add logger instance
     
     // Other view models will be created once we have API keys
     @State private var documentsViewModel: DocumentsViewModel?
@@ -23,28 +24,43 @@ struct OpenConeApp: App {
                     // Show loading screen while initializing
                     LoadingView()
                         .onAppear {
-                            // Load settings when app starts
-                            settingsViewModel.loadAPIKeys()
-                            
-                            // Check if we need to show welcome screen
+                            // Check if we need to show welcome screen FIRST
                             let isFirstLaunch = UserDefaults.standard.bool(forKey: "hasLaunchedBefore") == false
-                            self.showingWelcomeScreen = isFirstLaunch
-                            
-                            if !isFirstLaunch {
+                            logger.log(level: .info, message: "Is first launch? \(isFirstLaunch)")
+
+                            if isFirstLaunch {
+                                logger.log(level: .info, message: "First launch. Will show WelcomeView.")
+                                self.showingWelcomeScreen = true
+                                // Mark as launched immediately for first launch scenario
+                                UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+                                logger.log(level: .info, message: "Marked app as launched.")
+                                // Set initialized to true to move past LoadingView
+                                self.isInitialized = true
+                                logger.log(level: .info, message: "isInitialized set to true for first launch.")
+
+                            } else {
+                                logger.log(level: .info, message: "Not first launch. Loading API keys and initializing services...")
+                                // Load keys ONLY if not first launch
+                                settingsViewModel.loadAPIKeys()
+                                logger.log(level: .info, message: "API keys loaded. OpenAI: \(settingsViewModel.openAIAPIKey.isEmpty ? "Not Set" : "Set"), Pinecone: \(settingsViewModel.pineconeAPIKey.isEmpty ? "Not Set" : "Set"), ProjectID: \(settingsViewModel.pineconeProjectId.isEmpty ? "Not Set" : "Set")")
+
                                 // Initialize services with API keys
-                                initializeServices()
+                                initializeServices() // This function handles setting isInitialized based on key validity
+
+                                // Marking as launched here is slightly redundant but harmless
+                                UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+                                logger.log(level: .info, message: "Marked app as launched (redundant for non-first launch).")
                             }
-                            
-                            // Mark as launched
-                            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
                         }
                 } else if showingWelcomeScreen {
                     // Show welcome screen for first launch
                     WelcomeView(
                         settingsViewModel: settingsViewModel,
                         onComplete: {
+                            logger.log(level: .info, message: "WelcomeView completed. Initializing services...")
                             initializeServices()
                             showingWelcomeScreen = false
+                            logger.log(level: .info, message: "ShowingWelcomeScreen set to false.")
                         }
                     )
                 } else if let documentsViewModel = documentsViewModel,
@@ -67,13 +83,29 @@ struct OpenConeApp: App {
     
     /// Initialize services with API keys
     private func initializeServices() {
+        logger.log(level: .info, message: "initializeServices called.")
+        guard !settingsViewModel.openAIAPIKey.isEmpty,
+              !settingsViewModel.pineconeAPIKey.isEmpty,
+              !settingsViewModel.pineconeProjectId.isEmpty else {
+            logger.log(level: .error, message: "Cannot initialize services: Missing API keys or Project ID.")
+            // Optionally, transition to an error state or back to welcome screen
+            // For now, just log and prevent initialization
+            self.isInitialized = false // Ensure we don't show main view
+            self.showingWelcomeScreen = true // Force back to welcome/settings
+            return
+        }
+        
+        logger.log(level: .info, message: "Creating services...")
         // Create services with API keys
         let openAIService = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
+        logger.log(level: .debug, message: "OpenAIService created.")
         
-        // Create Pinecone service with just the API key
-        let pineconeService = PineconeService(apiKey: settingsViewModel.pineconeAPIKey)
+        // Create Pinecone service with API key and Project ID for JWT authentication
+        let pineconeService = PineconeService(apiKey: settingsViewModel.pineconeAPIKey, projectId: settingsViewModel.pineconeProjectId)
+        logger.log(level: .debug, message: "PineconeService created.")
         
         let embeddingService = EmbeddingService(openAIService: openAIService)
+        logger.log(level: .debug, message: "EmbeddingService created.")
         
         // Create view models with dependencies
         let documentsVM = DocumentsViewModel(
@@ -82,22 +114,29 @@ struct OpenConeApp: App {
             embeddingService: embeddingService,
             pineconeService: pineconeService
         )
+        logger.log(level: .debug, message: "DocumentsViewModel created.")
         
         let searchVM = SearchViewModel(
             pineconeService: pineconeService,
             openAIService: openAIService,
             embeddingService: embeddingService
         )
+        logger.log(level: .debug, message: "SearchViewModel created.")
         
         DispatchQueue.main.async {
+            logger.log(level: .info, message: "Assigning ViewModels and setting isInitialized to true on main thread.")
             self.documentsViewModel = documentsVM
             self.searchViewModel = searchVM
             self.isInitialized = true
+            logger.log(level: .info, message: "isInitialized set to true.")
             
             // Load indexes once initialized
             Task {
+                logger.log(level: .info, message: "Starting background task to load indexes.")
                 await documentsVM.loadIndexes()
+                logger.log(level: .info, message: "DocumentsViewModel indexes loaded.")
                 await searchVM.loadIndexes()
+                logger.log(level: .info, message: "SearchViewModel indexes loaded.")
             }
         }
     }
@@ -165,6 +204,7 @@ struct ErrorView: View {
 struct WelcomeView: View {
     @ObservedObject var settingsViewModel: SettingsViewModel
     let onComplete: () -> Void
+    private let logger = Logger.shared // Add logger instance
     
     @State private var currentStep = 0
     
@@ -211,12 +251,20 @@ struct WelcomeView: View {
                 Spacer()
                 
                 Button(action: {
+                    logger.log(level: .info, message: "WelcomeView: Next/Start button tapped. Current step: \(currentStep)")
                     if currentStep < 2 {
                         currentStep += 1
+                        logger.log(level: .info, message: "WelcomeView: Moved to step \(currentStep)")
                     } else {
+                        logger.log(level: .info, message: "WelcomeView: Final step. Completing setup...")
                         // Complete setup
+                        logger.log(level: .info, message: "WelcomeView: Calling settingsViewModel.saveSettings()...")
                         settingsViewModel.saveSettings()
+                        logger.log(level: .info, message: "WelcomeView: settingsViewModel.saveSettings() returned.")
+                        
+                        logger.log(level: .info, message: "WelcomeView: Calling onComplete()...")
                         onComplete()
+                        logger.log(level: .info, message: "WelcomeView: onComplete() returned.")
                     }
                 }) {
                     Text(currentStep < 2 ? "Next" : "Start")

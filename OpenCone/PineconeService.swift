@@ -5,6 +5,7 @@ class PineconeService {
     
     private let logger = Logger.shared
     private let apiKey: String
+    private let projectId: String
     private let baseURL = "https://api.pinecone.io"
     private var indexHost: String?
     private var currentIndex: String?
@@ -20,8 +21,9 @@ class PineconeService {
     private var lastRequestTime: Date?
     private let minRequestInterval: TimeInterval = 0.1 // 100ms between requests
     
-    init(apiKey: String) {
+    init(apiKey: String, projectId: String) {
         self.apiKey = apiKey
+        self.projectId = projectId
         
         // Configure session with better timeout and caching policies
         let configuration = URLSessionConfiguration.default
@@ -56,7 +58,9 @@ class PineconeService {
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Use both API Key and Project ID for JWT authentication
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         
         // Use retry mechanism for this critical operation
         try await withRetries(maxRetries: maxRetries) {
@@ -103,6 +107,7 @@ class PineconeService {
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         
         var result: IndexListResponse?
         
@@ -174,6 +179,7 @@ class PineconeService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         request.httpBody = jsonData
         
         var result: IndexCreateResponse?
@@ -228,6 +234,7 @@ class PineconeService {
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         
         var result: Bool = false
         
@@ -317,6 +324,7 @@ class PineconeService {
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         
         var result: IndexStatsResponse?
         
@@ -406,6 +414,7 @@ class PineconeService {
             request.httpMethod = "POST"
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
             request.httpBody = jsonData
             
             // Use retry mechanism for this operation
@@ -486,6 +495,7 @@ class PineconeService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
         request.httpBody = jsonData
         
         // Use retry mechanism for query operations

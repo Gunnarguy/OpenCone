@@ -269,7 +269,7 @@ extension View {
 private func searchViewPreview() -> some View {
     let openAIService = OpenAIService(apiKey: "preview-key")
     // Updated PineconeService initialization to match its current definition
-    let pineconeService = PineconeService(apiKey: "preview-key")
+    let pineconeService = PineconeService(apiKey: "preview-key", projectId: "preview-project-id")
     let embeddingService = EmbeddingService(openAIService: openAIService)
     
     let viewModel = SearchViewModel(
