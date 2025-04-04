@@ -111,30 +111,16 @@ struct DocumentsView: View {
 
              HStack(spacing: 8) { // Group index buttons
                  // Create index button
-                 Button(action: {
+                 styledButton(icon: "plus", color: .blue, action: {
                      viewModel.showingCreateIndexDialog = true
-                 }) {
-                     Image(systemName: "plus")
-                         .foregroundColor(.blue)
-                         .padding(8)
-                         .background(Circle().fill(Color.blue.opacity(0.1)))
-                 }
-                 .buttonStyle(PlainButtonStyle())
-                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
 
                  // Refresh indexes button
-                 Button(action: {
+                 styledButton(icon: "arrow.clockwise", color: .blue, action: {
                      Task {
                          await viewModel.loadIndexes()
                      }
-                 }) {
-                     Image(systemName: "arrow.clockwise")
-                         .foregroundColor(.blue)
-                         .padding(8)
-                         .background(Circle().fill(Color.blue.opacity(0.1)))
-                 }
-                 .buttonStyle(PlainButtonStyle())
-                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
              }
          }
      }
@@ -159,30 +145,16 @@ struct DocumentsView: View {
             
             HStack(spacing: 8) {
                 // Create namespace button
-                Button(action: {
+                styledButton(icon: "plus", color: .blue, action: {
                     showingNamespaceDialog = true
-                }) {
-                    Image(systemName: "plus")
-                        .foregroundColor(.blue)
-                        .padding(8)
-                        .background(Circle().fill(Color.blue.opacity(0.1)))
-                }
-                 .buttonStyle(PlainButtonStyle())
-                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+                }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
                  
                  // Refresh namespaces button
-                 Button(action: {
+                 styledButton(icon: "arrow.clockwise", color: .blue, action: {
                      Task {
                          await viewModel.loadNamespaces()
                      }
-                 }) {
-                     Image(systemName: "arrow.clockwise")
-                         .foregroundColor(.blue)
-                         .padding(8)
-                         .background(Circle().fill(Color.blue.opacity(0.1)))
-                 }
-                 .buttonStyle(PlainButtonStyle())
-                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
              }
          }
     }
@@ -509,6 +481,18 @@ struct DocumentsView: View {
             .disabled(viewModel.newIndexName.isEmpty || viewModel.isLoadingIndexes)
         }
     }
+}
+
+/// Utility function to create a styled button with an icon and action
+private func styledButton(icon: String, color: Color, action: @escaping () -> Void, isDisabled: Bool) -> some View {
+    Button(action: action) {
+        Image(systemName: icon)
+            .foregroundColor(color)
+            .padding(8)
+            .background(Circle().fill(color.opacity(0.1)))
+    }
+    .buttonStyle(PlainButtonStyle())
+    .disabled(isDisabled)
 }
 
 /// Row for displaying document information in the list
