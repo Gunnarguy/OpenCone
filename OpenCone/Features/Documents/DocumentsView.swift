@@ -606,4 +606,3 @@ struct DocumentRow: View {
     }
 }
 
-// Rest of the code remains the same...

@@ -1,13 +1,20 @@
 import SwiftUI
 
 /// Main view for the OpenCone application with tab navigation
+/// Coordinates between document processing, search, logs, and settings
 struct MainView: View {
+    // MARK: - View Models
     @StateObject private var documentsViewModel: DocumentsViewModel
     @StateObject private var searchViewModel: SearchViewModel
     @StateObject private var settingsViewModel: SettingsViewModel
     
     @State private var selectedTab = 0
     
+    /// Initialize the main view with its required view models
+    /// - Parameters:
+    ///   - documentsViewModel: View model for document management
+    ///   - searchViewModel: View model for search functionality
+    ///   - settingsViewModel: View model for application settings
     init(documentsViewModel: DocumentsViewModel, searchViewModel: SearchViewModel, settingsViewModel: SettingsViewModel) {
         _documentsViewModel = StateObject(wrappedValue: documentsViewModel)
         _searchViewModel = StateObject(wrappedValue: searchViewModel)
@@ -16,7 +23,7 @@ struct MainView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Documents Tab
+            // MARK: Documents Tab
             NavigationView {
                 DocumentsView(viewModel: documentsViewModel)
                     .navigationTitle("Documents")
@@ -26,7 +33,7 @@ struct MainView: View {
             }
             .tag(0)
             
-            // Search Tab
+            // MARK: Search Tab
             NavigationView {
                 SearchView(viewModel: searchViewModel)
                     .navigationTitle("Search")
@@ -36,7 +43,7 @@ struct MainView: View {
             }
             .tag(1)
             
-            // Processing Log Tab
+            // MARK: Processing Log Tab
             NavigationView {
                 ProcessingView()
                     .navigationTitle("Processing Log")
@@ -46,7 +53,7 @@ struct MainView: View {
             }
             .tag(2)
             
-            // Settings Tab
+            // MARK: Settings Tab
             NavigationView {
                 SettingsView(viewModel: settingsViewModel)
                     .navigationTitle("Settings")
@@ -56,77 +63,131 @@ struct MainView: View {
             }
             .tag(3)
         }
-        .onAppear {
-            // Ensure API keys are loaded
-            settingsViewModel.loadAPIKeys()
-            
-            // Load Pinecone indexes when settings are available
-            Task {
-                if !settingsViewModel.pineconeAPIKey.isEmpty {
-                    await documentsViewModel.loadIndexes()
-                    await searchViewModel.loadIndexes()
-                }
+        .onAppear(perform: loadInitialData)
+        .alert(isPresented: errorAlertBinding) {
+            errorAlert
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Load API keys and initialize data when view appears
+    private func loadInitialData() {
+        // Ensure API keys are loaded
+        settingsViewModel.loadAPIKeys()
+        
+        // Load Pinecone indexes when settings are available
+        Task {
+            if !settingsViewModel.pineconeAPIKey.isEmpty {
+                await documentsViewModel.loadIndexes()
+                await searchViewModel.loadIndexes()
             }
         }
-        // Show alert for any errors
-        .alert(isPresented: Binding<Bool>(
-            get: { documentsViewModel.errorMessage != nil ||
-                  searchViewModel.errorMessage != nil ||
-                  settingsViewModel.errorMessage != nil },
+    }
+    
+    /// Binding for error alert presentation
+    private var errorAlertBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { 
+                documentsViewModel.errorMessage != nil ||
+                searchViewModel.errorMessage != nil ||
+                settingsViewModel.errorMessage != nil 
+            },
             set: { _ in
                 documentsViewModel.errorMessage = nil
                 searchViewModel.errorMessage = nil
                 settingsViewModel.errorMessage = nil
             }
-        )) {
-            Alert(
-                title: Text("Error"),
-                message: Text(documentsViewModel.errorMessage ??
-                             searchViewModel.errorMessage ??
-                             settingsViewModel.errorMessage ?? "Unknown error"),
-                dismissButton: .default(Text("OK"))
-            )
-        }
+        )
+    }
+    
+    /// Alert view for displaying errors from any view model
+    private var errorAlert: Alert {
+        Alert(
+            title: Text("Error"),
+            message: Text(
+                documentsViewModel.errorMessage ??
+                searchViewModel.errorMessage ??
+                settingsViewModel.errorMessage ?? 
+                "Unknown error"
+            ),
+            dismissButton: .default(Text("OK"))
+        )
     }
 }
+
+// MARK: - Preview Provider
 
 #Preview {
     mainViewPreview()
 }
 
-/// Helper function to create preview for MainView
+/// Creates a preview instance of MainView with mock data
 private func mainViewPreview() -> some View {
-    // Create services for preview
-    let fileProcessorService = FileProcessorService()
-    let textProcessorService = TextProcessorService()
-    let settingsViewModel = SettingsViewModel()
+    // Create view models with preview services
+    let settingsViewModel = createPreviewSettingsViewModel()
+    let services = createPreviewServices(with: settingsViewModel)
+    let viewModels = createPreviewViewModels(with: services)
     
-    // Initialize with dummy API keys for preview
-    settingsViewModel.openAIAPIKey = "preview-key"
-    settingsViewModel.pineconeAPIKey = "preview-key"
-    settingsViewModel.pineconeProjectId = "preview-project"
+    return MainView(
+        documentsViewModel: viewModels.documents,
+        searchViewModel: viewModels.search,
+        settingsViewModel: settingsViewModel
+    )
+}
+
+// MARK: - Preview Helpers
+
+/// Create settings view model with preview data
+private func createPreviewSettingsViewModel() -> SettingsViewModel {
+    let viewModel = SettingsViewModel()
+    viewModel.openAIAPIKey = "preview-key"
+    viewModel.pineconeAPIKey = "preview-key"
+    viewModel.pineconeProjectId = "preview-project"
+    return viewModel
+}
+
+/// Create service instances for preview
+private func createPreviewServices(with settingsViewModel: SettingsViewModel) -> (
+    fileProcessor: FileProcessorService,
+    textProcessor: TextProcessorService,
+    openAI: OpenAIService,
+    pinecone: PineconeService,
+    embedding: EmbeddingService
+) {
+    let fileProcessor = FileProcessorService()
+    let textProcessor = TextProcessorService()
+    let openAI = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
+    let pinecone = PineconeService(
+        apiKey: settingsViewModel.pineconeAPIKey, 
+        projectId: settingsViewModel.pineconeProjectId
+    )
+    let embedding = EmbeddingService(openAIService: openAI)
     
-    let openAIService = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
-    // Updated PineconeService initialization to match its current definition
-    let pineconeService = PineconeService(apiKey: settingsViewModel.pineconeAPIKey, projectId: settingsViewModel.pineconeProjectId)
-    let embeddingService = EmbeddingService(openAIService: openAIService)
+    return (fileProcessor, textProcessor, openAI, pinecone, embedding)
+}
+
+/// Create view models for preview
+private func createPreviewViewModels(with services: (
+    fileProcessor: FileProcessorService,
+    textProcessor: TextProcessorService,
+    openAI: OpenAIService,
+    pinecone: PineconeService,
+    embedding: EmbeddingService
+)) -> (documents: DocumentsViewModel, search: SearchViewModel) {
     
     let documentsViewModel = DocumentsViewModel(
-        fileProcessorService: fileProcessorService,
-        textProcessorService: textProcessorService,
-        embeddingService: embeddingService,
-        pineconeService: pineconeService
+        fileProcessorService: services.fileProcessor,
+        textProcessorService: services.textProcessor,
+        embeddingService: services.embedding,
+        pineconeService: services.pinecone
     )
     
     let searchViewModel = SearchViewModel(
-        pineconeService: pineconeService,
-        openAIService: openAIService,
-        embeddingService: embeddingService
+        pineconeService: services.pinecone,
+        openAIService: services.openAI,
+        embeddingService: services.embedding
     )
     
-    return MainView(
-        documentsViewModel: documentsViewModel,
-        searchViewModel: searchViewModel,
-        settingsViewModel: settingsViewModel
-    )
+    return (documentsViewModel, searchViewModel)
 }
