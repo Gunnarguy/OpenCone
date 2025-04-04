@@ -667,9 +667,14 @@ class DocumentsViewModel: ObservableObject {
     private func updateDocumentStatus(_ document: DocumentModel, isProcessed: Bool, error: String? = nil, chunkCount: Int = 0) async {
         await MainActor.run {
             if let index = self.documents.firstIndex(where: { $0.id == document.id }) {
-                self.documents[index].isProcessed = isProcessed
-                self.documents[index].processingError = error
-                self.documents[index].chunkCount = chunkCount
+                // Create a new copy of the document with updated status
+                var updatedDocument = self.documents[index]
+                updatedDocument.isProcessed = isProcessed
+                updatedDocument.processingError = error
+                updatedDocument.chunkCount = chunkCount
+                
+                // Replace the old document with the updated copy in the array
+                self.documents[index] = updatedDocument
             }
         }
     }

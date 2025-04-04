@@ -388,7 +388,7 @@ class PineconeService {
         
         // Process each batch
         for (batchIndex, batch) in batches.enumerated() {
-            logger.log(level: .info, message: "[Batch: \(batchIndex + 1), Size: \(batch.count)]: Upserting batch to Pinecone")
+            // Removed logger.log call here to avoid duplication with DocumentsViewModel
             
             let endpoint = "https://\(indexHost)/vectors/upsert"
             
@@ -444,7 +444,7 @@ class PineconeService {
                     
                     let upsertResponse = try JSONDecoder().decode(UpsertResponse.self, from: data)
                     totalUpserted += upsertResponse.upsertedCount
-                    logger.log(level: .info, message: "[Upserted: \(upsertResponse.upsertedCount)]: Batch upserted")
+                    // Removed logger.log call here to avoid duplication with DocumentsViewModel
                 } catch {
                     logger.log(level: .error, message: "Failed to upsert vectors batch \(batchIndex + 1): \(error.localizedDescription)")
                     throw error

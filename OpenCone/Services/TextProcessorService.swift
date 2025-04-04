@@ -94,10 +94,9 @@ class TextProcessorService {
                 autoreleasepool {
                     let batchEnd = min(batchStart + batchSize, textChunks.count)
                     
-                    // Log batch progress for large documents
-                    if textChunks.count > 200 {
-                        logger.log(level: .debug, message: "Processing chunk batch \(batchStart/batchSize + 1)/\(textChunks.count / batchSize + 1)")
-                    }
+                    // Log batch progress
+                    // Removed condition textChunks.count > 200 and changed level to .info
+                    logger.log(level: .info, message: "Processing chunk batch \(batchStart/batchSize + 1)/\(textChunks.count / batchSize + 1)")
                     
                     // Process each chunk in this batch
                     for index in batchStart..<batchEnd {
