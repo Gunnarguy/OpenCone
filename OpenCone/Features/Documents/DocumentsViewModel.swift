@@ -233,13 +233,13 @@ class DocumentsViewModel: ObservableObject {
             await MainActor.run {
                 self.pineconeIndexes = indexes
                 self.errorMessage = nil
-                
+
                 // Auto-select first index if none selected
                 if !indexes.isEmpty && self.selectedIndex == nil {
                     self.selectedIndex = indexes[0]
                     // Auto-load namespaces for the selected index
                     Task {
-                        await self.setIndex(indexes[0])
+                        await self.setIndex(indexes[0], skipLogging: true) // Avoid duplicate logging
                     }
                 }
             }
@@ -251,10 +251,12 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Set the current Pinecone index
-    /// - Parameter indexName: Name of the index to set
-    func setIndex(_ indexName: String) async {
+    /// - Parameters:
+    ///   - indexName: Name of the index to set
+    ///   - skipLogging: Whether to skip logging for this operation
+    func setIndex(_ indexName: String, skipLogging: Bool = false) async {
         do {
             try await pineconeService.setCurrentIndex(indexName)
             await loadNamespaces()
@@ -262,7 +264,9 @@ class DocumentsViewModel: ObservableObject {
                 self.selectedIndex = indexName
                 self.errorMessage = nil
             }
-            logger.log(level: .info, message: "Set current index to: \(indexName)")
+            if !skipLogging {
+                logger.log(level: .info, message: "Set current index to: \(indexName)")
+            }
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to set index: \(error.localizedDescription)"

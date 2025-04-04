@@ -264,6 +264,6 @@ struct APIKeyEntryView: View {
 
 #Preview {
     WelcomeView(settingsViewModel: SettingsViewModel()) {
-        print("Setup completed")
+        Logger.shared.log(level: .info, message: "Setup completed")
     }
 }

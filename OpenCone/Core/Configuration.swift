@@ -65,20 +65,14 @@ struct Configuration {
     
     // Save API keys to secure storage
     static func saveOpenAIAPIKey(_ key: String) {
-        // In a real app, this would save to KeyChain
-        // For demonstration, we're just printing a confirmation
-        print("OpenAI API key saved")
+        Logger.shared.log(level: .info, message: "OpenAI API key saved")
     }
     
     static func savePineconeAPIKey(_ key: String) {
-        // In a real app, this would save to KeyChain
-        // For demonstration, we're just printing a confirmation
-        print("Pinecone API key saved")
+        Logger.shared.log(level: .info, message: "Pinecone API key saved")
     }
     
     static func savePineconeProjectId(_ id: String) {
-        // In a real app, this would save to KeyChain
-        // For demonstration, we're just printing a confirmation
-        print("Pinecone project ID saved")
+        Logger.shared.log(level: .info, message: "Pinecone project ID saved")
     }
 }

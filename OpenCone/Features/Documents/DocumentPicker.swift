@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 struct DocumentPicker: UIViewControllerRepresentable {
     @ObservedObject var viewModel: DocumentsViewModel
 
+    // Adding logger instance to resolve 'logger' not found errors
+    private let logger = Logger.shared
+
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         // Configure the document picker (allow specific types, multiple selection, etc.)
         // For now, let's allow common document types.
@@ -33,8 +36,10 @@ struct DocumentPicker: UIViewControllerRepresentable {
         Coordinator(self)
     }
 
+    // Pass logger instance to Coordinator
     class Coordinator: NSObject, UIDocumentPickerDelegate {
         var parent: DocumentPicker
+        private let logger = Logger.shared
 
         init(_ parent: DocumentPicker) {
             self.parent = parent
@@ -50,8 +55,7 @@ struct DocumentPicker: UIViewControllerRepresentable {
         }
         
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            // Handle cancellation if needed
-            print("Document picker was cancelled.")
+            logger.log(level: .info, message: "Document picker was cancelled.")
         }
     }
 }

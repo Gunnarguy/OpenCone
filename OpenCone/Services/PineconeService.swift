@@ -39,46 +39,45 @@ class PineconeService {
     /// - Parameter indexName: Name of the index
     func setCurrentIndex(_ indexName: String) async throws {
         self.currentIndex = indexName
-        try await getIndexHost(for: indexName)
-        
+        try await self.getIndexHost(for: indexName, skipLogging: true) // Suppress logging here
+
         // Validate that we have a host after setting index
-        guard indexHost != nil else {
+        guard self.indexHost != nil else {
             throw PineconeError.noIndexSelected
         }
-        
-        logger.log(level: .info, message: "Successfully set current index to '\(indexName)'")
     }
-    
+
     /// Get the host URL for a Pinecone index
-    /// - Parameter indexName: Name of the index
+    /// - Parameters:
+    ///   - indexName: Name of the index
+    ///   - skipLogging: Whether to skip logging for this operation
     /// - Returns: Host URL
-    private func getIndexHost(for indexName: String) async throws {
-        let endpoint = "\(baseURL)/indexes/\(indexName)"
-        
+    private func getIndexHost(for indexName: String, skipLogging: Bool = false) async throws {
+        let endpoint = "\(self.baseURL)/indexes/\(indexName)"
+
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Use both API Key and Project ID for JWT authentication
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        
+        request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
+
         // Use retry mechanism for this critical operation
-        try await withRetries(maxRetries: maxRetries) {
+        try await self.executeWithRetries(maxRetries: self.maxRetries) {
             do {
                 // Apply rate limiting
                 try await self.applyRateLimit()
-                
-                let (data, response) = try await session.data(for: request)
-                
+
+                let (data, response) = try await self.session.data(for: request)
+
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
                 }
-                
+
                 if httpResponse.statusCode != 200 {
                     let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
                     let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (getIndexHost): Status \(httpResponse.statusCode), Message: \(message)")
-                    
+                    self.logger.log(level: .error, message: "Pinecone API error (getIndexHost): Status \(httpResponse.statusCode), Message: \(message)")
+
                     // Determine if we should retry based on status code
                     if self.shouldRetry(statusCode: httpResponse.statusCode) {
                         throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
@@ -86,13 +85,15 @@ class PineconeService {
                         throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
                     }
                 }
-                
+
                 let indexInfo = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
                 self.indexHost = indexInfo.host
-                logger.log(level: .info, message: "Index host set to: \(indexInfo.host)")
+                if !skipLogging {
+                    self.logger.log(level: .info, message: "Index host set to: \(indexInfo.host)")
+                }
             } catch {
                 // Log the error and rethrow for retry mechanism to handle
-                logger.log(level: .error, message: "Failed to get index host: \(error.localizedDescription)")
+                self.logger.log(level: .error, message: "Failed to get index host: \(error.localizedDescription)")
                 throw error
             }
         }
@@ -101,54 +102,22 @@ class PineconeService {
     /// List all available Pinecone indexes
     /// - Returns: Array of index names
     func listIndexes() async throws -> [String] {
-        let endpoint = "\(baseURL)/indexes"
-        
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        
-        var result: IndexListResponse?
-        
-        try await withRetries(maxRetries: maxRetries) {
-            do {
-                try await self.applyRateLimit()
-                
-                let (data, response) = try await session.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw PineconeError.invalidResponse
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
-                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (listIndexes): Status \(httpResponse.statusCode), Message: \(message)")
-                    
-                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
-                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
-                    } else {
-                        throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
-                    }
-                }
-                
-                result = try JSONDecoder().decode(IndexListResponse.self, from: data)
-            } catch {
-                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
-                    throw error // Let withRetries handle it
-                } else {
-                    logger.log(level: .error, message: "Failed to list indexes: \(error.localizedDescription)")
-                    throw error
-                }
+        return try await self.executeWithRetries(maxRetries: self.maxRetries) {
+            let endpoint = "\(self.baseURL)/indexes"
+            var request = URLRequest(url: URL(string: endpoint)!)
+            request.httpMethod = "GET"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
+
+            let (data, response) = try await self.session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw PineconeError.invalidResponse
             }
+
+            let indexList = try JSONDecoder().decode(IndexListResponse.self, from: data)
+            return indexList.indexes.map { $0.name }
         }
-        
-        guard let indexList = result else {
-            throw PineconeError.requestFailed(statusCode: 0, message: "Failed to list indexes: Unknown error")
-        }
-        
-        return indexList.indexes.map { $0.name }
     }
     
     /// Create a new Pinecone index
@@ -157,7 +126,7 @@ class PineconeService {
     ///   - dimension: Dimension of the vectors
     /// - Returns: Response from the Pinecone API
     func createIndex(name: String, dimension: Int) async throws -> IndexCreateResponse {
-        let endpoint = "\(baseURL)/indexes"
+        let endpoint = "\(self.baseURL)/indexes"
         
         let body: [String: Any] = [
             "name": name,
@@ -178,17 +147,17 @@ class PineconeService {
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
         request.httpBody = jsonData
         
         var result: IndexCreateResponse?
         
-        try await withRetries(maxRetries: maxRetries) {
+        try await self.executeWithRetries(maxRetries: self.maxRetries) {
             do {
                 try await self.applyRateLimit()
                 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await self.session.data(for: request)
                 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -197,7 +166,7 @@ class PineconeService {
                 if httpResponse.statusCode != 201 && httpResponse.statusCode != 200 {
                     let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
                     let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (createIndex): Status \(httpResponse.statusCode), Message: \(message)")
+                    self.logger.log(level: .error, message: "Pinecone API error (createIndex): Status \(httpResponse.statusCode), Message: \(message)")
                     
                     if self.shouldRetry(statusCode: httpResponse.statusCode) {
                         throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
@@ -209,9 +178,9 @@ class PineconeService {
                 result = try JSONDecoder().decode(IndexCreateResponse.self, from: data)
             } catch {
                 if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
-                    throw error // Let withRetries handle it
+                    throw error // Let executeWithRetries handle it
                 } else {
-                    logger.log(level: .error, message: "Failed to create index: \(error.localizedDescription)")
+                    self.logger.log(level: .error, message: "Failed to create index: \(error.localizedDescription)")
                     throw error
                 }
             }
@@ -228,51 +197,22 @@ class PineconeService {
     /// - Parameter name: Name of the index
     /// - Returns: True if the index is ready
     func isIndexReady(name: String) async throws -> Bool {
-        let endpoint = "\(baseURL)/indexes/\(name)"
-        
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        
-        var result: Bool = false
-        
-        try await withRetries(maxRetries: maxRetries) {
-            do {
-                try await self.applyRateLimit()
-                
-                let (data, response) = try await session.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw PineconeError.invalidResponse
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
-                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (isIndexReady): Status \(httpResponse.statusCode), Message: \(message)")
-                    
-                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
-                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
-                    } else {
-                        throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
-                    }
-                }
-                
-                let indexInfo = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
-                result = indexInfo.status.state == "Ready"
-            } catch {
-                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
-                    throw error
-                } else {
-                    logger.log(level: .error, message: "Failed to check index status: \(error.localizedDescription)")
-                    throw error
-                }
+        return try await self.executeWithRetries(maxRetries: self.maxRetries) {
+            let endpoint = "\(self.baseURL)/indexes/\(name)"
+            var request = URLRequest(url: URL(string: endpoint)!)
+            request.httpMethod = "GET"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
+
+            let (data, response) = try await self.session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw PineconeError.invalidResponse
             }
+
+            let indexInfo = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
+            return indexInfo.status.state == "Ready"
         }
-        
-        return result
     }
     
     /// Wait for an index to become ready
@@ -288,84 +228,52 @@ class PineconeService {
         
         while Date().timeIntervalSince1970 - startTime < Double(timeout) {
             do {
-                let isReady = try await isIndexReady(name: name)
+                let isReady = try await self.isIndexReady(name: name)
                 if isReady {
-                    logger.log(level: .info, message: "Index '\(name)' is now ready")
+                    self.logger.log(level: .info, message: "Index '\(name)' is now ready")
                     return true
                 }
                 
                 attempts += 1
-                logger.log(level: .info, message: "Waiting for index '\(name)' to be ready (attempt \(attempts)/\(maxAttempts))")
+                self.logger.log(level: .info, message: "Waiting for index '\(name)' to be ready (attempt \(attempts)/\(maxAttempts))")
             } catch PineconeError.retryableError(let statusCode) {
                 // For retryable errors, we just log and continue polling
-                logger.log(level: .warning, message: "Retryable error checking index status (code: \(statusCode)). Will retry in \(pollInterval) seconds.")
+                self.logger.log(level: .warning, message: "Retryable error checking index status (code: \(statusCode)). Will retry in \(pollInterval) seconds.")
             } catch {
                 // For other errors, log but continue polling
-                logger.log(level: .warning, message: "Error checking index status: \(error.localizedDescription)")
+                self.logger.log(level: .warning, message: "Error checking index status: \(error.localizedDescription)")
             }
             
             try await Task.sleep(nanoseconds: UInt64(pollInterval) * 1_000_000_000)
         }
         
-        logger.log(level: .warning, message: "Timeout reached waiting for index '\(name)' to become ready")
+        self.logger.log(level: .warning, message: "Timeout reached waiting for index '\(name)' to become ready")
         return false
     }
     
     /// List namespaces for the current index
     /// - Returns: Array of namespace names
     func listNamespaces() async throws -> [String] {
-        guard let indexHost = indexHost, let _ = currentIndex else {
-            throw PineconeError.noIndexSelected
-        }
-        
-        let endpoint = "https://\(indexHost)/describe_index_stats"
-        
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        
-        var result: IndexStatsResponse?
-        
-        try await withRetries(maxRetries: maxRetries) {
-            do {
-                try await self.applyRateLimit()
-                
-                let (data, response) = try await session.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw PineconeError.invalidResponse
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
-                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (listNamespaces): Status \(httpResponse.statusCode), Message: \(message)")
-                    
-                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
-                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
-                    } else {
-                        throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
-                    }
-                }
-                
-                result = try JSONDecoder().decode(IndexStatsResponse.self, from: data)
-            } catch {
-                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
-                    throw error
-                } else {
-                    logger.log(level: .error, message: "Failed to list namespaces: \(error.localizedDescription)")
-                    throw error
-                }
+        return try await self.executeWithRetries(maxRetries: self.maxRetries) {
+            guard let indexHost = self.indexHost else {
+                throw PineconeError.noIndexSelected
             }
+
+            let endpoint = "https://\(indexHost)/describe_index_stats"
+            var request = URLRequest(url: URL(string: endpoint)!)
+            request.httpMethod = "GET"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
+
+            let (data, response) = try await self.session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw PineconeError.invalidResponse
+            }
+
+            let indexStats = try JSONDecoder().decode(IndexStatsResponse.self, from: data)
+            return Array(indexStats.namespaces.keys)
         }
-        
-        guard let indexStats = result else {
-            throw PineconeError.requestFailed(statusCode: 0, message: "Failed to list namespaces: Unknown error")
-        }
-        
-        return Array(indexStats.namespaces.keys)
     }
     
     /// Upsert vectors to the current index
@@ -379,7 +287,7 @@ class PineconeService {
         namespace: String? = nil,
         progressCallback: ((Int, Int) async -> Void)? = nil // Add optional callback
     ) async throws -> UpsertResponse {
-        guard let indexHost = indexHost else {
+        guard let indexHost = self.indexHost else {
             throw PineconeError.noIndexSelected
         }
         
@@ -424,17 +332,17 @@ class PineconeService {
             var request = URLRequest(url: URL(string: endpoint)!)
             request.httpMethod = "POST"
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-            request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+            request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
             request.httpBody = jsonData
             
             // Use retry mechanism for this operation
-            try await withRetries(maxRetries: maxRetries) {
+            try await self.executeWithRetries(maxRetries: self.maxRetries) {
                 do {
                     // Apply rate limiting
                     try await self.applyRateLimit()
                     
-                    let (data, response) = try await session.data(for: request)
+                    let (data, response) = try await self.session.data(for: request)
                     
                     guard let httpResponse = response as? HTTPURLResponse else {
                         throw PineconeError.invalidResponse
@@ -443,7 +351,7 @@ class PineconeService {
                     if httpResponse.statusCode != 200 {
                         let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
                         let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                        logger.log(level: .error, message: "Pinecone API error (upsertVectors): Status \(httpResponse.statusCode), Message: \(message)")
+                        self.logger.log(level: .error, message: "Pinecone API error (upsertVectors): Status \(httpResponse.statusCode), Message: \(message)")
                         
                         // Determine if we should retry based on status code
                         if self.shouldRetry(statusCode: httpResponse.statusCode) {
@@ -461,7 +369,7 @@ class PineconeService {
                     await progressCallback?(batchIndex, totalBatches)
                     
                 } catch {
-                    logger.log(level: .error, message: "Failed to upsert vectors batch \(batchIndex + 1): \(error.localizedDescription)")
+                    self.logger.log(level: .error, message: "Failed to upsert vectors batch \(batchIndex + 1): \(error.localizedDescription)")
                     throw error // Rethrow to let the caller handle it (ViewModel)
                 }
             }
@@ -482,81 +390,44 @@ class PineconeService {
     ///   - namespace: Namespace to query
     /// - Returns: Query response from Pinecone
     func query(vector: [Float], topK: Int = 10, namespace: String? = nil, filter: [String: Any]? = nil) async throws -> QueryResponse {
-        guard let indexHost = indexHost else {
-            throw PineconeError.noIndexSelected
-        }
-        
-        let endpoint = "https://\(indexHost)/query"
-        
-        var body: [String: Any] = [
-            "vector": vector,
-            "topK": topK,
-            "includeMetadata": true
-        ]
-        
-        if let namespace = namespace {
-            body["namespace"] = namespace
-        }
-        
-        if let filter = filter {
-            body["filter"] = filter
-        }
-        
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
-            throw PineconeError.invalidRequestData
-        }
-        
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.httpBody = jsonData
-        
-        // Use retry mechanism for query operations
-        var result: QueryResponse?
-        
-        try await withRetries(maxRetries: maxRetries) {
-            do {
-                // Apply rate limiting
-                try await self.applyRateLimit()
-                
-                let (data, response) = try await session.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw PineconeError.invalidResponse
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
-                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (query): Status \(httpResponse.statusCode), Message: \(message)")
-                    
-                    // Determine if we should retry based on status code
-                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
-                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
-                    } else {
-                        throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
-                    }
-                }
-                
-                result = try JSONDecoder().decode(QueryResponse.self, from: data)
-            } catch {
-                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
-                    // This will be caught by withRetries for retry
-                    throw error
-                } else {
-                    logger.log(level: .error, message: "Failed to query: \(error.localizedDescription)")
-                    throw error
-                }
+        return try await self.executeWithRetries(maxRetries: self.maxRetries) {
+            guard let indexHost = self.indexHost else {
+                throw PineconeError.noIndexSelected
             }
+
+            let endpoint = "https://\(indexHost)/query"
+            var body: [String: Any] = [
+                "vector": vector,
+                "topK": topK,
+                "includeMetadata": true
+            ]
+
+            if let namespace = namespace {
+                body["namespace"] = namespace
+            }
+
+            if let filter = filter {
+                body["filter"] = filter
+            }
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+                throw PineconeError.invalidRequestData
+            }
+
+            var request = URLRequest(url: URL(string: endpoint)!)
+            request.httpMethod = "POST"
+            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.addValue(self.apiKey, forHTTPHeaderField: "Api-Key")
+            request.addValue(self.projectId, forHTTPHeaderField: "X-Project-Id")
+            request.httpBody = jsonData
+
+            let (data, response) = try await self.session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw PineconeError.invalidResponse
+            }
+
+            return try JSONDecoder().decode(QueryResponse.self, from: data)
         }
-        
-        guard let queryResponse = result else {
-            throw PineconeError.requestFailed(statusCode: 0, message: "Query failed with unknown error")
-        }
-        
-        return queryResponse
     }
 }
 
@@ -657,21 +528,21 @@ extension PineconeService {
     /// Apply rate limiting to avoid overwhelming the API
     private func applyRateLimit() async throws {
         // If this is the first request, no need to wait
-        guard let lastRequest = lastRequestTime else {
-            lastRequestTime = Date()
+        guard let lastRequest = self.lastRequestTime else {
+            self.lastRequestTime = Date()
             return
         }
         
         let timeSinceLastRequest = Date().timeIntervalSince(lastRequest)
         
         // If we haven't waited the minimum interval, sleep for the remaining time
-        if timeSinceLastRequest < minRequestInterval {
-            let sleepTime = UInt64((minRequestInterval - timeSinceLastRequest) * 1_000_000_000)
+        if timeSinceLastRequest < self.minRequestInterval {
+            let sleepTime = UInt64((self.minRequestInterval - timeSinceLastRequest) * 1_000_000_000)
             try? await Task.sleep(nanoseconds: sleepTime)
         }
         
         // Update the last request time
-        lastRequestTime = Date()
+        self.lastRequestTime = Date()
     }
     
     /// Check if an error is retryable based on status code
@@ -698,11 +569,11 @@ extension PineconeService {
                 
                 if attempts <= maxRetries {
                     // Exponential backoff with jitter
-                    let baseDelay = retryDelay * pow(2.0, Double(attempts - 1))
+                    let baseDelay = self.retryDelay * pow(2.0, Double(attempts - 1))
                     let jitter = Double.random(in: 0...0.3) * baseDelay
                     let totalDelay = baseDelay + jitter
                     
-                    logger.log(level: .warning, message: "Retrying after error (attempt \(attempts)/\(maxRetries)): Status \(statusCode). Waiting \(String(format: "%.2f", totalDelay))s")
+                    self.logger.log(level: .warning, message: "Retrying after error (attempt \(attempts)/\(maxRetries)): Status \(statusCode). Waiting \(String(format: "%.2f", totalDelay))s")
                     try await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
                 }
             } catch {
@@ -712,6 +583,37 @@ extension PineconeService {
         }
         
         // If we've exhausted our retries, throw the last error or a maxRetries error
+        throw lastError ?? PineconeError.maxRetriesExceeded
+    }
+}
+
+// Centralized retry logic utility
+extension PineconeService {
+    /// Execute an operation with retry logic
+    /// - Parameters:
+    ///   - maxRetries: Maximum number of retry attempts
+    ///   - operation: The async operation to execute
+    /// - Throws: The last error encountered if retries are exhausted
+    func executeWithRetries<T>(maxRetries: Int, operation: @escaping () async throws -> T) async throws -> T {
+        var attempts = 0
+        var lastError: Error?
+
+        while attempts <= maxRetries {
+            do {
+                return try await operation()
+            } catch PineconeError.retryableError(let statusCode) {
+                attempts += 1
+                lastError = PineconeError.retryableError(statusCode: statusCode)
+
+                if attempts <= maxRetries {
+                    let delay = self.retryDelay * pow(2.0, Double(attempts - 1))
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            } catch {
+                throw error
+            }
+        }
+
         throw lastError ?? PineconeError.maxRetriesExceeded
     }
 }

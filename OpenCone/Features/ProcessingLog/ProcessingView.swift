@@ -185,6 +185,7 @@ struct LogEntryRow: View {
 struct LogExportView: View {
     let logs: String
     @Environment(\.presentationMode) var presentationMode
+    private let logger = Logger.shared
     
     var body: some View {
         NavigationView {
@@ -250,7 +251,7 @@ struct LogExportView: View {
             
             rootViewController.present(activityViewController, animated: true)
         } catch {
-            print("Error writing log file: \(error.localizedDescription)")
+            logger.log(level: .error, message: "Error writing log file: \(error.localizedDescription)")
         }
     }
     

@@ -323,3 +323,24 @@ class TextProcessorService {
         return tokens // Return the collected tokens
     } // End of tokenizeText function
 }
+
+// Centralized batch processing utility
+extension TextProcessorService {
+    /// Process items in batches
+    /// - Parameters:
+    ///   - items: The array of items to process
+    ///   - batchSize: The size of each batch
+    ///   - processBatch: Closure to process each batch
+    /// - Throws: Any error encountered during processing
+    func processInBatches<T>(items: [T], batchSize: Int, processBatch: ([T]) async throws -> Void) async throws {
+        let totalBatches = (items.count + batchSize - 1) / batchSize
+
+        for batchIndex in 0..<totalBatches {
+            let start = batchIndex * batchSize
+            let end = min(start + batchSize, items.count)
+            let batch = Array(items[start..<end])
+
+            try await processBatch(batch)
+        }
+    }
+}
