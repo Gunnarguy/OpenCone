@@ -1,194 +1,279 @@
 import SwiftUI
 
-/// View for searching and displaying results from the RAG system
+// MARK: - Main Search View
 struct SearchView: View {
     @ObservedObject var viewModel: SearchViewModel
-    @State private var isExpandedResults = false
     
     var body: some View {
         VStack {
-            // Index and Namespace Selection
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Search Configuration")
-                    .font(.headline)
-                    .padding(.top, 4)
-                
-                HStack {
-                    Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
-                        Text("Select Index").tag("")
-                        ForEach(viewModel.pineconeIndexes, id: \.self) { index in
-                            Text(index).tag(index)
-                        }
-                    }
-                    .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
-                        if let index = newValue, !index.isEmpty {
-                            Task {
-                                await viewModel.setIndex(index)
-                            }
-                        }
-                    }
-                    
-                    Button(action: {
-                        Task {
-                            await viewModel.loadIndexes()
-                        }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(viewModel.isSearching)
-                }
-                
-                HStack {
-                    Picker("Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
-                        Text("Default namespace").tag("")
-                        ForEach(viewModel.namespaces, id: \.self) { namespace in
-                            Text(namespace).tag(namespace)
-                        }
-                    }
-                    .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
-                        viewModel.setNamespace(newValue)
-                    }
-                    
-                    Button(action: {
-                        Task {
-                            await viewModel.loadNamespaces()
-                        }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(viewModel.isSearching)
-                }
-            }
-            .padding(.horizontal)
-            
-            // Search Box
-            HStack {
-                TextField("Enter your question...", text: $viewModel.searchQuery)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .disabled(viewModel.isSearching)
-                
-                Button(action: {
-                    hideKeyboard()
-                    Task {
-                        await viewModel.performSearch()
-                    }
-                }) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background(Color.blue)
-                        .clipShape(Circle())
-                }
-                .disabled(viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil)
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            SearchConfigurationView(viewModel: viewModel)
+            SearchBarView(viewModel: viewModel)
             
             if viewModel.isSearching {
-                // Search Progress
-                VStack {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                    Text("Searching...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 4)
-                }
-                .padding()
+                SearchLoadingView()
             } else if !viewModel.generatedAnswer.isEmpty {
-                // Display Results in a TabView
-                TabView {
-                    // Answer Tab
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Generated Answer")
-                                .font(.headline)
-                                .foregroundColor(.blue)
-                            
-                            Text(viewModel.generatedAnswer)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                            
-                            if !viewModel.selectedResults.isEmpty {
-                                Button(action: {
-                                    Task {
-                                        await viewModel.generateAnswerFromSelected()
-                                    }
-                                }) {
-                                    Text("Regenerate from Selected")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(viewModel.isSearching)
-                            }
-                            
-                            Button(action: {
-                                viewModel.clearSearch()
-                            }) {
-                                Text("Clear Results")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(viewModel.isSearching)
-                        }
-                        .padding()
-                    }
-                    .tabItem {
-                        Label("Answer", systemImage: "text.bubble")
-                    }
-                    
-                    // Sources Tab
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Source Documents")
-                                .font(.headline)
-                                .foregroundColor(.blue)
-                                .padding(.bottom, 8)
-                            
-                            ForEach(viewModel.searchResults) { result in
-                                SearchResultRow(result: result, isSelected: result.isSelected) {
-                                    viewModel.toggleResultSelection(result)
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                    .tabItem {
-                        Label("Sources", systemImage: "doc.text")
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SearchResultsTabView(viewModel: viewModel)
             } else if viewModel.searchResults.isEmpty && !viewModel.searchQuery.isEmpty {
-                // No Results
-                VStack {
-                    Spacer()
-                    Text("No results found")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
+                NoResultsView()
             } else {
-                // Initial State
-                VStack {
-                    Spacer()
-                    Image(systemName: "magnifyingglass")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 60, height: 60)
-                        .foregroundColor(.secondary)
-                        .opacity(0.5)
-                    
-                    Text("Ask a question to search your documents")
-                        .foregroundColor(.secondary)
-                        .padding(.top)
-                    Spacer()
-                }
+                InitialStateView()
             }
         }
     }
 }
 
-/// Row for displaying a search result
+// MARK: - Search Configuration Component
+struct SearchConfigurationView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Search Configuration")
+                .font(.headline)
+                .padding(.top, 4)
+            
+            // Index Selection
+            HStack {
+                Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
+                    Text("Select Index").tag("")
+                    ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                        Text(index).tag(index)
+                    }
+                }
+                .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
+                    if let index = newValue, !index.isEmpty {
+                        Task {
+                            await viewModel.setIndex(index)
+                        }
+                    }
+                }
+                
+                RefreshButton {
+                    Task {
+                        await viewModel.loadIndexes()
+                    }
+                }
+                .disabled(viewModel.isSearching)
+            }
+            
+            // Namespace Selection
+            HStack {
+                Picker("Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
+                    Text("Default namespace").tag("")
+                    ForEach(viewModel.namespaces, id: \.self) { namespace in
+                        Text(namespace).tag(namespace)
+                    }
+                }
+                .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
+                    viewModel.setNamespace(newValue)
+                }
+                
+                RefreshButton {
+                    Task {
+                        await viewModel.loadNamespaces()
+                    }
+                }
+                .disabled(viewModel.isSearching)
+            }
+        }
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Refresh Button Component
+struct RefreshButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.clockwise")
+        }
+    }
+}
+
+// MARK: - Search Bar Component
+struct SearchBarView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        HStack {
+            TextField("Enter your question...", text: $viewModel.searchQuery)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .disabled(viewModel.isSearching)
+            
+            Button(action: {
+                hideKeyboard()
+                Task {
+                    await viewModel.performSearch()
+                }
+            }) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(Color.blue)
+                    .clipShape(Circle())
+            }
+            .disabled(viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+}
+
+// MARK: - Search Loading View
+struct SearchLoadingView: View {
+    var body: some View {
+        VStack {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle())
+            Text("Searching...")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+        }
+        .padding()
+    }
+}
+
+// MARK: - No Results View
+struct NoResultsView: View {
+    var body: some View {
+        VStack {
+            Spacer()
+            Text("No results found")
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Initial State View
+struct InitialStateView: View {
+    var body: some View {
+        VStack {
+            Spacer()
+            Image(systemName: "magnifyingglass")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 60, height: 60)
+                .foregroundColor(.secondary)
+                .opacity(0.5)
+            
+            Text("Ask a question to search your documents")
+                .foregroundColor(.secondary)
+                .padding(.top)
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Search Results Tab View
+struct SearchResultsTabView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        TabView {
+            // Answer Tab
+            AnswerTabView(viewModel: viewModel)
+                .tabItem {
+                    Label("Answer", systemImage: "text.bubble")
+                }
+            
+            // Sources Tab
+            SourcesTabView(viewModel: viewModel)
+                .tabItem {
+                    Label("Sources", systemImage: "doc.text")
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Answer Tab View
+struct AnswerTabView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Generated Answer")
+                    .font(.headline)
+                    .foregroundColor(.blue)
+                
+                Text(viewModel.generatedAnswer)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+                
+                if !viewModel.selectedResults.isEmpty {
+                    RegenerateButton(viewModel: viewModel)
+                }
+                
+                ClearResultsButton(viewModel: viewModel)
+            }
+            .padding()
+        }
+    }
+}
+
+// MARK: - Regenerate Button
+struct RegenerateButton: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        Button(action: {
+            Task {
+                await viewModel.generateAnswerFromSelected()
+            }
+        }) {
+            Text("Regenerate from Selected")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(viewModel.isSearching)
+    }
+}
+
+// MARK: - Clear Results Button
+struct ClearResultsButton: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        Button(action: {
+            viewModel.clearSearch()
+        }) {
+            Text("Clear Results")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(viewModel.isSearching)
+    }
+}
+
+// MARK: - Sources Tab View
+struct SourcesTabView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Source Documents")
+                    .font(.headline)
+                    .foregroundColor(.blue)
+                    .padding(.bottom, 8)
+                
+                ForEach(viewModel.searchResults) { result in
+                    SearchResultRow(result: result, isSelected: result.isSelected) {
+                        viewModel.toggleResultSelection(result)
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+// MARK: - Search Result Row
 struct SearchResultRow: View {
     let result: SearchResultModel
     let isSelected: Bool
@@ -198,41 +283,15 @@ struct SearchResultRow: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(sourceFileName(from: result.sourceDocument))
-                        .font(.headline)
-                        .lineLimit(1)
-                    
-                    Text("Score: \(String(format: "%.3f", result.score))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.blue)
-                }
-                
-                Button(action: {
-                    withAnimation {
-                        isExpanded.toggle()
-                    }
-                }) {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
+            ResultHeaderView(
+                result: result, 
+                isSelected: isSelected, 
+                isExpanded: isExpanded,
+                onToggleExpand: { isExpanded.toggle() }
+            )
             
             if isExpanded {
-                Text(result.content)
-                    .font(.body)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                ResultContentView(content: result.content)
             }
         }
         .padding(.vertical, 8)
@@ -246,6 +305,41 @@ struct SearchResultRow: View {
             onTap()
         }
     }
+}
+
+// MARK: - Result Header View
+struct ResultHeaderView: View {
+    let result: SearchResultModel
+    let isSelected: Bool
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(sourceFileName(from: result.sourceDocument))
+                    .font(.headline)
+                    .lineLimit(1)
+                
+                Text("Score: \(String(format: "%.3f", result.score))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.blue)
+            }
+            
+            Button(action: onToggleExpand) {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
     
     /// Extract filename from source path
     private func sourceFileName(from source: String) -> String {
@@ -254,13 +348,27 @@ struct SearchResultRow: View {
     }
 }
 
-/// Extension to hide keyboard
+// MARK: - Result Content View
+struct ResultContentView: View {
+    let content: String
+    
+    var body: some View {
+        Text(content)
+            .font(.body)
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+    }
+}
+
+// MARK: - Extensions
 extension View {
     func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
 
+// MARK: - Previews
 #Preview {
     searchViewPreview()
 }
@@ -268,7 +376,6 @@ extension View {
 /// Helper function to create preview for SearchView
 private func searchViewPreview() -> some View {
     let openAIService = OpenAIService(apiKey: "preview-key")
-    // Updated PineconeService initialization to match its current definition
     let pineconeService = PineconeService(apiKey: "preview-key", projectId: "preview-project-id")
     let embeddingService = EmbeddingService(openAIService: openAIService)
     
