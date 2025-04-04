@@ -88,12 +88,19 @@ class DocumentsViewModel: ObservableObject {
         
         do {
             // Ensure URL is accessible and secure bookmarked if necessary
+            // Ensure URL is accessible and create a persistent security bookmark
             if !url.startAccessingSecurityScopedResource() {
                 logger.log(level: .warning, message: "Failed to access security-scoped resource", context: url.lastPathComponent)
+                // Consider throwing an error or returning if access is critical here
             }
-            defer { url.stopAccessingSecurityScopedResource() }
             
-            // Get file attributes
+            // Create a security-scoped bookmark
+            let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+            
+            // Stop accessing the resource for now
+            url.stopAccessingSecurityScopedResource()
+            
+            // Get file attributes (access might be needed again if path is used directly)
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
             
@@ -105,10 +112,11 @@ class DocumentsViewModel: ObservableObject {
                 return
             }
             
-            // Create document model with determined MIME type
+            // Create document model with determined MIME type and bookmark
             let document = DocumentModel(
                 fileName: url.lastPathComponent,
-                filePath: url,
+                filePath: url, // Keep original URL for reference, but use bookmark for access
+                securityBookmark: bookmarkData, // Store the bookmark
                 mimeType: determineMimeType(for: url),
                 fileSize: fileSize,
                 dateAdded: Date()
@@ -437,17 +445,41 @@ class DocumentsViewModel: ObservableObject {
     private func extractText(from document: DocumentModel, stats: inout DocumentProcessingStats) async throws -> (text: String, mimeType: String) {
         let textExtractionStart = Date()
         
-        // Ensure we have security access before processing
-        guard document.filePath.startAccessingSecurityScopedResource() else {
-            logger.log(level: .error, message: "Failed to start accessing security-scoped resource for processing", context: document.fileName)
-            throw ProcessingError.textExtractionFailed // Or a more specific error
+        // Use the stored bookmark to regain access
+        guard let bookmarkData = document.securityBookmark else {
+            logger.log(level: .error, message: "No security bookmark available", context: document.fileName)
+            throw ProcessingError.securityAccessDenied
         }
-        defer { document.filePath.stopAccessingSecurityScopedResource() }
         
-        // Call the file processor service
-        let (text, mimeType) = try await fileProcessorService.processFile(at: document.filePath)
-        let textExtractionEnd = Date()
+        var isStale = false
+        var resolvedURL: URL
+        
+        do {
+            // Resolve the bookmark to get a fresh URL. For iOS, resolve without .withSecurityScope
+            // and then explicitly start access.
+            resolvedURL = try URL(resolvingBookmarkData: bookmarkData, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
             
+            if isStale {
+                logger.log(level: .warning, message: "Security bookmark is stale, access may fail", context: document.fileName)
+                // Consider attempting to create a new bookmark here if needed
+            }
+            
+            if !resolvedURL.startAccessingSecurityScopedResource() {
+                logger.log(level: .error, message: "Failed to access security-scoped resource despite bookmark", context: document.fileName)
+                throw ProcessingError.securityAccessDenied
+            }
+        } catch {
+            logger.log(level: .error, message: "Failed to resolve security bookmark", context: "\(document.fileName): \(error.localizedDescription)")
+            throw ProcessingError.securityAccessDenied
+        }
+        
+        // Use the resolved URL instead of the stored filePath
+        defer { resolvedURL.stopAccessingSecurityScopedResource() }
+        
+        // Call the file processor service with the resolved URL
+        let (text, mimeType) = try await fileProcessorService.processFile(at: resolvedURL)
+        let textExtractionEnd = Date()
+        
         guard let documentText = text, let documentMimeType = mimeType, !documentText.isEmpty else {
                 throw ProcessingError.textExtractionFailed
             }
@@ -677,6 +709,7 @@ class DocumentsViewModel: ObservableObject {
     enum ProcessingError: Error, LocalizedError {
         case textExtractionFailed
         case chunkingFailed
+        case securityAccessDenied // Add this new error type
         case embeddingFailed(underlying: Error)
         case embeddingCountMismatch(expected: Int, got: Int)
         case upsertFailed(underlying: Error)
@@ -692,6 +725,8 @@ class DocumentsViewModel: ObservableObject {
                 return "Failed to extract text from document"
             case .chunkingFailed:
                 return "Failed to chunk document text"
+            case .securityAccessDenied:
+                return "Security access to the document was denied. You may need to re-add the document."
             case .embeddingFailed(let error):
                 return "Failed to generate embeddings: \(error.localizedDescription)"
             case .embeddingCountMismatch(let expected, let got):

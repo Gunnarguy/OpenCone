@@ -7,6 +7,7 @@ struct DocumentModel: Identifiable, Hashable {
     var id = UUID()
     var fileName: String
     var filePath: URL
+    var securityBookmark: Data? // Add this property
     var mimeType: String
     var fileSize: Int64
     var dateAdded: Date
