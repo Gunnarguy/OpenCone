@@ -25,57 +25,95 @@ struct SearchView: View {
 // MARK: - Search Configuration Component
 struct SearchConfigurationView: View {
     @ObservedObject var viewModel: SearchViewModel
+    @State private var isConfigExpanded = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Search Configuration")
-                .font(.headline)
-                .padding(.top, 4)
-            
-            // Index Selection
-            HStack {
-                Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
-                    Text("Select Index").tag("")
-                    ForEach(viewModel.pineconeIndexes, id: \.self) { index in
-                        Text(index).tag(index)
-                    }
+        VStack(spacing: 0) {
+            // Header with disclosure button
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isConfigExpanded.toggle()
                 }
-                .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
-                    if let index = newValue, !index.isEmpty {
-                        Task {
-                            await viewModel.setIndex(index)
-                        }
-                    }
+            }) {
+                HStack {
+                    Text("Search Configuration")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.\(isConfigExpanded ? "up" : "down")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                
-                RefreshButton {
-                    Task {
-                        await viewModel.loadIndexes()
-                    }
-                }
-                .disabled(viewModel.isSearching)
             }
+            .buttonStyle(PlainButtonStyle())
+            .padding(.vertical, 12)
             
-            // Namespace Selection
-            HStack {
-                Picker("Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
-                    Text("Default namespace").tag("")
-                    ForEach(viewModel.namespaces, id: \.self) { namespace in
-                        Text(namespace).tag(namespace)
+            if isConfigExpanded {
+                VStack(spacing: 16) {
+                    // Index Selection
+                    HStack {
+                        Text("Index")
+                            .foregroundColor(.secondary)
+                            .frame(width: 80, alignment: .leading)
+                        
+                        Picker("", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
+                            Text("Select Index").tag("")
+                            ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                                Text(index).tag(index)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
+                            if let index = newValue, !index.isEmpty {
+                                Task {
+                                    await viewModel.setIndex(index)
+                                }
+                            }
+                        }
+                        
+                        RefreshButton {
+                            Task {
+                                await viewModel.loadIndexes()
+                            }
+                        }
+                        .disabled(viewModel.isSearching)
+                    }
+                    
+                    // Namespace Selection
+                    HStack {
+                        Text("Namespace")
+                            .foregroundColor(.secondary)
+                            .frame(width: 80, alignment: .leading)
+                        
+                        Picker("", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
+                            Text("Default namespace").tag("")
+                            ForEach(viewModel.namespaces, id: \.self) { namespace in
+                                Text(namespace).tag(namespace)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
+                            viewModel.setNamespace(newValue)
+                        }
+                        
+                        RefreshButton {
+                            Task {
+                                await viewModel.loadNamespaces()
+                            }
+                        }
+                        .disabled(viewModel.isSearching)
                     }
                 }
-                .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
-                    viewModel.setNamespace(newValue)
-                }
-                
-                RefreshButton {
-                    Task {
-                        await viewModel.loadNamespaces()
-                    }
-                }
-                .disabled(viewModel.isSearching)
+                .padding(.bottom, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .padding(.horizontal)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
         .padding(.horizontal)
     }
 }
@@ -87,6 +125,11 @@ struct RefreshButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.clockwise")
+                .font(.footnote)
+                .foregroundColor(.blue)
+                .padding(6)
+                .background(Color.blue.opacity(0.1))
+                .clipShape(Circle())
         }
     }
 }
@@ -96,10 +139,28 @@ struct SearchBarView: View {
     @ObservedObject var viewModel: SearchViewModel
     
     var body: some View {
-        HStack {
-            TextField("Enter your question...", text: $viewModel.searchQuery)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .disabled(viewModel.isSearching)
+        HStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 8)
+                
+                TextField("Enter your question...", text: $viewModel.searchQuery)
+                    .padding(.vertical, 12)
+                    .disabled(viewModel.isSearching)
+                
+                if !viewModel.searchQuery.isEmpty {
+                    Button(action: {
+                        viewModel.searchQuery = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .padding(.trailing, 8)
+                    }
+                }
+            }
+            .background(Color(.systemGray6))
+            .cornerRadius(12)
             
             Button(action: {
                 hideKeyboard()
@@ -107,30 +168,41 @@ struct SearchBarView: View {
                     await viewModel.performSearch()
                 }
             }) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
-                    .padding(8)
-                    .background(Color.blue)
-                    .clipShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .background(
+                        viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil 
+                        ? Color.blue.opacity(0.5) 
+                        : Color.blue
+                    )
+                    .cornerRadius(12)
             }
             .disabled(viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil)
         }
         .padding(.horizontal)
-        .padding(.bottom, 8)
+        .padding(.bottom, 12)
+        .padding(.top, 4)
     }
 }
 
 // MARK: - Search Loading View
 struct SearchLoadingView: View {
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             ProgressView()
                 .progressViewStyle(CircularProgressViewStyle())
+                .scaleEffect(1.5)
+                .padding(20)
+                .background(Color(.systemGray6).opacity(0.5))
+                .clipShape(Circle())
+            
             Text("Searching...")
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundColor(.secondary)
-                .padding(.top, 4)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
 }
@@ -150,18 +222,33 @@ struct NoResultsView: View {
 // MARK: - Initial State View
 struct InitialStateView: View {
     var body: some View {
-        VStack {
+        VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "magnifyingglass")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 60, height: 60)
-                .foregroundColor(.secondary)
-                .opacity(0.5)
             
-            Text("Ask a question to search your documents")
-                .foregroundColor(.secondary)
-                .padding(.top)
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "doc.text.magnifyingglass")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 56, height: 56)
+                    .foregroundColor(.blue)
+            }
+            
+            VStack(spacing: 8) {
+                Text("Document Search")
+                    .font(.title2)
+                    .fontWeight(.medium)
+                
+                Text("Ask a question to search your documents")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+            
             Spacer()
         }
     }
@@ -195,21 +282,36 @@ struct AnswerTabView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Generated Answer")
-                    .font(.headline)
-                    .foregroundColor(.blue)
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Generated Answer")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Text("AI generated")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                }
                 
                 Text(viewModel.generatedAnswer)
                     .padding()
                     .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                    .cornerRadius(12)
                 
-                if !viewModel.selectedResults.isEmpty {
-                    RegenerateButton(viewModel: viewModel)
+                HStack(spacing: 12) {
+                    if !viewModel.selectedResults.isEmpty {
+                        RegenerateButton(viewModel: viewModel)
+                    }
+                    
+                    ClearResultsButton(viewModel: viewModel)
                 }
-                
-                ClearResultsButton(viewModel: viewModel)
+                .padding(.top, 8)
             }
             .padding()
         }
@@ -226,8 +328,13 @@ struct RegenerateButton: View {
                 await viewModel.generateAnswerFromSelected()
             }
         }) {
-            Text("Regenerate from Selected")
-                .frame(maxWidth: .infinity)
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 14))
+                Text("Regenerate")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
         .buttonStyle(.borderedProminent)
         .disabled(viewModel.isSearching)
@@ -242,10 +349,21 @@ struct ClearResultsButton: View {
         Button(action: {
             viewModel.clearSearch()
         }) {
-            Text("Clear Results")
-                .frame(maxWidth: .infinity)
+            HStack {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14))
+                Text("Clear")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
-        .buttonStyle(.bordered)
+        .foregroundColor(.red)
+        .background(Color.red.opacity(0.1))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.red.opacity(0.2), lineWidth: 1)
+        )
         .disabled(viewModel.isSearching)
     }
 }
@@ -282,28 +400,39 @@ struct SearchResultRow: View {
     @State private var isExpanded = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             ResultHeaderView(
                 result: result, 
                 isSelected: isSelected, 
                 isExpanded: isExpanded,
-                onToggleExpand: { isExpanded.toggle() }
+                onToggleExpand: { 
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        isExpanded.toggle()
+                    }
+                }
             )
             
             if isExpanded {
                 ResultContentView(content: result.content)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemBackground))
+                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.blue.opacity(0.5) : Color.secondary.opacity(0.15), lineWidth: isSelected ? 2 : 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
             onTap()
         }
+        .padding(.vertical, 4)
     }
 }
 
@@ -315,15 +444,22 @@ struct ResultHeaderView: View {
     let onToggleExpand: () -> Void
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(sourceFileName(from: result.sourceDocument))
-                    .font(.headline)
-                    .lineLimit(1)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: getDocumentIcon(from: result.sourceDocument))
+                        .foregroundColor(getDocumentColor(from: result.sourceDocument))
+                    
+                    Text(sourceFileName(from: result.sourceDocument))
+                        .font(.headline)
+                        .lineLimit(1)
+                }
                 
-                Text("Score: \(String(format: "%.3f", result.score))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 12) {
+                    ResultScoreBadge(score: result.score)
+                    
+                    // Additional metadata could go here
+                }
             }
             
             Spacer()
@@ -331,12 +467,15 @@ struct ResultHeaderView: View {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.blue)
+                    .font(.system(size: 18))
             }
             
             Button(action: onToggleExpand) {
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption)
                     .foregroundColor(.secondary)
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(Circle())
             }
         }
     }
@@ -346,6 +485,57 @@ struct ResultHeaderView: View {
         let components = source.split(separator: "/")
         return components.last.map { String($0) } ?? source
     }
+    
+    /// Get appropriate icon based on file type
+    private func getDocumentIcon(from source: String) -> String {
+        if source.hasSuffix(".pdf") {
+            return "doc.fill"
+        } else if source.hasSuffix(".md") {
+            return "doc.text"
+        } else if source.hasSuffix(".txt") {
+            return "doc.plaintext"
+        } else {
+            return "doc"
+        }
+    }
+    
+    /// Get color based on file type
+    private func getDocumentColor(from source: String) -> Color {
+        if source.hasSuffix(".pdf") {
+            return .red
+        } else if source.hasSuffix(".md") {
+            return .blue
+        } else if source.hasSuffix(".txt") {
+            return .green
+        } else {
+            return .gray
+        }
+    }
+}
+
+// MARK: - Result Score Badge
+struct ResultScoreBadge: View {
+    let score: Float  // Changed from Double to Float
+    
+    var body: some View {
+        Text("Score: \(String(format: "%.3f", score))")
+            .font(.caption)
+            .foregroundColor(scoreColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(scoreColor.opacity(0.1))
+            .cornerRadius(8)
+    }
+    
+    private var scoreColor: Color {
+        if score > 0.9 {
+            return .green
+        } else if score > 0.7 {
+            return .blue
+        } else {
+            return .orange
+        }
+    }
 }
 
 // MARK: - Result Content View
@@ -353,11 +543,17 @@ struct ResultContentView: View {
     let content: String
     
     var body: some View {
-        Text(content)
-            .font(.body)
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(8)
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .padding(.vertical, 8)
+            
+            Text(content)
+                .font(.body)
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+        }
     }
 }
 
