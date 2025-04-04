@@ -372,8 +372,13 @@ class PineconeService {
     /// - Parameters:
     ///   - vectors: Array of vectors to upsert
     ///   - namespace: Namespace to upsert to
+    ///   - progressCallback: Optional closure to report batch progress (batchIndex, totalBatches)
     /// - Returns: Upsert response from Pinecone
-    func upsertVectors(_ vectors: [PineconeVector], namespace: String? = nil) async throws -> UpsertResponse {
+    func upsertVectors(
+        _ vectors: [PineconeVector],
+        namespace: String? = nil,
+        progressCallback: ((Int, Int) async -> Void)? = nil // Add optional callback
+    ) async throws -> UpsertResponse {
         guard let indexHost = indexHost else {
             throw PineconeError.noIndexSelected
         }
@@ -385,6 +390,12 @@ class PineconeService {
         }
         
         var totalUpserted = 0
+        let totalBatches = batches.count
+        
+        // Report initial progress if callback exists
+        if totalBatches > 0 {
+            await progressCallback?(0, totalBatches)
+        }
         
         // Process each batch
         for (batchIndex, batch) in batches.enumerated() {
@@ -445,14 +456,18 @@ class PineconeService {
                     let upsertResponse = try JSONDecoder().decode(UpsertResponse.self, from: data)
                     totalUpserted += upsertResponse.upsertedCount
                     // Removed logger.log call here to avoid duplication with DocumentsViewModel
+                    
+                    // Report progress after successful batch upsert
+                    await progressCallback?(batchIndex, totalBatches)
+                    
                 } catch {
                     logger.log(level: .error, message: "Failed to upsert vectors batch \(batchIndex + 1): \(error.localizedDescription)")
-                    throw error
+                    throw error // Rethrow to let the caller handle it (ViewModel)
                 }
             }
             
             // Add a small delay between batches to avoid overwhelming the API
-            if batchIndex < batches.count - 1 {
+            if batchIndex < totalBatches - 1 {
                 try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
             }
         }

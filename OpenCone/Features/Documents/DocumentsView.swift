@@ -299,6 +299,14 @@ struct DocumentsView: View {
                         .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                         .scaleEffect(x: 1, y: 1.5, anchor: .center)
                     
+                    // Display current status message
+                    if let status = viewModel.currentProcessingStatus {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                    }
+                    
                     // Processing statistics summary
                     if let stats = viewModel.processingStats {
                         processingStatsView(stats)
@@ -605,4 +613,3 @@ struct DocumentRow: View {
         return formatter.string(fromByteCount: size)
     }
 }
-

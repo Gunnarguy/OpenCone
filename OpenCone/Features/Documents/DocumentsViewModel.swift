@@ -56,8 +56,20 @@ class DocumentsViewModel: ObservableObject {
     /// Statistics for the current processing operation
     @Published var processingStats: ProcessingStats? = nil
     
+    /// Current status message during processing
+    @Published var currentProcessingStatus: String? = nil
+    
+    /// Tracks the granular progress (0.0 to 1.0) for each document being processed concurrently
+    @Published private var documentProgress: [UUID: Float] = [:]
+    
     /// Cancellables for managing Combine subscriptions
     private var cancellables = Set<AnyCancellable>()
+    
+    // MARK: - Constants for Progress Calculation
+    private let phaseWeightExtraction: Float = 0.10
+    private let phaseWeightChunking: Float = 0.10
+    private let phaseWeightEmbedding: Float = 0.50
+    private let phaseWeightUploading: Float = 0.30
     
     // MARK: - Initialization
     
@@ -330,47 +342,28 @@ class DocumentsViewModel: ObservableObject {
             self.isProcessing = true
             self.processingProgress = 0
             self.processingStats = ProcessingStats()
+            self.currentProcessingStatus = "Starting..." // Initial status
+            self.documentProgress = Dictionary(uniqueKeysWithValues: documentsToProcess.map { ($0.id, 0.0) }) // Initialize progress for all
             self.errorMessage = nil
         }
         
-        // Process documents concurrently with a limit to avoid memory issues
+        // Process documents concurrently with a limit
         await withTaskGroup(of: Void.self) { group in
-            let concurrencyLimit = 3 // Process up to 3 documents at once
-            var processedCount = 0
-            
-            for (index, document) in documentsToProcess.enumerated() {
-                // Only add up to concurrencyLimit tasks at once
-                if index < concurrencyLimit {
-                    group.addTask {
-                        await self.processDocument(document)
-                    }
-                }
-                
-                // Wait for a task to complete before adding more if we're at the limit
-                if index >= concurrencyLimit - 1 {
-                    await group.next()
-                    
-                    // Add the next document to process
-                    let nextIndex = index + concurrencyLimit
-                    if nextIndex < documentsToProcess.count {
-                        group.addTask {
-                            await self.processDocument(documentsToProcess[nextIndex])
-                        }
-                    }
-                }
-                
-                // Update progress
-                processedCount += 1
-                let progress = Float(processedCount) / Float(documentsToProcess.count)
-                await MainActor.run {
-                    self.processingProgress = progress
+            for document in documentsToProcess {
+                group.addTask {
+                    await self.processDocument(document)
                 }
             }
+            // No need to manage concurrency explicitly here, TaskGroup handles it.
+            // We update progress within processDocument now.
         }
         
         // Mark processing as complete
         await MainActor.run {
             self.isProcessing = false
+            self.currentProcessingStatus = nil // Clear status on completion
+            self.processingProgress = 1.0 // Ensure it reaches 100%
+            self.documentProgress = [:] // Clear individual progress
             self.logger.log(level: .success, message: "Processing completed", context: "Processed \(documentsToProcess.count) documents")
         }
     }
@@ -384,29 +377,64 @@ class DocumentsViewModel: ObservableObject {
         var processingStats = DocumentProcessingStats()
         processingStats.startTime = Date()
         
+        var currentDocumentProgress: Float = 0.0
+        
         do {
-            // PHASE 1: Extract text from document
+            // PHASE 1: Extract text from document (Weight: phaseWeightExtraction)
+            await MainActor.run { self.currentProcessingStatus = "Extracting text (\(document.fileName))..." }
             let (documentText, documentMimeType) = try await extractText(from: document, stats: &processingStats)
+            currentDocumentProgress += phaseWeightExtraction
+            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
             
-            // PHASE 2: Chunk the text
-            // Removed await as chunkText is now synchronous
+            // PHASE 2: Chunk the text (Weight: phaseWeightChunking)
+            await MainActor.run { self.currentProcessingStatus = "Chunking text (\(document.fileName))..." }
             let (chunks, _) = chunkText(document, text: documentText, mimeType: documentMimeType, stats: &processingStats)
+            currentDocumentProgress += phaseWeightChunking
+            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
             
             // Skip processing if no chunks were generated
             guard !chunks.isEmpty else {
                 throw ProcessingError.noChunksGenerated
             }
             
-            // PHASE 3: Generate embeddings
-            let embeddings = try await generateEmbeddings(for: document, chunks: chunks, stats: &processingStats)
+            // PHASE 3: Generate embeddings (Weight: phaseWeightEmbedding)
+            await MainActor.run { self.currentProcessingStatus = "Generating embeddings (\(document.fileName))..." }
+            let embeddingStart = Date() // Record start time for stats
+            let embeddings = try await embeddingService.generateEmbeddings(for: chunks) { batchIndex, totalBatches in
+                // Calculate progress within this phase based on batch completion
+                let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
+                let phaseProgress = self.phaseWeightEmbedding * batchProgress
+                await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+            }
+            let embeddingEnd = Date() // Record end time for stats
+            // Update stats for this phase
+            processingStats.addPhase(phase: .embeddingGeneration, start: embeddingStart, end: embeddingEnd)
+            // Ensure the full weight is added after the phase completes
+            currentDocumentProgress += phaseWeightEmbedding
+            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
             
             // Skip processing if no embeddings were generated
             guard !embeddings.isEmpty else {
                 throw ProcessingError.noEmbeddingsGenerated
             }
             
-            // PHASE 4: Upsert vectors to Pinecone
-            try await upsertVectors(for: document, embeddings: embeddings, stats: &processingStats)
+            // PHASE 4: Upsert vectors to Pinecone (Weight: phaseWeightUploading)
+            await MainActor.run { self.currentProcessingStatus = "Uploading vectors (\(document.fileName))..." }
+            let upsertStart = Date() // Record start time for stats
+            let vectorsToUpsert = embeddingService.convertToPineconeVectors(from: embeddings)
+            let upsertResponse = try await pineconeService.upsertVectors(vectorsToUpsert, namespace: selectedNamespace) { batchIndex, totalBatches in
+                 // Calculate progress within this phase based on batch completion
+                let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
+                let phaseProgress = self.phaseWeightUploading * batchProgress
+                await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+            }
+            let upsertEnd = Date() // Record end time for stats
+            // Update stats for this phase
+            processingStats.addPhase(phase: .vectorUpsert, start: upsertStart, end: upsertEnd)
+            processingStats.vectorsUploaded = upsertResponse.upsertedCount // Save actual count
+             // Ensure the full weight is added after the phase completes
+            currentDocumentProgress += phaseWeightUploading
+            await updateOverallProgress(for: document.id, progress: 1.0) // Ensure it reaches 100% for this doc
             
             // Finalize processing stats
             processingStats.endTime = Date()
@@ -416,7 +444,10 @@ class DocumentsViewModel: ObservableObject {
             await updateDocumentStats(document, stats: processingStats)
             
             logger.log(level: .success, message: "Document processed successfully", context: document.fileName)
+            
         } catch {
+            // Mark progress as complete (even on failure) to avoid stalling average
+            await updateOverallProgress(for: document.id, progress: 1.0)
             // Record end time even for failures
             processingStats.endTime = Date()
             
@@ -559,104 +590,63 @@ class DocumentsViewModel: ObservableObject {
     ///   - stats: Processing stats to update
     /// - Returns: Generated embeddings
     /// - Throws: Error if embedding generation fails
-    private func generateEmbeddings(for document: DocumentModel, chunks: [ChunkModel], stats: inout DocumentProcessingStats) async throws -> [EmbeddingModel] {
-        // Removed autoreleasepool as it's not compatible with async/await here
-        // return try await autoreleasepool { // Original line
-            let embeddingStart = Date()
-            
-            // Log the chunks being processed
-            logger.log(level: .info, message: "Generating embeddings", context: "Document: \(document.fileName), Chunks: \(chunks.count)")
-            
-            guard !chunks.isEmpty else {
-                throw ProcessingError.noChunksGenerated
-            }
-            
-            // Generate embeddings with error handling
-            let embeddings: [EmbeddingModel]
-            do {
-                embeddings = try await embeddingService.generateEmbeddings(for: chunks)
-            } catch {
-                logger.log(level: .error, message: "Embedding generation failed", context: error.localizedDescription)
-                throw ProcessingError.embeddingFailed(underlying: error)
-            }
-            
-            let embeddingEnd = Date()
-            
-            // Update embedding stats
-            stats.addPhase(
-                phase: .embeddingGeneration,
-                start: embeddingStart,
-                end: embeddingEnd
-            )
-            
-            logger.log(level: .info, message: "Embeddings generated", context: "Document: \(document.fileName), Embeddings: \(embeddings.count)")
-            
-            // Verify all chunks have embeddings
-            guard embeddings.count == chunks.count else {
-                logger.log(level: .warning, message: "Embedding count mismatch", context: "Expected \(chunks.count), got \(embeddings.count)")
-                throw ProcessingError.embeddingCountMismatch(expected: chunks.count, got: embeddings.count)
-            }
-            
-            return embeddings
-        // } // Original closing brace for autoreleasepool
-    }
+    // Note: Removed the separate 'WithProgress' helper methods as the main service calls now handle the callback directly.
     
-    /// Upsert vectors to Pinecone
+    /// Update the status of a document after processing
     /// - Parameters:
-    ///   - document: Document being processed
-    ///   - embeddings: Embeddings to upsert
-    ///   - stats: Processing stats to update
-    /// - Throws: Error if vector upsert fails
-    private func upsertVectors(for document: DocumentModel, embeddings: [EmbeddingModel], stats: inout DocumentProcessingStats) async throws {
-        // Prepare vectors for Pinecone
-        let vectors = embeddingService.convertToPineconeVectors(from: embeddings)
+    ///   - document: The document to update
+    //     var totalUpserted = 0
         
-        let upsertStart = Date()
-        var totalUpserted = 0
+    //     let batchSize = 100 // Pinecone batch size
+    //     let totalBatches = (vectors.count + batchSize - 1) / batchSize
         
-        // Upsert in batches to avoid oversized requests
-        let batchSize = 100
-        for i in stride(from: 0, to: vectors.count, by: batchSize) {
-            // Removed autoreleasepool as it's not compatible with async/await here
-            // try await autoreleasepool { // Original line
-                let end = min(i + batchSize, vectors.count)
-                let batch = Array(vectors[i..<end])
-                let batchNumber = i/batchSize + 1
+    //     // Report initial progress
+    //     // if totalBatches > 0 { await progressCallback(0.0) } // Callback handled by caller now
+        
+    //     for i in stride(from: 0, to: vectors.count, by: batchSize) {
+    //         let end = min(i + batchSize, vectors.count)
+    //         let batch = Array(vectors[i..<end])
+    //         let batchNumber = i / batchSize + 1
+            
+    //         logger.log(level: .info, message: "Upserting batch to Pinecone", context: "Batch: \(batchNumber)/\(totalBatches), Size: \(batch.count)")
+            
+    //         do {
+    //             // This call internally handles retries but not batch progress reporting back
+    //             let response = try await pineconeService.upsertVectors(batch, namespace: selectedNamespace) // Removed callback here
+    //             totalUpserted += response.upsertedCount
                 
-                logger.log(level: .info, message: "Upserting batch to Pinecone", context: "Batch: \(batchNumber), Size: \(batch.count)")
+    //             logger.log(level: .info, message: "Batch upserted", context: "Upserted: \(response.upsertedCount)")
                 
-                do {
-                    let response = try await pineconeService.upsertVectors(batch, namespace: selectedNamespace)
-                    totalUpserted += response.upsertedCount
-                    
-                    logger.log(level: .info, message: "Batch upserted", context: "Upserted: \(response.upsertedCount)")
-                    
-                    // Update global stats
-                    await MainActor.run {
-                        self.processingStats?.totalVectors += response.upsertedCount
-                    }
-                } catch {
-                    logger.log(level: .error, message: "Upsert failed for batch \(batchNumber)", context: error.localizedDescription)
-                    throw ProcessingError.upsertFailed(underlying: error)
-                }
+    //             // Report progress after each batch completes
+    //             // let batchProgress = Float(batchNumber) / Float(totalBatches) // Callback handled by caller now
+    //             // await progressCallback(batchProgress) // Callback handled by caller now
                 
-                // Add a small delay between batches to avoid rate limiting
-                if i + batchSize < vectors.count {
-                    try await Task.sleep(nanoseconds: 250_000_000) // 250ms
-                }
-            // } // Original closing brace for autoreleasepool
-        }
+    //             // Update global stats
+    //                 await MainActor.run {
+    //                     self.processingStats?.totalVectors += response.upsertedCount
+    //                 }
+    //             } catch {
+    //                 logger.log(level: .error, message: "Upsert failed for batch \(batchNumber)", context: error.localizedDescription)
+    //                 throw ProcessingError.upsertFailed(underlying: error)
+    //             }
+                
+    //             // Add a small delay between batches to avoid rate limiting
+    //             if i + batchSize < vectors.count {
+    //                 try await Task.sleep(nanoseconds: 250_000_000) // 250ms
+    //             }
+    //         // } // Original closing brace for autoreleasepool
+    //     }
         
-        let upsertEnd = Date()
+    //     let upsertEnd = Date()
         
-        // Update upsert stats
-        stats.addPhase(
-            phase: .vectorUpsert,
-            start: upsertStart,
-            end: upsertEnd
-        )
-        stats.vectorsUploaded = totalUpserted
-    }
+    //     // Update upsert stats
+    //     stats.addPhase(
+    //         phase: .vectorUpsert,
+    //         start: upsertStart,
+    //         end: upsertEnd
+    //     )
+    //     stats.vectorsUploaded = totalUpserted
+    // }
     
     /// Update the status of a document after processing
     /// - Parameters:
@@ -679,7 +669,21 @@ class DocumentsViewModel: ObservableObject {
         }
     }
     
-    /// Update document processing statistics
+    /// Recalculates and updates the overall processing progress based on individual document progress.
+    @MainActor
+    private func updateOverallProgress(for documentId: UUID, progress: Float) {
+        // Update the progress for the specific document
+        documentProgress[documentId] = min(max(progress, 0.0), 1.0) // Clamp between 0 and 1
+        
+        // Calculate the average progress across all currently processing documents
+        let totalProgress = documentProgress.values.reduce(0, +)
+        let averageProgress = documentProgress.isEmpty ? 0 : totalProgress / Float(documentProgress.count)
+        
+        // Update the main progress property
+        self.processingProgress = averageProgress
+    }
+    
+    /// Update document processing statistics (remains unchanged)
     /// - Parameters:
     ///   - document: The document to update
     ///   - stats: Processing statistics to store

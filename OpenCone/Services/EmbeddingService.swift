@@ -12,8 +12,12 @@ class EmbeddingService {
     
     /// Generate embeddings for a list of text chunks
     /// - Parameter chunks: Array of ChunkModel objects
+    /// - Parameter progressCallback: Optional closure to report batch progress (batchIndex, totalBatches)
     /// - Returns: Array of EmbeddingModel objects
-    func generateEmbeddings(for chunks: [ChunkModel]) async throws -> [EmbeddingModel] {
+    func generateEmbeddings(
+        for chunks: [ChunkModel],
+        progressCallback: ((Int, Int) async -> Void)? = nil // Add optional callback
+    ) async throws -> [EmbeddingModel] {
         guard !chunks.isEmpty else {
             logger.log(level: .warning, message: "No chunks provided to generate embeddings")
             return []
@@ -21,7 +25,8 @@ class EmbeddingService {
         
         // For large batch of chunks, process in smaller batches to conserve memory
         if chunks.count > 50 {
-            return try await generateEmbeddingsInBatches(for: chunks)
+            // Pass the callback down to the batch function
+            return try await generateEmbeddingsInBatches(for: chunks, progressCallback: progressCallback)
         }
         
         // Process in a single batch for smaller input
@@ -70,8 +75,12 @@ class EmbeddingService {
     
     /// Generate embeddings for chunks in batches to manage memory
     /// - Parameter chunks: Array of ChunkModel objects
+    /// - Parameter progressCallback: Optional closure to report batch progress
     /// - Returns: Array of EmbeddingModel objects
-    private func generateEmbeddingsInBatches(for chunks: [ChunkModel]) async throws -> [EmbeddingModel] {
+    private func generateEmbeddingsInBatches(
+        for chunks: [ChunkModel],
+        progressCallback: ((Int, Int) async -> Void)? = nil // Add callback parameter
+    ) async throws -> [EmbeddingModel] {
         logger.log(level: .info, message: "Generating embeddings in batches for \(chunks.count) chunks")
         
         let batchSize = 50 // OpenAI can handle 50 chunks at a time efficiently
@@ -83,9 +92,16 @@ class EmbeddingService {
             Array(chunks[$0..<min($0 + batchSize, chunks.count)])
         }
         
+        let totalBatches = batches.count
+        
+        // Report initial progress if callback exists
+        if totalBatches > 0 {
+            await progressCallback?(0, totalBatches)
+        }
+        
         for (index, batch) in batches.enumerated() {
             do {
-                logger.log(level: .info, message: "Processing batch \(index + 1)/\(batches.count) with \(batch.count) chunks")
+                logger.log(level: .info, message: "Processing batch \(index + 1)/\(totalBatches) with \(batch.count) chunks")
                 
                 // Get embeddings for this batch
                 let texts = batch.map { $0.content }
@@ -128,8 +144,11 @@ class EmbeddingService {
                 
                 embeddingModels.append(contentsOf: batchEmbeddings)
                 
+                // Report progress after processing the batch
+                await progressCallback?(index, totalBatches)
+                
                 // Small delay between batches to allow memory cleanup
-                if index < batches.count - 1 {
+                if index < totalBatches - 1 {
                     try await Task.sleep(nanoseconds: 100_000_000) // 100ms
                 }
                 
