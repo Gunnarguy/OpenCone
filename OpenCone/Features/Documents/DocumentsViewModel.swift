@@ -58,6 +58,15 @@ class DocumentsViewModel: ObservableObject {
     
     /// Current status message during processing
     @Published var currentProcessingStatus: String? = nil
+
+    /// Flag indicating if index/namespace operations are in progress
+    @Published var isLoadingIndexes = false // Added for index creation loading state
+
+    /// Flag to control the visibility of the create index dialog
+    @Published var showingCreateIndexDialog = false // Added for index creation dialog
+
+    /// Holds the name for the new index being created
+    @Published var newIndexName = "" // Added for index creation dialog
     
     /// Tracks the granular progress (0.0 to 1.0) for each document being processed concurrently
     @Published private var documentProgress: [UUID: Float] = [:]
@@ -314,6 +323,71 @@ class DocumentsViewModel: ObservableObject {
             self.selectedNamespace = name
             self.namespaces.append(name)
             self.logger.log(level: .info, message: "Namespace created", context: name)
+        }
+    }
+
+    /// Create a new Pinecone index
+    func createIndex() async {
+        guard !newIndexName.isEmpty else {
+            logger.log(level: .warning, message: "Index name cannot be empty")
+            return
+        }
+
+        // Validate index name format (Pinecone requirements: lowercase alphanumeric and hyphens)
+        let validNamePattern = "^[a-z0-9]+(-[a-z0-9]+)*$"
+        if newIndexName.range(of: validNamePattern, options: .regularExpression) == nil {
+            await MainActor.run {
+                self.errorMessage = "Invalid index name. Use lowercase letters, numbers, and hyphens."
+                self.logger.log(level: .error, message: "Invalid index name format", context: newIndexName)
+            }
+            return
+        }
+
+        await MainActor.run {
+            self.isLoadingIndexes = true
+            self.errorMessage = nil // Clear previous errors
+        }
+
+        do {
+            logger.log(level: .info, message: "Attempting to create index", context: newIndexName)
+            _ = try await pineconeService.createIndex(name: newIndexName, dimension: Configuration.embeddingDimension)
+            logger.log(level: .info, message: "Index creation initiated. Waiting for index to become ready...", context: newIndexName)
+
+            // Wait for the index to be ready before refreshing the list
+            let isReady = try await pineconeService.waitForIndexReady(name: newIndexName, timeout: 120) // Wait up to 2 minutes
+
+            if isReady {
+                logger.log(level: .success, message: "Index created and ready", context: newIndexName)
+                // Refresh the index list and select the new one
+                await loadIndexes()
+                await MainActor.run {
+                    // Select the newly created index
+                    if self.pineconeIndexes.contains(newIndexName) {
+                        self.selectedIndex = newIndexName
+                        // Trigger namespace loading for the new index
+                        Task { await self.setIndex(newIndexName) }
+                    }
+                }
+            } else {
+                logger.log(level: .warning, message: "Index creation timed out. It might become ready later.", context: newIndexName)
+                await MainActor.run {
+                    self.errorMessage = "Index '\(newIndexName)' creation timed out. Please refresh later."
+                }
+                // Still refresh the list, it might appear eventually
+                await loadIndexes()
+            }
+
+        } catch {
+            await MainActor.run {
+                self.errorMessage = "Failed to create index '\(newIndexName)': \(error.localizedDescription)"
+                self.logger.log(level: .error, message: "Failed to create index", context: "\(newIndexName): \(error.localizedDescription)")
+            }
+        }
+
+        await MainActor.run {
+            self.isLoadingIndexes = false
+            self.showingCreateIndexDialog = false // Close dialog regardless of outcome
+            self.newIndexName = "" // Clear the name field
         }
     }
     

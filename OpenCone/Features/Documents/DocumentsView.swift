@@ -42,8 +42,14 @@ struct DocumentsView: View {
         } message: {
             Text("Enter a name for the new namespace:")
         }
+        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) { // Added alert for index creation
+            createIndexDialogContent
+        } message: {
+            Text("Enter a name for the new index (lowercase, alphanumeric, hyphens):")
+        }
         .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
         .animation(.easeInOut(duration: 0.2), value: viewModel.documents.count)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoadingIndexes) // Animate loading state changes
     }
     
     // MARK: - UI Components
@@ -100,24 +106,38 @@ struct DocumentsView: View {
                     Task {
                         await viewModel.setIndex(index)
                     }
-                }
-            }
-            
-            // Refresh indexes button
-            Button(action: {
-                Task {
-                    await viewModel.loadIndexes()
-                }
-            }) {
-                Image(systemName: "arrow.clockwise")
-                    .foregroundColor(.blue)
-                    .padding(8)
-                    .background(Circle().fill(Color.blue.opacity(0.1)))
-            }
-            .buttonStyle(PlainButtonStyle())
-            .disabled(viewModel.isProcessing)
-        }
-    }
+                 }
+             }
+
+             HStack(spacing: 8) { // Group index buttons
+                 // Create index button
+                 Button(action: {
+                     viewModel.showingCreateIndexDialog = true
+                 }) {
+                     Image(systemName: "plus")
+                         .foregroundColor(.blue)
+                         .padding(8)
+                         .background(Circle().fill(Color.blue.opacity(0.1)))
+                 }
+                 .buttonStyle(PlainButtonStyle())
+                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+
+                 // Refresh indexes button
+                 Button(action: {
+                     Task {
+                         await viewModel.loadIndexes()
+                     }
+                 }) {
+                     Image(systemName: "arrow.clockwise")
+                         .foregroundColor(.blue)
+                         .padding(8)
+                         .background(Circle().fill(Color.blue.opacity(0.1)))
+                 }
+                 .buttonStyle(PlainButtonStyle())
+                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+             }
+         }
+     }
     
     /// Row for selecting or creating a namespace
     private var namespaceSelectorRow: some View {
@@ -147,24 +167,24 @@ struct DocumentsView: View {
                         .padding(8)
                         .background(Circle().fill(Color.blue.opacity(0.1)))
                 }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(viewModel.isProcessing)
-                
-                // Refresh namespaces button
-                Button(action: {
-                    Task {
-                        await viewModel.loadNamespaces()
-                    }
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundColor(.blue)
-                        .padding(8)
-                        .background(Circle().fill(Color.blue.opacity(0.1)))
-                }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(viewModel.isProcessing)
-            }
-        }
+                 .buttonStyle(PlainButtonStyle())
+                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+                 
+                 // Refresh namespaces button
+                 Button(action: {
+                     Task {
+                         await viewModel.loadNamespaces()
+                     }
+                 }) {
+                     Image(systemName: "arrow.clockwise")
+                         .foregroundColor(.blue)
+                         .padding(8)
+                         .background(Circle().fill(Color.blue.opacity(0.1)))
+                 }
+                 .buttonStyle(PlainButtonStyle())
+                 .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes) // Disable during processing or index loading
+             }
+         }
     }
     
     /// Section for displaying document list or empty state
@@ -463,6 +483,30 @@ struct DocumentsView: View {
                     newNamespace = ""
                 }
             }
+        }
+    }
+
+    /// Content for the create index dialog
+    private var createIndexDialogContent: some View {
+        Group {
+            TextField("Index Name", text: $viewModel.newIndexName)
+                .autocapitalization(.none)
+                .disableAutocorrection(true)
+                .onSubmit { // Allow submitting with Enter key
+                    if !viewModel.newIndexName.isEmpty {
+                        Task { await viewModel.createIndex() }
+                    }
+                }
+
+            Button("Cancel", role: .cancel) {
+                viewModel.newIndexName = "" // Clear field on cancel
+            }
+
+            Button("Create") {
+                Task { await viewModel.createIndex() }
+            }
+            // Disable Create button if name is empty or if loading
+            .disabled(viewModel.newIndexName.isEmpty || viewModel.isLoadingIndexes)
         }
     }
 }
