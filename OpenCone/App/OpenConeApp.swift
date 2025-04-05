@@ -1,5 +1,6 @@
 import SwiftUI
 
+// This key is required for iOS 11+ to properly reference the app icon
 @main
 struct OpenConeApp: App {
     // MARK: - Properties
