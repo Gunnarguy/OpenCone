@@ -7,9 +7,9 @@ struct MainView: View {
     @StateObject private var documentsViewModel: DocumentsViewModel
     @StateObject private var searchViewModel: SearchViewModel
     @StateObject private var settingsViewModel: SettingsViewModel
-    
+
     @State private var selectedTab = 0
-    
+
     /// Initialize the main view with its required view models
     /// - Parameters:
     ///   - documentsViewModel: View model for document management
@@ -20,7 +20,7 @@ struct MainView: View {
         _searchViewModel = StateObject(wrappedValue: searchViewModel)
         _settingsViewModel = StateObject(wrappedValue: settingsViewModel)
     }
-    
+
     var body: some View {
         TabView(selection: $selectedTab) {
             // MARK: Documents Tab
@@ -32,7 +32,7 @@ struct MainView: View {
                 Label("Documents", systemImage: "doc.fill")
             }
             .tag(0)
-            
+
             // MARK: Search Tab
             NavigationView {
                 SearchView(viewModel: searchViewModel)
@@ -42,7 +42,7 @@ struct MainView: View {
                 Label("Search", systemImage: "magnifyingglass")
             }
             .tag(1)
-            
+
             // MARK: Processing Log Tab
             NavigationView {
                 ProcessingView()
@@ -52,7 +52,7 @@ struct MainView: View {
                 Label("Logs", systemImage: "list.bullet")
             }
             .tag(2)
-            
+
             // MARK: Settings Tab
             NavigationView {
                 SettingsView(viewModel: settingsViewModel)
@@ -68,49 +68,58 @@ struct MainView: View {
             errorAlert
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     /// Load API keys and initialize data when view appears
     private func loadInitialData() {
         // Ensure API keys are loaded
         settingsViewModel.loadAPIKeys()
-        
+
         // Load Pinecone indexes when settings are available
         Task {
-            if !settingsViewModel.pineconeAPIKey.isEmpty {
+            // Check if Pinecone API key is available before loading indexes
+            if !settingsViewModel.pineconeAPIKey.isEmpty && !settingsViewModel.pineconeProjectId.isEmpty {
                 await documentsViewModel.loadIndexes()
                 await searchViewModel.loadIndexes()
             }
         }
     }
-    
+
     /// Binding for error alert presentation
     private var errorAlertBinding: Binding<Bool> {
         Binding<Bool>(
-            get: { 
+            get: {
+                // Check if any view model has an error message
                 documentsViewModel.errorMessage != nil ||
                 searchViewModel.errorMessage != nil ||
-                settingsViewModel.errorMessage != nil 
+                settingsViewModel.errorMessage != nil
             },
             set: { _ in
+                // Clear error messages when the alert is dismissed
                 documentsViewModel.errorMessage = nil
                 searchViewModel.errorMessage = nil
                 settingsViewModel.errorMessage = nil
             }
         )
     }
-    
+
     /// Alert view for displaying errors from any view model
     private var errorAlert: Alert {
-        Alert(
+        // Consolidate error messages from all view models
+        let errorMessages = [
+            documentsViewModel.errorMessage,
+            searchViewModel.errorMessage,
+            settingsViewModel.errorMessage
+        ]
+        .compactMap { $0 } // Remove nil values
+
+        // Create the alert message text
+        let messageText = errorMessages.isEmpty ? "Unknown error" : errorMessages.joined(separator: "\n")
+
+        return Alert(
             title: Text("Error"),
-            message: Text(
-                documentsViewModel.errorMessage ??
-                searchViewModel.errorMessage ??
-                settingsViewModel.errorMessage ?? 
-                "Unknown error"
-            ),
+            message: Text(messageText),
             dismissButton: .default(Text("OK"))
         )
     }
@@ -122,72 +131,42 @@ struct MainView: View {
     mainViewPreview()
 }
 
-/// Creates a preview instance of MainView with mock data
+/// Creates a preview instance of MainView with mock data and services
 private func mainViewPreview() -> some View {
-    // Create view models with preview services
-    let settingsViewModel = createPreviewSettingsViewModel()
-    let services = createPreviewServices(with: settingsViewModel)
-    let viewModels = createPreviewViewModels(with: services)
-    
-    return MainView(
-        documentsViewModel: viewModels.documents,
-        searchViewModel: viewModels.search,
-        settingsViewModel: settingsViewModel
-    )
-}
+    // 1. Create Preview Settings View Model
+    let settingsViewModel = SettingsViewModel()
+    settingsViewModel.openAIAPIKey = "preview-openai-key"
+    settingsViewModel.pineconeAPIKey = "preview-pinecone-key"
+    settingsViewModel.pineconeProjectId = "preview-pinecone-project"
 
-// MARK: - Preview Helpers
-
-/// Create settings view model with preview data
-private func createPreviewSettingsViewModel() -> SettingsViewModel {
-    let viewModel = SettingsViewModel()
-    viewModel.openAIAPIKey = "preview-key"
-    viewModel.pineconeAPIKey = "preview-key"
-    viewModel.pineconeProjectId = "preview-project"
-    return viewModel
-}
-
-/// Create service instances for preview
-private func createPreviewServices(with settingsViewModel: SettingsViewModel) -> (
-    fileProcessor: FileProcessorService,
-    textProcessor: TextProcessorService,
-    openAI: OpenAIService,
-    pinecone: PineconeService,
-    embedding: EmbeddingService
-) {
+    // 2. Create Preview Services
     let fileProcessor = FileProcessorService()
     let textProcessor = TextProcessorService()
     let openAI = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
     let pinecone = PineconeService(
-        apiKey: settingsViewModel.pineconeAPIKey, 
+        apiKey: settingsViewModel.pineconeAPIKey,
         projectId: settingsViewModel.pineconeProjectId
     )
     let embedding = EmbeddingService(openAIService: openAI)
-    
-    return (fileProcessor, textProcessor, openAI, pinecone, embedding)
-}
 
-/// Create view models for preview
-private func createPreviewViewModels(with services: (
-    fileProcessor: FileProcessorService,
-    textProcessor: TextProcessorService,
-    openAI: OpenAIService,
-    pinecone: PineconeService,
-    embedding: EmbeddingService
-)) -> (documents: DocumentsViewModel, search: SearchViewModel) {
-    
+    // 3. Create Preview View Models using Services
     let documentsViewModel = DocumentsViewModel(
-        fileProcessorService: services.fileProcessor,
-        textProcessorService: services.textProcessor,
-        embeddingService: services.embedding,
-        pineconeService: services.pinecone
+        fileProcessorService: fileProcessor,
+        textProcessorService: textProcessor,
+        embeddingService: embedding,
+        pineconeService: pinecone
     )
-    
+
     let searchViewModel = SearchViewModel(
-        pineconeService: services.pinecone,
-        openAIService: services.openAI,
-        embeddingService: services.embedding
+        pineconeService: pinecone,
+        openAIService: openAI,
+        embeddingService: embedding
     )
-    
-    return (documentsViewModel, searchViewModel)
+
+    // 4. Return MainView with Preview View Models
+    return MainView(
+        documentsViewModel: documentsViewModel,
+        searchViewModel: searchViewModel,
+        settingsViewModel: settingsViewModel
+    )
 }
