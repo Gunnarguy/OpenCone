@@ -1,0 +1,43 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ main ] # Or your default branch
+  pull_request:
+    branches: [ main ] # Or your default branch
+  schedule:
+    - cron: '0 0 * * 0' # Runs weekly on Sunday at midnight UTC
+
+jobs:
+  analyze:
+    name: Analyze
+    # Runner size is configurable - larger runners may be needed for large projects
+    runs-on: macos-latest # Use macos runner for Xcode builds
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'swift' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # Use latest checkout action
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3 # Use latest CodeQL init action
+      with:
+        languages: ${{ matrix.language }}
+        # If you need to specify a different query suite, add it here
+        # queries: security-extended
+
+    # Instead of autobuild, run the specific xcodebuild command
+    - name: Build Swift project
+      run: |
+        # Ensure Xcode is selected (useful if multiple versions are installed)
+        # sudo xcode-select -s /Applications/Xcode.app
+        xcodebuild -scheme OpenCone -workspace OpenCone.xcodeproj/project.xcworkspace -configuration Release clean build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3 # Use latest CodeQL analyze action
+      with:
+        category: "/language:${{matrix.language}}"
