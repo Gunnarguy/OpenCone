@@ -22,6 +22,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # Use latest checkout action
 
+    - name: Set up Xcode
+      run: |
+        sudo xcode-select -s /Applications/Xcode.app
+        xcodebuild -version
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3 # Use latest CodeQL init action
       with:
@@ -31,8 +36,6 @@ jobs:
 
     - name: Build Swift project
       run: |
-        # Ensure Xcode is selected (useful if multiple versions are installed)
-        sudo xcode-select -s /Applications/Xcode.app
         xcodebuild -scheme OpenCone -workspace OpenCone.xcodeproj/project.xcworkspace -configuration Release clean build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
 
     - name: Perform CodeQL Analysis
