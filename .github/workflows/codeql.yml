@@ -11,8 +11,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    # Runner size is configurable - larger runners may be needed for large projects
-    runs-on: macos-latest # Use macos runner for Xcode builds
+    runs-on: macos-latest # Use macOS runner for Xcode builds
 
     strategy:
       fail-fast: false
@@ -23,6 +22,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # Use latest checkout action
 
+    - name: Set up specific Xcode version
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '15.0'  # Replace with the required Xcode version
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3 # Use latest CodeQL init action
       with:
@@ -30,14 +34,12 @@ jobs:
         # If you need to specify a different query suite, add it here
         # queries: security-extended
 
-    # Instead of autobuild, run the specific xcodebuild command
     - name: Build Swift project
       run: |
-        # Ensure Xcode is selected (useful if multiple versions are installed)
-        # sudo xcode-select -s /Applications/Xcode.app
+        sudo xcode-select -s /Applications/Xcode_15.0.app  # Ensure the correct Xcode version is selected
         xcodebuild -scheme OpenCone -workspace OpenCone.xcodeproj/project.xcworkspace -configuration Release clean build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3 # Use latest CodeQL analyze action
       with:
-        category: "/language:${{matrix.language}}"
+        category: "/language:${{ matrix.language }}"
