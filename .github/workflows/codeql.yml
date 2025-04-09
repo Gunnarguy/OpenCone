@@ -46,7 +46,7 @@ jobs:
         - language: actions
           build-mode: none
         - language: swift
-          build-mode: autobuild
+          build-mode: manual # Changed from autobuild
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
@@ -84,15 +84,16 @@ jobs:
     # to build your code.
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-    - if: matrix.build-mode == 'manual'
-      shell: bash
+    # Autobuild attempts to build any compiled languages (C/C++, C#, Go, Java, Swift).
+    # If this step fails, adjust the build mode matrix for the failing language to `manual`
+    # and provide explicit build steps here. For more information, see:
+    # https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
+    - name: Build Swift (Manual)
+      if: matrix.language == 'swift' && matrix.build-mode == 'manual'
       run: |
-        echo 'If you are using a "manual" build mode for one or more of the' \
-          'languages you are analyzing, replace this with the commands to build' \
-          'your code, for example:'
-        echo '  make bootstrap'
-        echo '  make release'
-        exit 1
+        xcodebuild build -scheme OpenCone -workspace OpenCone.xcodeproj/project.xcworkspace \
+          -destination 'generic/platform=iOS' \
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
