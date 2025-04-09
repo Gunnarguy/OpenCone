@@ -10,13 +10,13 @@
 		B084F4052D9CCC1800DE1D68 /* OpenCone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenCone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXGroup section */
+/* Begin PBXFileSystemSynchronizedRootGroup section */
 		B084F4072D9CCC1800DE1D68 /* OpenCone */ = {
-			isa = PBXGroup;
+			isa = PBXFileSystemSynchronizedRootGroup;
 			path = OpenCone;
 			sourceTree = "<group>";
 		};
-/* End PBXGroup section */
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B084F4022D9CCC1800DE1D68 /* Frameworks */ = {
@@ -59,6 +59,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B084F4072D9CCC1800DE1D68 /* OpenCone */,
 			);
 			name = OpenCone;
 			packageProductDependencies = (
