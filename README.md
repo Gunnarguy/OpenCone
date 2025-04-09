@@ -1,29 +1,53 @@
-# PineBud Application
+-pro-e# OpenCone iOS App
 
-PineBud is a Retrieval Augmented Generation (RAG) system for iOS designed to process documents, generate vector embeddings, and perform semantic search using both the OpenAI and Pinecone APIs.
+OpenCone is an iOS application implementing a Retrieval Augmented Generation (RAG) system. It allows users to process local documents, generate vector embeddings using OpenAI, store them in Pinecone, and perform semantic search to get AI-generated answers based on the document content.
 
-## API Key Setup
+## Features
 
-- **OpenAI API Key:**  
-  Enter your OpenAI API key (which starts with `sk-`) in the designated field.
+*   **Document Upload & Processing:** Add documents from your device (PDF, TXT, DOCX, etc.).
+*   **Text Extraction & Chunking:** Automatically extracts text and splits it into manageable chunks.
+*   **Vector Embeddings:** Generates vector embeddings for text chunks using OpenAI models (e.g., `text-embedding-3-large`).
+*   **Pinecone Integration:** Stores and manages embeddings in a Pinecone vector database.
+*   **Semantic Search:** Search across your documents using natural language queries.
+*   **AI-Generated Answers:** Get answers synthesized by an AI model (e.g., `gpt-4o`) based on the retrieved document context.
+*   **Index & Namespace Management:** Select, create, and refresh Pinecone indexes and namespaces directly within the app.
+*   **Detailed Processing Stats:** View detailed statistics and timelines for document processing steps.
 
-- **Pinecone API Key:**  
-  **Important:** The Pinecone API key **must** begin with `pcsk_`. If an OpenAI key (starting with `sk-`) is mistakenly entered here, authentication with the Pinecone API will fail with an "Invalid JWT format" error.
+## Prerequisites
 
-- **Pinecone Project ID:**  
-  Ensure that you provide a valid Pinecone Project ID. Both the API key and project ID are required for successful JWT authentication with Pinecone.
+*   **iOS:** 17.6 or later
+*   **Xcode:** Version compatible with iOS 17.6 (e.g., Xcode 16.x) for building.
+*   **API Keys:** You need accounts and API keys for:
+    *   OpenAI
+    *   Pinecone
 
-## App Translocation Notice
+## Setup
 
-On macOS, if you encounter file system permission errors—such as "Operation not permitted"—this may be due to App Translocation. App Translocation occurs when an application is run from a temporary or unapproved location. To resolve these issues, it is recommended (but not automatically enforced) to move the PineBud.app bundle to the **/Applications** folder.  
-**Note:** This is an optional step meant for troubleshooting permission issues. The app itself will not move automatically.
+OpenCone requires API keys to interact with OpenAI and Pinecone services. The app will guide you through a setup process on the first launch or if keys are missing:
 
-## Setup Instructions
+1.  **Launch OpenCone:** Open the app on your iOS device.
+2.  **Welcome Screen:** You will be presented with a multi-step welcome screen.
+3.  **API Key Entry:** Proceed to the API Key step. You will need to enter:
+    *   **OpenAI API Key:** Your secret key from OpenAI (usually starts with `sk-...`).
+    *   **Pinecone API Key:** Your secret key from Pinecone ( **must** start with `pcsk_...`).
+    *   **Pinecone Project ID:** Your Pinecone Project ID (found in the Pinecone console under API Keys).
+4.  **Complete Setup:** Once the keys are entered correctly, tap "Next" and then "Start" to begin using the app.
 
-1. Launch PineBud and navigate to the welcome screen.
-2. Enter your API keys:
-   - Use an OpenAI API key that starts with `sk-`.
-   - Use a Pinecone API key that starts with `pcsk_` and provide the corresponding Pinecone Project ID.
-3. If you experience file system permission errors, consider moving the PineBud.app bundle to the **/Applications** folder to prevent macOS App Translocation from interfering.
+**Important:** Ensure you enter the correct keys in the designated fields. Using an OpenAI key in the Pinecone key field will cause authentication errors. Both the Pinecone API Key and Project ID are required.
 
-For further information or troubleshooting, please refer to this documentation.
+## Usage
+
+1.  **Configure:** Go to the "Documents" tab. Select or create a Pinecone index and optionally a namespace.
+2.  **Add Documents:** Tap the '+' button to add documents from your device.
+3.  **Process:** Select the documents you want to process and tap the "Process" button. The app will extract text, generate embeddings, and upload them to your selected Pinecone index/namespace. You can view processing details for each document.
+4.  **Search:** Go to the "Search" tab. Ensure the correct index/namespace is selected. Enter your question in the search bar and tap the search button.
+5.  **Review Results:** The app will display relevant source chunks from your documents and an AI-generated answer based on those sources. You can view the answer and the source details in separate tabs.
+
+## Building
+
+1.  Clone the repository.
+2.  Open `OpenCone.xcodeproj` in Xcode.
+3.  Configure code signing with your Apple Developer account.
+4.  Build and run the app on a simulator or a physical device running iOS 17.6+.
+
+*(Note: API keys are handled via the in-app setup flow and are expected to be stored securely by the `SettingsViewModel`, likely using Keychain in a production scenario, although the current implementation might use UserDefaults based on `WelcomeView`'s `saveSettings()` call.)*
