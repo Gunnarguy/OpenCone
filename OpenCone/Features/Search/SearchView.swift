@@ -63,11 +63,11 @@ struct SearchConfigurationView: View {
                 }
             }
             .buttonStyle(PlainButtonStyle()) // Use plain style to avoid default button appearance.
-            .padding(.vertical, 12)
+            .padding(.vertical, 10) // Slightly reduced vertical padding
 
             // Show configuration options only if expanded.
             if isConfigExpanded {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) { // Slightly reduced spacing
                     // Row for selecting the Pinecone index.
                     HStack {
                         Text("Index")
@@ -130,16 +130,20 @@ struct SearchConfigurationView: View {
                         .disabled(viewModel.isSearching) // Disable while searching.
                     }
                 }
-                .padding(.bottom, 12)
+                .padding(.vertical, 10) // Add vertical padding inside expanded view
+                .padding(.horizontal, 4) // Add slight horizontal padding inside
+                .background(Color(.secondarySystemBackground)) // Add subtle background when expanded
+                .cornerRadius(8) // Inner corner radius
+                .padding(.bottom, 10) // Padding below the expanded section
                 // Apply transition for smooth appearance/disappearance.
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.opacity.combined(with: .move(edge: .top))) // Refined transition
             }
         }
-        .padding(.horizontal) // Horizontal padding for the entire configuration block.
-        .background(Color(.systemBackground)) // Background color.
-        .cornerRadius(12) // Rounded corners.
-        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1) // Subtle shadow.
-        .padding(.horizontal) // Outer horizontal padding to inset the block.
+        .padding(.horizontal, 16) // Consistent horizontal padding
+        .background(Color(.systemBackground)) // Background color
+        .cornerRadius(10) // Slightly softer corner radius
+        .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 2) // Softer shadow
+        .padding(.horizontal) // Outer horizontal padding to inset the block
     }
 }
 
@@ -152,12 +156,13 @@ struct RefreshButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.clockwise")
-                .font(.footnote)
-                .foregroundColor(.blue)
-                .padding(6) // Padding inside the circle.
-                .background(Color.blue.opacity(0.1)) // Light blue background.
-                .clipShape(Circle()) // Make it circular.
+                .font(.system(size: 12, weight: .medium)) // Slightly adjusted font
+                .foregroundColor(.accentColor) // Use accent color
+                .padding(5) // Slightly reduced padding
+                .background(Color.accentColor.opacity(0.12)) // Slightly more visible background
+                .clipShape(Circle())
         }
+        .buttonStyle(PlainButtonStyle()) // Ensure no extra button styling interferes
     }
 }
 
@@ -192,8 +197,8 @@ struct SearchBarView: View {
                     }
                 }
             }
-            .background(Color(.systemGray6)) // Background for the text field area.
-            .cornerRadius(12) // Rounded corners.
+            .background(Color(.systemGray5)) // Lighter gray background
+            .cornerRadius(10) // Softer corners
 
             // Search execution button.
             Button(action: {
@@ -205,21 +210,21 @@ struct SearchBarView: View {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
-                    .frame(width: 44, height: 44) // Fixed size for the button.
+                    .frame(width: 44, height: 44) // Fixed size
                     .background(
-                        // Change background opacity based on state.
-                        viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil
-                        ? Color.blue.opacity(0.5) // Dimmed if disabled.
-                        : Color.blue // Full color if enabled.
+                        // Use accent color, animate opacity change
+                        Color.accentColor
+                            .opacity(viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil ? 0.5 : 1.0)
                     )
-                    .cornerRadius(12) // Rounded corners.
+                    .cornerRadius(10) // Softer corners
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil) // Animate background change
             }
             // Disable button if query is empty, search is ongoing, or no index is selected.
             .disabled(viewModel.searchQuery.isEmpty || viewModel.isSearching || viewModel.selectedIndex == nil)
         }
-        .padding(.horizontal) // Padding for the search bar elements.
-        .padding(.bottom, 12)
-        .padding(.top, 4)
+        .padding(.horizontal) // Padding for the search bar elements
+        .padding(.bottom, 10) // Consistent bottom padding
+        .padding(.top, 6) // Consistent top padding
     }
 }
 
@@ -272,30 +277,37 @@ struct InitialStateView: View {
             // Decorative icon element.
             ZStack {
                 Circle()
-                    .fill(Color.blue.opacity(0.1))
-                    .frame(width: 120, height: 120)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.accentColor.opacity(0.05), Color.accentColor.opacity(0.15)]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 110, height: 110) // Slightly smaller
 
                 Image(systemName: "doc.text.magnifyingglass")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 56, height: 56)
-                    .foregroundColor(.blue)
+                    .frame(width: 50, height: 50) // Slightly smaller icon
+                    .foregroundColor(Color.accentColor.opacity(0.8)) // Slightly less intense color
             }
 
             // Informational text.
-            VStack(spacing: 8) {
+            VStack(spacing: 6) { // Reduced spacing
                 Text("Document Search")
-                    .font(.title2)
-                    .fontWeight(.medium)
+                    .font(.title3) // Slightly smaller title
+                    .fontWeight(.semibold) // Bolder weight for title
 
                 Text("Ask a question to search your documents")
-                    .font(.subheadline)
+                    .font(.callout) // Slightly smaller body text
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40) // Limit text width.
+                    .padding(.horizontal, 50) // Adjust text width limit
             }
 
-            Spacer() // Balance the spacing.
+            Spacer()
+            Spacer() // Add more space at the bottom
         }
     }
 }
@@ -334,28 +346,30 @@ struct AnswerTabView: View {
 
     var body: some View {
         ScrollView { // Allow scrolling for potentially long answers.
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) { // Reduced spacing
                 // Header for the answer section.
                 HStack {
                     Text("Generated Answer")
-                        .font(.headline)
+                        .font(.title3.weight(.semibold)) // Adjusted font
                         .foregroundColor(.primary)
                     Spacer()
                     // Badge indicating the answer is AI-generated.
-                    Text("AI generated")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
+                    Text("AI Generated") // Title case
+                        .font(.caption.weight(.medium)) // Adjusted font
+                        .foregroundColor(.accentColor) // Use accent color
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.15)) // Slightly more visible background
+                        .cornerRadius(8) // Softer corners
                 }
 
                 // Display the generated answer text.
                 Text(viewModel.generatedAnswer)
-                    .padding()
-                    .background(Color(.systemGray6)) // Background for the text block.
-                    .cornerRadius(12)
+                    .font(.body) // Ensure body font
+                    .padding(16) // Increased padding
+                    .frame(maxWidth: .infinity, alignment: .leading) // Ensure leading alignment
+                    .background(Color(.secondarySystemBackground)) // Use secondary background
+                    .cornerRadius(10) // Softer corners
 
                 // Action buttons row.
                 HStack(spacing: 12) {
@@ -366,10 +380,11 @@ struct AnswerTabView: View {
                     // Button to clear the current search state.
                     ClearResultsButton(viewModel: viewModel)
                 }
-                .padding(.top, 8) // Space above the buttons.
+                .padding(.top, 4) // Reduced space above buttons
             }
-            .padding() // Padding around the content.
+            .padding() // Padding around the content
         }
+        .background(Color(.systemBackground)) // Ensure background for scroll view
     }
 }
 
@@ -389,14 +404,17 @@ struct RegenerateButton: View {
         }) {
             HStack {
                 Image(systemName: "arrow.triangle.2.circlepath") // Refresh icon.
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: .medium)) // Adjusted weight
                 Text("Regenerate")
+                    .fontWeight(.medium)
             }
-            .frame(maxWidth: .infinity) // Make button fill available width.
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity) // Make button fill available width
+            .padding(.vertical, 10) // Slightly reduced padding
         }
-        .buttonStyle(.borderedProminent) // Prominent button style.
-        .disabled(viewModel.isSearching) // Disable while an operation is in progress.
+        .buttonStyle(.borderedProminent) // Prominent button style
+        .tint(.accentColor) // Ensure accent color tint
+        .cornerRadius(10) // Softer corners
+        .disabled(viewModel.isSearching) // Disable while an operation is in progress
     }
 }
 
@@ -414,21 +432,17 @@ struct ClearResultsButton: View {
         }) {
             HStack {
                 Image(systemName: "xmark") // Clear icon.
-                    .font(.system(size: 14))
+                    .font(.system(size: 14, weight: .medium)) // Adjusted weight
                 Text("Clear")
+                    .fontWeight(.medium)
             }
-            .frame(maxWidth: .infinity) // Make button fill available width.
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity) // Make button fill available width
+            .padding(.vertical, 10) // Slightly reduced padding
         }
-        .foregroundColor(.red) // Red color for destructive action.
-        .background(Color.red.opacity(0.1)) // Light red background.
-        .cornerRadius(8)
-        .overlay(
-            // Subtle red border.
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.red.opacity(0.2), lineWidth: 1)
-        )
-        .disabled(viewModel.isSearching) // Disable while an operation is in progress.
+        .buttonStyle(.bordered) // Use bordered style for less prominence
+        .tint(.red) // Use red tint
+        .cornerRadius(10) // Softer corners
+        .disabled(viewModel.isSearching) // Disable while an operation is in progress
     }
 }
 
@@ -441,12 +455,12 @@ struct SourcesTabView: View {
 
     var body: some View {
         ScrollView { // Allow scrolling through the list of sources.
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) { // Increased spacing between rows
                 // Header for the sources list.
                 Text("Source Documents")
-                    .font(.headline)
-                    .foregroundColor(.blue) // Use accent color for header.
-                    .padding(.bottom, 8)
+                    .font(.title3.weight(.semibold)) // Adjusted font
+                    .foregroundColor(.primary) // Use primary color
+                    .padding(.bottom, 4) // Reduced bottom padding
 
                 // Iterate over search results and display each in a row.
                 ForEach(viewModel.searchResults) { result in
@@ -457,10 +471,12 @@ struct SourcesTabView: View {
                         // Action to toggle selection when the row is tapped.
                         viewModel.toggleResultSelection(result)
                     }
+                    Divider().padding(.leading, 12) // Add divider between rows, indented slightly
                 }
             }
-            .padding() // Padding around the list.
+            .padding() // Padding around the list
         }
+        .background(Color(.systemBackground)) // Ensure background
     }
 }
 
@@ -484,7 +500,7 @@ struct SearchResultRow: View {
                 isExpanded: isExpanded,
                 onToggleExpand: {
                     // Animate the expansion/collapse of the content view.
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(.easeInOut(duration: 0.25)) { // Smoother animation
                         isExpanded.toggle()
                     }
                 }
@@ -494,27 +510,27 @@ struct SearchResultRow: View {
             if isExpanded {
                 ResultContentView(content: result.content)
                     // Apply transition for smooth appearance/disappearance.
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity.combined(with: .move(edge: .top))) // Refined transition
             }
         }
-        .padding(.vertical, 12) // Vertical padding within the row background.
-        .padding(.horizontal, 12) // Horizontal padding within the row background.
+        .padding(.vertical, 10) // Slightly reduced vertical padding
+        .padding(.horizontal, 12)
         .background(
-            // Background with rounded corners and shadow.
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            // Background with rounded corners and subtle highlight on selection.
+            RoundedRectangle(cornerRadius: 10) // Softer corners
+                .fill(isSelected ? Color.accentColor.opacity(0.05) : Color(.secondarySystemBackground)) // Subtle highlight or secondary background
+                .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1) // Softer shadow
         )
         .overlay(
             // Border that changes color based on selection state.
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.blue.opacity(0.5) : Color.secondary.opacity(0.15), lineWidth: isSelected ? 2 : 1)
+            RoundedRectangle(cornerRadius: 10) // Softer corners
+                .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 1.5) // Accent border when selected, clear otherwise
         )
         .contentShape(Rectangle()) // Ensure the entire area is tappable.
         .onTapGesture {
             onTap() // Trigger the selection toggle action.
         }
-        .padding(.vertical, 4) // Vertical padding between rows.
+        // Removed vertical padding between rows, handled by spacing in parent VStack
     }
 }
 
@@ -536,36 +552,43 @@ struct ResultHeaderView: View {
                 HStack(spacing: 8) {
                     Image(systemName: getDocumentIcon(from: result.sourceDocument))
                         .foregroundColor(getDocumentColor(from: result.sourceDocument))
+                        .font(.callout) // Slightly smaller icon font
                     Text(sourceFileName(from: result.sourceDocument))
-                        .font(.headline)
+                        .font(.subheadline.weight(.medium)) // Adjusted font
                         .lineLimit(1) // Prevent long filenames from wrapping.
                 }
                 // Metadata row (currently just the score).
-                HStack(spacing: 12) {
+                HStack(spacing: 10) { // Reduced spacing
                     ResultScoreBadge(score: result.score)
                     // Placeholder comment: Additional metadata could be added here.
-                    // Example: Text("Page: \(result.metadata["page"] ?? "N/A")")
+                    // Example: Text("Page: \(result.metadata["page"] ?? "N/A")").font(.caption2).foregroundColor(.secondary)
                 }
             }
 
             Spacer() // Push elements to the sides.
 
             // Right side: Selection checkmark and expand button.
-            // Show checkmark if the item is selected.
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.blue)
-                    .font(.system(size: 18))
-            }
+            HStack(spacing: 8) { // Group checkmark and button
+                // Show checkmark if the item is selected.
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.accentColor) // Use accent color
+                        .font(.system(size: 16)) // Slightly smaller
+                        .transition(.scale.combined(with: .opacity)) // Add transition
+                }
 
-            // Expand/collapse button.
-            Button(action: onToggleExpand) {
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .foregroundColor(.secondary)
-                    .padding(6)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Circle())
+                // Expand/collapse button.
+                Button(action: onToggleExpand) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .medium)) // Adjusted font
+                        .foregroundColor(.secondary)
+                        .padding(5) // Reduced padding
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(PlainButtonStyle()) // Ensure no extra styling
             }
+            .animation(.easeInOut, value: isSelected) // Animate checkmark appearance
         }
     }
 
@@ -617,13 +640,13 @@ struct ResultScoreBadge: View {
     let score: Float // The relevance score (expecting values typically between 0 and 1).
 
     var body: some View {
-        Text("Score: \(String(format: "%.3f", score))") // Format score to 3 decimal places.
-            .font(.caption)
-            .foregroundColor(scoreColor) // Text color based on score.
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(scoreColor.opacity(0.1)) // Background color based on score (with low opacity).
-            .cornerRadius(8) // Rounded corners for the badge.
+        Text(String(format: "%.3f", score)) // Format score to 3 decimal places, remove "Score:" label
+            .font(.caption.weight(.medium)) // Adjusted font
+            .foregroundColor(scoreColor) // Text color based on score
+            .padding(.horizontal, 6) // Reduced padding
+            .padding(.vertical, 3) // Reduced padding
+            .background(scoreColor.opacity(0.12)) // Slightly more visible background
+            .cornerRadius(6) // Softer corners
     }
 
     /// Determines the color for the score badge based on the score value.
@@ -649,16 +672,18 @@ struct ResultContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider() // Separator between header and content.
-                .padding(.vertical, 8)
+                .padding(.vertical, 6) // Reduced padding
 
             // Display the document chunk content.
             Text(content)
-                .font(.body)
-                .padding(16) // Padding around the text.
+                .font(.callout) // Use callout font for content
+                .foregroundColor(.secondary) // Use secondary color for less emphasis
+                .padding(12) // Reduced padding
                 .frame(maxWidth: .infinity, alignment: .leading) // Ensure text aligns left.
-                .background(Color(.systemGray6)) // Background for the content block.
-                .cornerRadius(8) // Rounded corners.
+                .background(Color(.systemGray6)) // Keep background
+                .cornerRadius(8) // Keep corners
         }
+        .padding(.top, 6) // Add padding above the divider
     }
 }
 
