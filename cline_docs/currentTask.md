@@ -1,14 +1,22 @@
 # Current Task
 
 ## Objective
-- Set the iOS application icon using the provided image.
+- Refactor `OpenCone/Features/ProcessingLog/ProcessingView.swift` to use the MVVM pattern for better separation of concerns, testability, and maintainability.
 
 ## Context
-- The original `Contents.json` for the `AppIcon.appiconset` was non-standard.
-- A new `Contents.json` has been created (`OpenCone/Assets.xcassets/AppIcon.appiconset/Contents.json`) configured for automatic icon generation from a single source file.
-- The source image provided by the user (`/Users/gunnarhostetler/Documents/Projects/Brand+Media/Icons/8BF53015-9820-4E72-97DB-7899D2E136E8.png`) has been copied to `OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-Source-1024.png`.
-- Instructions for the user to complete the process in Xcode have been saved to `cline_docs/userInstructions/assign_app_icon.md`.
+- The original `ProcessingView` directly observed `Logger.shared` and contained filtering logic and state management.
+- `ProcessingLogEntry` struct was incorrectly located in `DocumentModel.swift`.
+
+## Changes Implemented
+- Created `OpenCone/Features/ProcessingLog/ProcessingViewModel.swift` to manage state and logic.
+- Moved `ProcessingLogEntry` struct definition to `OpenCone/Core/ProcessingLogEntry.swift`.
+- Removed `ProcessingLogEntry` definition from `OpenCone/Features/Documents/DocumentModel.swift`.
+- Refactored `ProcessingView.swift` to use `@StateObject` for `ProcessingViewModel` and bind UI elements to the ViewModel.
+- Updated the `#Preview` block in `ProcessingView.swift`.
 
 ## Next Steps
-- User needs to follow the instructions in `cline_docs/userInstructions/assign_app_icon.md` to assign the `AppIcon-Source-1024.png` image to the App Icon asset in Xcode.
-- User should then build and run the application to verify the new icon is applied correctly.
+- **Resolve Build Errors:** The user needs to investigate the persistent "Cannot find type" and "No such module 'UIKit'" errors within the Xcode environment. This likely involves:
+    - Checking if `ProcessingViewModel.swift` and `ProcessingLogEntry.swift` are correctly added to the "OpenCone" target membership.
+    - Performing a clean build (Cmd+Shift+K) and potentially deleting derived data in Xcode.
+- **Testing:** Once build errors are resolved, test the Processing Log feature thoroughly.
+- **Update Other Documentation:** Update `codebaseSummary.md` and `techStack.md` (handled in subsequent steps).

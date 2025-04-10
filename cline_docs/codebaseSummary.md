@@ -11,12 +11,13 @@
 ### Core
 - `Configuration.swift`: App configuration settings.
 - `Logger.swift`: Logging utility.
+- `ProcessingLogEntry.swift`: Defines the structure for log entries.
 - `Extensions/`: Utility extensions for standard types.
 ### Features
-- `Documents/`: Manages document loading, display, and details.
-- `ProcessingLog/`: Displays processing status/logs.
-- `Search/`: Handles search functionality.
-- `Settings/`: Manages application settings.
+- `Documents/`: Manages document loading, display, and details (`DocumentModel.swift`, `DocumentsView.swift`, `DocumentsViewModel.swift`, etc.).
+- `ProcessingLog/`: Displays processing status/logs (`ProcessingView.swift`, `ProcessingViewModel.swift`).
+- `Search/`: Handles search functionality (`SearchView.swift`, `SearchViewModel.swift`).
+- `Settings/`: Manages application settings (`SettingsView.swift`, `SettingsViewModel.swift`).
 ### Services
 - `EmbeddingService.swift`: Handles text embedding generation.
 - `FileProcessorService.swift`: Processes input files.
@@ -33,6 +34,8 @@
 - (List any other significant external libraries or APIs)
 
 ## Recent Significant Changes
+- Refactored `ProcessingLog` feature to use MVVM pattern (`ProcessingView` + `ProcessingViewModel`).
+- Moved `ProcessingLogEntry` definition from `Features/Documents/DocumentModel.swift` to `Core/ProcessingLogEntry.swift`.
 - (Track major changes to the codebase structure or functionality)
 
 ## User Feedback Integration

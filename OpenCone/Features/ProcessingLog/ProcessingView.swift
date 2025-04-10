@@ -1,32 +1,30 @@
 import SwiftUI
+import UIKit // Add import for LogExportView functionality
 
-/// View for displaying processing logs
+/// View for displaying processing logs, driven by a ViewModel.
 struct ProcessingView: View {
-    @ObservedObject private var logger = Logger.shared
-    @State private var filterLevel: ProcessingLogEntry.LogLevel? = nil
-    @State private var searchText = ""
-    @State private var showingExportOptions = false
-    @State private var autoScroll = true
-    
+    @StateObject private var viewModel = ProcessingViewModel() // Use StateObject for ViewModel lifecycle
+
     var body: some View {
         VStack {
             // Filter Controls
+            // Filter Controls - Bind to ViewModel
             HStack {
                 Menu {
                     Button("All Levels") {
-                        filterLevel = nil
+                        viewModel.filterLevel = nil
                     }
                     
                     Divider()
                     
                     ForEach(ProcessingLogEntry.LogLevel.allCases, id: \.self) { level in
                         Button(level.rawValue) {
-                            filterLevel = level
+                            viewModel.filterLevel = level
                         }
                     }
                 } label: {
                     HStack {
-                        Text(filterLevel?.rawValue ?? "All Levels")
+                        Text(viewModel.filterLevel?.rawValue ?? "All Levels") // Use viewModel state
                         Image(systemName: "chevron.down")
                             .font(.caption)
                     }
@@ -35,25 +33,23 @@ struct ProcessingView: View {
                     .cornerRadius(8)
                 }
                 
-                TextField("Search Logs", text: $searchText)
+                TextField("Search Logs", text: $viewModel.searchText) // Bind to viewModel
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                 
-                Button(action: {
-                    searchText = ""
-                    filterLevel = nil
-                }) {
+                Button(action: viewModel.resetFilters) { // Call viewModel method
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
-                .disabled(searchText.isEmpty && filterLevel == nil)
+                .disabled(viewModel.searchText.isEmpty && viewModel.filterLevel == nil) // Use viewModel state
             }
             .padding(.horizontal)
             
             // Log Entries
+            // Log Entries - Use ViewModel data
             ScrollViewReader { scrollView in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(filteredLogs) { entry in
+                        ForEach(viewModel.filteredLogs) { entry in // Iterate viewModel data
                             LogEntryRow(entry: entry)
                                 .id(entry.id)
                         }
@@ -65,8 +61,8 @@ struct ProcessingView: View {
                     }
                     .padding(.horizontal)
                 }
-                .onChange(of: logger.logEntries.count) { oldValue, newValue in
-                    if autoScroll {
+                .onChange(of: viewModel.logEntries.count) { // Observe viewModel's total count
+                    if viewModel.autoScroll { // Use viewModel state
                         withAnimation {
                             scrollView.scrollTo("bottom", anchor: .bottom)
                         }
@@ -74,25 +70,21 @@ struct ProcessingView: View {
                 }
             }
             
-            // Bottom Controls
+            // Bottom Controls - Bind to ViewModel
             HStack {
-                Toggle(isOn: $autoScroll) {
+                Toggle(isOn: $viewModel.autoScroll) { // Bind to viewModel
                     Text("Auto-scroll")
                         .font(.caption)
                 }
                 
                 Spacer()
                 
-                Button(action: {
-                    logger.clearLogs()
-                }) {
+                Button(action: viewModel.clearLogs) { // Call viewModel method
                     Label("Clear", systemImage: "trash")
                 }
                 .buttonStyle(.bordered)
                 
-                Button(action: {
-                    showingExportOptions = true
-                }) {
+                Button(action: viewModel.prepareAndShowExport) { // Call viewModel method
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.bordered)
@@ -101,34 +93,45 @@ struct ProcessingView: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Text("\(filteredLogs.count) entries")
+                Text("\(viewModel.filteredLogs.count) entries") // Use viewModel data
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
-        .sheet(isPresented: $showingExportOptions) {
-            LogExportView(logs: logger.exportLogs())
+        .sheet(isPresented: $viewModel.showingExportOptions) { // Bind to viewModel
+            // Pass the pre-formatted string from the ViewModel
+            LogExportView(logs: viewModel.exportLogString)
         }
+        // No need for the filteredLogs computed property here anymore
+    }
+}
+
+// LogEntryRow remains the same
+
+// LogExportView remains the same for now, but could be simplified later
+
+#Preview {
+    // Perform setup actions *before* returning the View
+    let setupPreview: () -> Void = {
+        // Add sample log entries directly via the shared logger
+        // The ProcessingView's @StateObject will create its own ViewModel instance,
+        // which will then subscribe to Logger.shared updates.
+        let logger = Logger.shared // Assuming Logger is accessible here for preview setup
+        logger.clearLogs() // Clear previous preview logs if any
+        logger.log(level: .info, message: "Application started (Preview)")
+        logger.log(level: .info, message: "Loading documents", context: "DocumentsViewModel (Preview)")
+        logger.log(level: .warning, message: "Missing metadata for document", context: "sample.pdf (Preview)")
+        logger.log(level: .error, message: "Failed to extract text from document", context: "Error: File not found (Preview)")
+        logger.log(level: .success, message: "Successfully processed document", context: "Chunks: 24, Vectors: 24 (Preview)")
     }
     
-    /// Filter logs based on search text and level filter
-    private var filteredLogs: [ProcessingLogEntry] {
-        var logs = logger.logEntries
-        
-        // Apply level filter
-        if let level = filterLevel {
-            logs = logs.filter { $0.level == level }
-        }
-        
-        // Apply search filter
-        if !searchText.isEmpty {
-            logs = logs.filter {
-                $0.message.localizedCaseInsensitiveContains(searchText) ||
-                ($0.context?.localizedCaseInsensitiveContains(searchText) ?? false)
-            }
-        }
-        
-        return logs
+    // Execute the setup
+    setupPreview()
+    
+    // Return the View for the preview
+    return NavigationView { // Explicit return is fine here, outside the setup closure
+        ProcessingView() // Instantiate the view directly; @StateObject handles ViewModel creation
+            .navigationTitle("Processing Log")
     }
 }
 

@@ -3,7 +3,7 @@
 ## Frontend
 - Language: Swift
 - UI Framework: SwiftUI
-- State Management: (Specify if applicable, e.g., Combine, ObservableObject)
+- State Management: Primarily SwiftUI's built-in mechanisms (`@State`, `@StateObject`, `@ObservedObject`, `@EnvironmentObject`), Combine for asynchronous operations and ViewModel updates.
 
 ## Backend / Services
 - (Specify any backend services used, e.g., Firebase, custom API)
@@ -14,4 +14,5 @@
 - (List major dependencies)
 
 ## Architecture Decisions
-- (Document key architectural choices, e.g., MVVM, VIPER)
+- MVVM (Model-View-ViewModel) is being adopted for features requiring complex state management or logic separation (e.g., `ProcessingLog`, `Search`). Simpler views may use standard SwiftUI state management.
+- Core components and services are separated for reusability.
