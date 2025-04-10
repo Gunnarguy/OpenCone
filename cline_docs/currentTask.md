@@ -1,22 +1,19 @@
 # Current Task
 
 ## Objective
-- Refactor `OpenCone/Features/ProcessingLog/ProcessingView.swift` to use the MVVM pattern for better separation of concerns, testability, and maintainability.
+- Refactor `OpenCone/Features/Documents/DocumentsView.swift` and `OpenCone/Features/Documents/DocumentDetailsView.swift` to eliminate redundant helper functions for displaying document information (icon, color, file size).
 
 ## Context
-- The original `ProcessingView` directly observed `Logger.shared` and contained filtering logic and state management.
-- `ProcessingLogEntry` struct was incorrectly located in `DocumentModel.swift`.
+- Both `DocumentsView.swift` (within its `DocumentRow` sub-view) and `DocumentDetailsView.swift` contained duplicated private helper functions (`iconForDocument`, `colorForDocument`, `formattedFileSize`).
+- This redundancy made the code harder to maintain and less consistent.
 
 ## Changes Implemented
-- Created `OpenCone/Features/ProcessingLog/ProcessingViewModel.swift` to manage state and logic.
-- Moved `ProcessingLogEntry` struct definition to `OpenCone/Core/ProcessingLogEntry.swift`.
-- Removed `ProcessingLogEntry` definition from `OpenCone/Features/Documents/DocumentModel.swift`.
-- Refactored `ProcessingView.swift` to use `@StateObject` for `ProcessingViewModel` and bind UI elements to the ViewModel.
-- Updated the `#Preview` block in `ProcessingView.swift`.
+- Created `OpenCone/Features/Documents/DocumentModel+ViewHelpers.swift` containing an extension on `DocumentModel`.
+- Added computed properties (`viewIconName`, `viewIconColor`, `formattedFileSize`) to the `DocumentModel` extension to provide view-specific display logic.
+- Refactored `DocumentsView.swift` (specifically `DocumentRow`) to remove the duplicated helper functions and use the new extension properties.
+- Refactored `DocumentDetailsView.swift` to remove the duplicated helper functions and use the new extension properties.
+- Resolved potential build issues related to target membership for the new and modified files.
 
 ## Next Steps
-- **Resolve Build Errors:** The user needs to investigate the persistent "Cannot find type" and "No such module 'UIKit'" errors within the Xcode environment. This likely involves:
-    - Checking if `ProcessingViewModel.swift` and `ProcessingLogEntry.swift` are correctly added to the "OpenCone" target membership.
-    - Performing a clean build (Cmd+Shift+K) and potentially deleting derived data in Xcode.
-- **Testing:** Once build errors are resolved, test the Processing Log feature thoroughly.
-- **Update Other Documentation:** Update `codebaseSummary.md` and `techStack.md` (handled in subsequent steps).
+- **Update Codebase Summary:** Update `codebaseSummary.md` to mention the new `DocumentModel+ViewHelpers.swift` file and the refactoring of the document views.
+- **Testing:** Build and run the application in Xcode to ensure the Documents feature (both the list and detail views) still displays correctly after the refactoring.

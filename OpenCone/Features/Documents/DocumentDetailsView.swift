@@ -60,11 +60,11 @@ struct DocumentDetailsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 // Document icon
-                Image(systemName: iconForDocument(document))
+                Image(systemName: document.viewIconName) 
                     .resizable()
                     .scaledToFit()
                     .frame(width: 32, height: 32)
-                    .foregroundColor(colorForDocument(document))
+                    .foregroundColor(document.viewIconColor) 
                 
                 VStack(alignment: .leading) {
                     Text(document.fileName)
@@ -79,7 +79,7 @@ struct DocumentDetailsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
-                        Text(formattedFileSize(document.fileSize))
+                        Text(document.formattedFileSize) 
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -373,38 +373,6 @@ struct DocumentDetailsView: View {
     }
     
     // MARK: - Helper Functions
-    
-    /// Get icon for document based on MIME type
-    private func iconForDocument(_ document: DocumentModel) -> String {
-        if document.mimeType.contains("pdf") {
-            return "doc.fill"
-        } else if document.mimeType.contains("text") || document.mimeType.contains("markdown") {
-            return "doc.text.fill"
-        } else if document.mimeType.contains("image") {
-            return "photo.fill"
-        } else {
-            return "doc.fill"
-        }
-    }
-    
-    /// Get color for document icon based on processing status
-    private func colorForDocument(_ document: DocumentModel) -> Color {
-        if document.processingError != nil {
-            return .red
-        } else if document.isProcessed {
-            return .green
-        } else {
-            return .blue
-        }
-    }
-    
-    /// Format file size for display
-    private func formattedFileSize(_ size: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: size)
-    }
     
     /// Format duration in seconds to a readable string
     private func formattedDuration(_ seconds: TimeInterval) -> String {

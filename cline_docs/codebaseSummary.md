@@ -14,7 +14,7 @@
 - `ProcessingLogEntry.swift`: Defines the structure for log entries.
 - `Extensions/`: Utility extensions for standard types.
 ### Features
-- `Documents/`: Manages document loading, display, and details (`DocumentModel.swift`, `DocumentsView.swift`, `DocumentsViewModel.swift`, etc.).
+- `Documents/`: Manages document loading, display, and details (`DocumentModel.swift`, `DocumentsView.swift`, `DocumentsViewModel.swift`, `DocumentDetailsView.swift`, `DocumentPicker.swift`, `DocumentModel+ViewHelpers.swift`). Contains view-specific helpers in the `DocumentModel` extension.
 - `ProcessingLog/`: Displays processing status/logs (`ProcessingView.swift`, `ProcessingViewModel.swift`).
 - `Search/`: Handles search functionality (`SearchView.swift`, `SearchViewModel.swift`).
 - `Settings/`: Manages application settings (`SettingsView.swift`, `SettingsViewModel.swift`).
@@ -36,6 +36,7 @@
 ## Recent Significant Changes
 - Refactored `ProcessingLog` feature to use MVVM pattern (`ProcessingView` + `ProcessingViewModel`).
 - Moved `ProcessingLogEntry` definition from `Features/Documents/DocumentModel.swift` to `Core/ProcessingLogEntry.swift`.
+- Refactored `DocumentsView` and `DocumentDetailsView` to use view-specific helper properties defined in `DocumentModel+ViewHelpers.swift`, removing duplicated code.
 - (Track major changes to the codebase structure or functionality)
 
 ## User Feedback Integration

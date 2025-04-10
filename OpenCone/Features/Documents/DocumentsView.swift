@@ -507,11 +507,11 @@ struct DocumentRow: View {
             // Document type icon with background
             ZStack {
                 Circle()
-                    .fill(colorForDocument(document).opacity(0.15))
+                    .fill(document.viewIconColor.opacity(0.15)) // Use extension property
                     .frame(width: 36, height: 36)
                 
-                Image(systemName: iconForDocument(document))
-                    .foregroundColor(colorForDocument(document))
+                Image(systemName: document.viewIconName) // Use extension property
+                    .foregroundColor(document.viewIconColor) // Use extension property
             }
             
             // Document metadata information
@@ -548,7 +548,7 @@ struct DocumentRow: View {
                 
                 metadataText(document.mimeType)
                 metadataDivider
-                metadataText(formattedFileSize(document.fileSize))
+                metadataText(document.formattedFileSize) // Use extension property
                 
                 // Chunk count for processed documents
                 if document.isProcessed {
@@ -565,8 +565,10 @@ struct DocumentRow: View {
                 }
             }
         }
-    }
-    
+    } // End of documentInfo
+
+    // MARK: - Internal Helper Views/Functions for DocumentRow
+
     /// Tag showing processed status
     private var processingTag: some View {
         Text("Processed")
@@ -607,37 +609,4 @@ struct DocumentRow: View {
             .foregroundColor(.secondary)
     }
     
-    // MARK: - Helper Functions
-    
-    /// Determine appropriate icon based on document MIME type
-    private func iconForDocument(_ document: DocumentModel) -> String {
-        if document.mimeType.contains("pdf") {
-            return "doc.fill"
-        } else if document.mimeType.contains("text") || document.mimeType.contains("markdown") {
-            return "doc.text.fill"
-        } else if document.mimeType.contains("image") {
-            return "photo.fill"
-        } else {
-            return "doc.fill"
-        }
-    }
-    
-    /// Select color for document icon based on processing status
-    private func colorForDocument(_ document: DocumentModel) -> Color {
-        if document.processingError != nil {
-            return .red
-        } else if document.isProcessed {
-            return .green
-        } else {
-            return .blue
-        }
-    }
-    
-    /// Format file size with appropriate units
-    private func formattedFileSize(_ size: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: size)
-    }
-}
+} // End of DocumentRow struct
