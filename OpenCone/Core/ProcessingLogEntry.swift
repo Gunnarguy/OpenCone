@@ -1,5 +1,5 @@
 import Foundation
-import SwiftUI // Needed for Color in LogLevel
+import SwiftUI  // Needed for Color in LogLevel
 
 /// Represents a log entry in the processing log
 struct ProcessingLogEntry: Identifiable {
@@ -23,14 +23,27 @@ struct ProcessingLogEntry: Identifiable {
         case error = "ERROR"
         case success = "SUCCESS"
 
-        var color: Color {
+        /// Get the color for this log level, with optional theme support
+        /// - Parameter theme: Optional theme to use for color
+        /// - Returns: Color for this log level
+        func color(for theme: OCTheme? = nil) -> Color {
             switch self {
-            case .debug: return .gray
-            case .info: return .blue
-            case .warning: return .orange
-            case .error: return .red
-            case .success: return .green
+            case .debug:
+                return .gray
+            case .info:
+                return theme?.primaryColor ?? .blue
+            case .warning:
+                return .orange
+            case .error:
+                return theme?.errorColor ?? .red
+            case .success:
+                return .green
             }
+        }
+
+        /// Legacy color property for backward compatibility
+        var color: Color {
+            return self.color(for: nil)
         }
     }
 }
