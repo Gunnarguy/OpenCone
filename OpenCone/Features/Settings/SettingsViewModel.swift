@@ -25,7 +25,7 @@ class SettingsViewModel: ObservableObject {
     let availableEmbeddingModels = [
         "text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large",
     ]
-    let availableCompletionModels = ["gpt-3.5-turbo", "gpt-4o"]
+    let availableCompletionModels = ["gpt-4o-mini", "gpt-4o"]
 
     private let logger = Logger.shared
     private var cancellables = Set<AnyCancellable>()
@@ -102,13 +102,13 @@ class SettingsViewModel: ObservableObject {
 
         logger.log(level: .info, message: "Settings reset to defaults")
     }
-    
+
     /// Validates if the Pinecone API key has the correct format
     /// - Returns: True if the key is non-empty and starts with "pcsk_"
     func isPineconeKeyValid() -> Bool {
         return !pineconeAPIKey.isEmpty && pineconeAPIKey.hasPrefix("pcsk_")
     }
-    
+
     /// Check if the configuration is valid
     func isConfigurationValid() -> Bool {
         // Check OpenAI API key
@@ -116,13 +116,13 @@ class SettingsViewModel: ObservableObject {
             errorMessage = "OpenAI API key is required"
             return false
         }
-        
+
         // Check Pinecone API key format
         if !isPineconeKeyValid() {
             errorMessage = "Pinecone API key must start with 'pcsk_'"
             return false
         }
-        
+
         // Check Pinecone Project ID
         if pineconeProjectId.isEmpty {
             errorMessage = "Pinecone Project ID is required"
@@ -139,7 +139,7 @@ class SettingsViewModel: ObservableObject {
             errorMessage = "Chunk overlap cannot be negative"
             return false
         }
-        
+
         if defaultChunkOverlap >= defaultChunkSize {
             errorMessage = "Chunk overlap must be less than chunk size"
             return false

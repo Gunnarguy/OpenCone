@@ -7,130 +7,58 @@ struct SettingsView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @State private var isShowingResetAlert = false
     @State private var isSaved = false
+    @State private var animateSaveIcon = false
 
     var body: some View {
-        Form {
-            // API Keys Section
-            Section(header: Text("API Keys")) {
-                SecureField("OpenAI API Key", text: $viewModel.openAIAPIKey)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                SecureField("Pinecone API Key", text: $viewModel.pineconeAPIKey)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                SecureField("Pinecone Project ID", text: $viewModel.pineconeProjectId)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-
-                Text("The Pinecone Project ID is required for API access.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // Chunking Configuration
-            Section(header: Text("Chunking Configuration")) {
-                Stepper(
-                    "Chunk Size: \(viewModel.defaultChunkSize)", value: $viewModel.defaultChunkSize,
-                    in: 100...2000, step: 100)
-
-                Stepper(
-                    "Chunk Overlap: \(viewModel.defaultChunkOverlap)",
-                    value: $viewModel.defaultChunkOverlap, in: 0...500, step: 50)
-
-                Text(
-                    "Larger chunks preserve more context but can be less specific. Overlap helps maintain context between chunks."
-                )
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
-
-            // Model Selection
-            Section(header: Text("AI Models")) {
-                Picker("Embedding Model", selection: $viewModel.embeddingModel) {
-                    ForEach(viewModel.availableEmbeddingModels, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
+        // Use a ScrollView with VStack instead of Form for more customizable appearance
+        ScrollView {
+            VStack(spacing: OCDesignSystem.Spacing.large) {
+                // API Keys section
+                settingSection(
+                    title: "API Keys",
+                    systemImage: "key.fill"
+                ) {
+                    apiKeysContent
                 }
 
-                Picker("Completion Model", selection: $viewModel.completionModel) {
-                    ForEach(viewModel.availableCompletionModels, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
+                // Processing settings section
+                settingSection(
+                    title: "Document Processing",
+                    systemImage: "gearshape.fill"
+                ) {
+                    processingSettingsContent
                 }
 
-                Text(
-                    "The embedding model converts text to vectors. The completion model generates answers from search results."
-                )
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
-
-            // Theme Settings
-            Section(header: Text("Appearance")) {
-                NavigationLink(destination: ThemeSettingsView()) {
-                    HStack {
-                        Text("Theme")
-                        Spacer()
-                        Text(themeManager.currentTheme.name)
-                            .foregroundColor(.secondary)
-                    }
+                // Model selection section
+                settingSection(
+                    title: "AI Models",
+                    systemImage: "brain.head.profile"
+                ) {
+                    modelSelectionContent
                 }
 
-                NavigationLink(destination: DesignSystemDemoView()) {
-                    Text("Design System Demo")
+                // Theme settings section
+                settingSection(
+                    title: "Appearance",
+                    systemImage: "paintpalette.fill"
+                ) {
+                    appearanceContent
+                }
+
+                // Actions section
+                actionsSection
+
+                // About section
+                settingSection(
+                    title: "About",
+                    systemImage: "info.circle.fill"
+                ) {
+                    aboutContent
                 }
             }
-
-            // Actions
-            Section {
-                Button(action: {
-                    if viewModel.isConfigurationValid() {
-                        viewModel.saveSettings()
-                        isSaved = true
-
-                        // Reset saved indicator after delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            isSaved = false
-                        }
-                    }
-                }) {
-                    HStack {
-                        Text("Save Settings")
-                        Spacer()
-                        if isSaved {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(.green)
-                        }
-                    }
-                }
-
-                Button(action: {
-                    isShowingResetAlert = true
-                }) {
-                    Text("Reset to Defaults")
-                        .foregroundColor(.red)
-                }
-            }
-
-            // App Info
-            Section(header: Text("About")) {
-                HStack {
-                    Text("OpenCone")
-                        .font(.headline)
-                    Spacer()
-                    Text("1.0.0")
-                        .foregroundColor(.secondary)
-                }
-
-                Text(
-                    "An iOS Retrieval Augmented Generation system for document processing and semantic search."
-                )
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
+            .padding()
         }
+        .background(themeManager.currentTheme.backgroundColor.ignoresSafeArea())
         .alert(isPresented: $isShowingResetAlert) {
             Alert(
                 title: Text("Reset Settings"),
@@ -157,14 +85,264 @@ struct SettingsView: View {
         }
     }
 
-    /// Set app appearance based on dark mode setting
-    private func setAppearance(darkMode: Bool) {
-        if #available(iOS 15.0, *) {
-            let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-            scene?.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
-        } else {
-            UIApplication.shared.windows.first?.overrideUserInterfaceStyle =
-                darkMode ? .dark : .light
+    // Helper function to create consistent section headers
+    private func settingSection<Content: View>(
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            HStack(spacing: OCDesignSystem.Spacing.small) {
+                Image(systemName: systemImage)
+                    .foregroundColor(themeManager.currentTheme.primaryColor)
+                    .font(.headline)
+
+                Text(title)
+                    .font(.headline)
+            }
+            .padding(.bottom, 4)
+
+            OCCard(style: .standard) {
+                content()
+            }
+        }
+    }
+
+    // API Keys content
+    private var apiKeysContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            secureFieldRow(title: "OpenAI API Key", binding: $viewModel.openAIAPIKey)
+            secureFieldRow(title: "Pinecone API Key", binding: $viewModel.pineconeAPIKey)
+            secureFieldRow(title: "Pinecone Project ID", binding: $viewModel.pineconeProjectId)
+
+            Text("The Pinecone Project ID is required for API access.")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+        }
+    }
+
+    // Processing settings content
+    private var processingSettingsContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            // Chunk Size Stepper
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Chunk Size")
+                    .font(.subheadline.bold())
+
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { Double(viewModel.defaultChunkSize) },
+                            set: { viewModel.defaultChunkSize = Int($0) }
+                        ),
+                        in: 100...2000,
+                        step: 100
+                    )
+
+                    Text("\(viewModel.defaultChunkSize)")
+                        .font(.subheadline.monospacedDigit())
+                        .frame(width: 50, alignment: .trailing)
+                }
+            }
+
+            // Chunk Overlap Stepper
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Chunk Overlap")
+                    .font(.subheadline.bold())
+
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { Double(viewModel.defaultChunkOverlap) },
+                            set: { viewModel.defaultChunkOverlap = Int($0) }
+                        ),
+                        in: 0...500,
+                        step: 50
+                    )
+
+                    Text("\(viewModel.defaultChunkOverlap)")
+                        .font(.subheadline.monospacedDigit())
+                        .frame(width: 50, alignment: .trailing)
+                }
+            }
+
+            Text(
+                "Larger chunks preserve more context but can be less specific. Overlap helps maintain context between chunks."
+            )
+            .font(.caption)
+            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            .padding(.top, 8)
+        }
+    }
+
+    // Model selection content
+    private var modelSelectionContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            // Embedding Model Picker
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Embedding Model")
+                    .font(.subheadline.bold())
+
+                Picker(selection: $viewModel.embeddingModel, label: EmptyView()) {
+                    ForEach(viewModel.availableEmbeddingModels, id: \.self) { model in
+                        Text(model).tag(model)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+
+            // Completion Model Picker
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Completion Model")
+                    .font(.subheadline.bold())
+
+                Picker(selection: $viewModel.completionModel, label: EmptyView()) {
+                    ForEach(viewModel.availableCompletionModels, id: \.self) { model in
+                        Text(model).tag(model)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+            }
+
+            Text(
+                "The embedding model converts text to vectors. The completion model generates answers from search results."
+            )
+            .font(.caption)
+            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            .padding(.top, 8)
+        }
+    }
+
+    // Appearance content
+    private var appearanceContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            NavigationLink(destination: ThemeSettingsView()) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Theme")
+                            .font(.subheadline.bold())
+
+                        Text(themeManager.currentTheme.name)
+                            .font(.caption)
+                            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                    }
+
+                    Spacer()
+
+                    // Theme color preview
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(themeManager.currentTheme.primaryColor)
+                            .frame(width: 16, height: 16)
+
+                        Circle()
+                            .fill(themeManager.currentTheme.secondaryColor)
+                            .frame(width: 16, height: 16)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            Divider()
+
+            NavigationLink(destination: DesignSystemDemoView()) {
+                HStack {
+                    Text("Design System Demo")
+                        .font(.subheadline)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+    }
+
+    // Actions section
+    private var actionsSection: some View {
+        HStack(spacing: OCDesignSystem.Spacing.medium) {
+            // Save button
+            OCButton(
+                title: "Save Settings",
+                icon: isSaved ? "checkmark" : "square.and.arrow.down",
+                action: {
+                    if viewModel.isConfigurationValid() {
+                        viewModel.saveSettings()
+                        withAnimation {
+                            isSaved = true
+                            animateSaveIcon = true
+                        }
+
+                        // Reset saved indicator after delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                isSaved = false
+                                animateSaveIcon = false
+                            }
+                        }
+                    }
+                }
+            )
+            .scaleEffect(animateSaveIcon ? 1.05 : 1.0)
+
+            // Reset button
+            OCButton(
+                title: "Reset to Defaults",
+                icon: "arrow.counterclockwise",
+                style: .destructive,
+                action: {
+                    isShowingResetAlert = true
+                }
+            )
+        }
+    }
+
+    // About content
+    private var aboutContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.small) {
+            HStack {
+                Text("OpenCone")
+                    .font(.headline)
+                Spacer()
+                Text("1.0.0")
+                    .font(.caption)
+                    .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            }
+
+            Text(
+                "An iOS Retrieval Augmented Generation system for document processing and semantic search."
+            )
+            .font(.caption)
+            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+        }
+    }
+
+    // Helper for secure text fields
+    private func secureFieldRow(title: String, binding: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.bold())
+
+            SecureField(title, text: binding)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .fill(themeManager.currentTheme.backgroundColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .stroke(
+                            themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
+                )
         }
     }
 }
