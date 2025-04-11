@@ -10,27 +10,28 @@ struct DocumentsView: View {
     @State private var showingNamespaceDialog = false
     @State private var newNamespace = ""
     @Environment(\.colorScheme) private var colorScheme
-    
+    @Environment(\.theme) private var theme  // Access the current theme
+
     // MARK: - View Body
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 // Configuration section for Pinecone settings
                 configurationSection
-                
+
                 // Document list or empty state message
                 documentListSection
-                
+
                 // Processing status indicator when documents are being processed
                 processingStatusSection
-                
+
                 // Action buttons for document operations
                 actionButtonsSection
             }
             .padding(.horizontal)
             .padding(.bottom, 20)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .background(theme.backgroundColor.ignoresSafeArea())
         .toolbar {
             addDocumentToolbarItem
         }
@@ -42,31 +43,32 @@ struct DocumentsView: View {
         } message: {
             Text("Enter a name for the new namespace:")
         }
-        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) { // Added alert for index creation
+        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) {  // Added alert for index creation
             createIndexDialogContent
         } message: {
             Text("Enter a name for the new index (lowercase, alphanumeric, hyphens):")
         }
         .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
         .animation(.easeInOut(duration: 0.2), value: viewModel.documents.count)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoadingIndexes) // Animate loading state changes
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoadingIndexes)  // Animate loading state changes
     }
-    
+
     // MARK: - UI Components
-    
+
     /// Configuration section for Pinecone index and namespace selection
     private var configurationSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Pinecone Configuration")
                 .font(.headline)
+                .foregroundColor(theme.textPrimaryColor)
                 .padding(.top, 4)
-            
+
             VStack(spacing: 12) {
                 // Index selector with refresh button
                 configCard {
                     indexSelectorRow
                 }
-                
+
                 // Namespace selector with add and refresh buttons
                 configCard {
                     namespaceSelectorRow
@@ -75,96 +77,109 @@ struct DocumentsView: View {
         }
         .padding(.top, 8)
     }
-    
+
     /// Card container for configuration items
     private func configCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(theme.cardBackgroundColor)
                     .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
             )
     }
-    
+
     /// Row for selecting Pinecone index
     private var indexSelectorRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "server.rack")
-                .foregroundColor(.blue)
+                .foregroundColor(theme.primaryColor)
                 .frame(width: 24)
-            
+
             Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
                 Text("Select Index").tag("")
                 ForEach(viewModel.pineconeIndexes, id: \.self) { index in
                     Text(index).tag(index)
                 }
             }
+            .foregroundColor(theme.textPrimaryColor)
             .frame(maxWidth: .infinity)
             .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
                 if let index = newValue, !index.isEmpty {
                     Task {
                         await viewModel.setIndex(index)
                     }
-                 }
-             }
+                }
+            }
 
-             HStack(spacing: 8) { // Group index buttons
-                 // Create index button
-                 styledButton(icon: "plus", color: .blue, action: {
-                     viewModel.showingCreateIndexDialog = true
-                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
+            HStack(spacing: 8) {  // Group index buttons
+                // Create index button
+                styledButton(
+                    icon: "plus", color: theme.primaryColor,
+                    action: {
+                        viewModel.showingCreateIndexDialog = true
+                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
 
-                 // Refresh indexes button
-                 styledButton(icon: "arrow.clockwise", color: .blue, action: {
-                     Task {
-                         await viewModel.loadIndexes()
-                     }
-                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-             }
-         }
-     }
-    
+                // Refresh indexes button
+                styledButton(
+                    icon: "arrow.clockwise", color: theme.primaryColor,
+                    action: {
+                        Task {
+                            await viewModel.loadIndexes()
+                        }
+                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
+            }
+        }
+    }
+
     /// Row for selecting or creating a namespace
     private var namespaceSelectorRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "folder")
-                .foregroundColor(.blue)
+                .foregroundColor(theme.primaryColor)
                 .frame(width: 24)
-                
-            Picker("Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")) {
+
+            Picker(
+                "Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")
+            ) {
                 Text("Default namespace").tag("")
                 ForEach(viewModel.namespaces, id: \.self) { namespace in
                     Text(namespace).tag(namespace)
                 }
             }
+            .foregroundColor(theme.textPrimaryColor)
             .frame(maxWidth: .infinity)
             .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
                 viewModel.setNamespace(newValue)
             }
-            
+
             HStack(spacing: 8) {
                 // Create namespace button
-                styledButton(icon: "plus", color: .blue, action: {
-                    showingNamespaceDialog = true
-                }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-                 
-                 // Refresh namespaces button
-                 styledButton(icon: "arrow.clockwise", color: .blue, action: {
-                     Task {
-                         await viewModel.loadNamespaces()
-                     }
-                 }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-             }
-         }
+                styledButton(
+                    icon: "plus", color: theme.primaryColor,
+                    action: {
+                        showingNamespaceDialog = true
+                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
+
+                // Refresh namespaces button
+                styledButton(
+                    icon: "arrow.clockwise", color: theme.primaryColor,
+                    action: {
+                        Task {
+                            await viewModel.loadNamespaces()
+                        }
+                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
+            }
+        }
     }
-    
+
     /// Section for displaying document list or empty state
     private var documentListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Documents")
                 .font(.headline)
-            
+                .foregroundColor(theme.textPrimaryColor)
+
             if viewModel.documents.isEmpty {
                 emptyDocumentsView
             } else {
@@ -172,45 +187,45 @@ struct DocumentsView: View {
             }
         }
     }
-    
+
     /// Empty state view when no documents are present
     private var emptyDocumentsView: some View {
         VStack(spacing: 16) {
             Spacer()
-            
+
             Image(systemName: "doc.badge.plus")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 60, height: 60)
-                .foregroundColor(.blue.opacity(0.7))
+                .foregroundColor(theme.primaryColor.opacity(0.7))
                 .padding(24)
                 .background(
                     Circle()
-                        .fill(Color.blue.opacity(0.1))
+                        .fill(theme.primaryColor.opacity(0.1))
                 )
-            
+
             VStack(spacing: 8) {
                 Text("No documents added yet")
                     .font(.headline)
-                    .foregroundColor(.primary)
-                
+                    .foregroundColor(theme.textPrimaryColor)
+
                 Text("Tap the '+' button to add documents")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(theme.textSecondaryColor)
                     .multilineTextAlignment(.center)
             }
-            
+
             Spacer()
         }
         .frame(height: 240)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
+                .fill(theme.cardBackgroundColor)
                 .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
         )
     }
-    
+
     /// List view for displaying documents
     private var documentsListView: some View {
         VStack(spacing: 12) {
@@ -223,34 +238,36 @@ struct DocumentsView: View {
             }
         }
     }
-    
+
     /// Card view for a document
     private func documentCard(for document: DocumentModel) -> some View {
         HStack {
             // Main document info with selection capability
-            DocumentRow(document: document, isSelected: viewModel.selectedDocuments.contains(document.id))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
+            DocumentRow(
+                document: document, isSelected: viewModel.selectedDocuments.contains(document.id)
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             // Details button for accessing document details
             documentDetailsButton(for: document)
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(theme.cardBackgroundColor)
                 .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(
-                            viewModel.selectedDocuments.contains(document.id) ? 
-                                Color.blue.opacity(0.5) : Color.clear, 
+                            viewModel.selectedDocuments.contains(document.id)
+                                ? theme.primaryColor.opacity(0.5) : Color.clear,
                             lineWidth: 2
                         )
                 )
         )
         .contentShape(Rectangle())
     }
-    
+
     /// Button for navigating to document details
     private func documentDetailsButton(for document: DocumentModel) -> some View {
         NavigationLink(destination: DocumentDetailsView(document: document)) {
@@ -261,13 +278,13 @@ struct DocumentsView: View {
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(Color.blue)
-                        .shadow(color: Color.blue.opacity(0.3), radius: 3, x: 0, y: 2)
+                        .fill(theme.primaryColor)
+                        .shadow(color: theme.primaryColor.opacity(0.3), radius: 3, x: 0, y: 2)
                 )
         }
         .buttonStyle(BorderlessButtonStyle())
     }
-    
+
     /// Section showing processing status and progress
     private var processingStatusSection: some View {
         Group {
@@ -277,28 +294,28 @@ struct DocumentsView: View {
                     HStack {
                         Text("Processing...")
                             .font(.headline)
-                            .foregroundColor(.primary)
-                        
+                            .foregroundColor(theme.textPrimaryColor)
+
                         Spacer()
-                        
+
                         Text("\(Int(viewModel.processingProgress * 100))%")
                             .font(.subheadline.bold())
-                            .foregroundColor(.blue)
+                            .foregroundColor(theme.primaryColor)
                     }
-                    
+
                     // Progress bar for document processing
                     ProgressView(value: viewModel.processingProgress)
-                        .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                        .progressViewStyle(LinearProgressViewStyle(tint: theme.primaryColor))
                         .scaleEffect(x: 1, y: 1.5, anchor: .center)
-                    
+
                     // Display current status message
                     if let status = viewModel.currentProcessingStatus {
                         Text(status)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(theme.textSecondaryColor)
                             .padding(.top, 4)
                     }
-                    
+
                     // Processing statistics summary
                     if let stats = viewModel.processingStats {
                         processingStatsView(stats)
@@ -307,60 +324,62 @@ struct DocumentsView: View {
                 .padding(16)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.secondarySystemBackground))
+                        .fill(theme.cardBackgroundColor)
                         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 2)
                 )
             }
         }
     }
-    
+
     /// View for displaying processing statistics
     private func processingStatsView(_ stats: DocumentsViewModel.ProcessingStats) -> some View {
         HStack(spacing: 20) {
             statItem(title: "Documents", value: "\(stats.totalDocuments)", icon: "doc.fill")
             statItem(title: "Chunks", value: "\(stats.totalChunks)", icon: "square.on.square")
-            statItem(title: "Vectors", value: "\(stats.totalVectors)", icon: "point.3.connected.trianglepath.dotted")
+            statItem(
+                title: "Vectors", value: "\(stats.totalVectors)",
+                icon: "point.3.connected.trianglepath.dotted")
         }
         .padding(.top, 8)
     }
-    
+
     /// Individual stat item
     private func statItem(title: String, value: String, icon: String) -> some View {
         VStack(spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.caption)
-                    .foregroundColor(.blue)
-                
+                    .foregroundColor(theme.primaryColor)
+
                 Text(title)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(theme.textSecondaryColor)
             }
-            
+
             Text(value)
                 .font(.headline)
-                .foregroundColor(.primary)
+                .foregroundColor(theme.textPrimaryColor)
         }
         .frame(maxWidth: .infinity)
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color.blue.opacity(0.1))
+                .fill(theme.primaryColor.opacity(0.1))
         )
     }
-    
+
     /// Section containing action buttons for documents
     private var actionButtonsSection: some View {
         HStack(spacing: 16) {
             // Process button to start document processing
             processButton
-            
+
             // Remove button to delete selected documents
             removeButton
         }
         .padding(.vertical, 8)
     }
-    
+
     /// Button for processing selected documents
     private var processButton: some View {
         Button(action: {
@@ -375,11 +394,14 @@ struct DocumentsView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(
-                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing || viewModel.selectedIndex == nil ?
-                    AnyShapeStyle(Color.blue.opacity(0.3)) :
-                    AnyShapeStyle(
+                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
+                    || viewModel.selectedIndex == nil
+                    ? AnyShapeStyle(theme.primaryColor.opacity(0.3))
+                    : AnyShapeStyle(
                         LinearGradient(
-                            gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                            gradient: Gradient(colors: [
+                                theme.primaryColor, theme.primaryColor.opacity(0.8),
+                            ]),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -387,12 +409,16 @@ struct DocumentsView: View {
             )
             .foregroundColor(.white)
             .cornerRadius(12)
-            .shadow(color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ? Color.clear : Color.blue.opacity(0.3), 
-                    radius: 5, x: 0, y: 3)
+            .shadow(
+                color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
+                    ? Color.clear : theme.primaryColor.opacity(0.3),
+                radius: 5, x: 0, y: 3)
         }
-        .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing || viewModel.selectedIndex == nil)
+        .disabled(
+            viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
+                || viewModel.selectedIndex == nil)
     }
-    
+
     /// Button for removing selected documents
     private var removeButton: some View {
         Button(action: {
@@ -407,11 +433,13 @@ struct DocumentsView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(
-                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ?
-                    AnyShapeStyle(Color.red.opacity(0.3)) :
-                    AnyShapeStyle(
+                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
+                    ? AnyShapeStyle(theme.errorColor.opacity(0.3))
+                    : AnyShapeStyle(
                         LinearGradient(
-                            gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]),
+                            gradient: Gradient(colors: [
+                                theme.errorColor, theme.errorColor.opacity(0.8),
+                            ]),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -419,12 +447,14 @@ struct DocumentsView: View {
             )
             .foregroundColor(.white)
             .cornerRadius(12)
-            .shadow(color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing ? Color.clear : Color.red.opacity(0.3), 
-                    radius: 5, x: 0, y: 3)
+            .shadow(
+                color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
+                    ? Color.clear : theme.errorColor.opacity(0.3),
+                radius: 5, x: 0, y: 3)
         }
         .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing)
     }
-    
+
     /// Toolbar item for adding new documents
     private var addDocumentToolbarItem: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
@@ -432,23 +462,23 @@ struct DocumentsView: View {
                 showingDocumentPicker = true
             }) {
                 Image(systemName: "plus")
-                    .foregroundColor(.blue)
+                    .foregroundColor(theme.primaryColor)
             }
             .disabled(viewModel.isProcessing)
         }
     }
-    
+
     /// Content for the namespace creation dialog
     private var namespaceDialogContent: some View {
         Group {
             TextField("Namespace Name", text: $newNamespace)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
-            
+
             Button("Cancel", role: .cancel) {
                 newNamespace = ""
             }
-            
+
             Button("Create") {
                 if !newNamespace.isEmpty {
                     viewModel.createNamespace(newNamespace)
@@ -464,14 +494,14 @@ struct DocumentsView: View {
             TextField("Index Name", text: $viewModel.newIndexName)
                 .autocapitalization(.none)
                 .disableAutocorrection(true)
-                .onSubmit { // Allow submitting with Enter key
+                .onSubmit {  // Allow submitting with Enter key
                     if !viewModel.newIndexName.isEmpty {
                         Task { await viewModel.createIndex() }
                     }
                 }
 
             Button("Cancel", role: .cancel) {
-                viewModel.newIndexName = "" // Clear field on cancel
+                viewModel.newIndexName = ""  // Clear field on cancel
             }
 
             Button("Create") {
@@ -484,7 +514,9 @@ struct DocumentsView: View {
 }
 
 /// Utility function to create a styled button with an icon and action
-private func styledButton(icon: String, color: Color, action: @escaping () -> Void, isDisabled: Bool) -> some View {
+private func styledButton(
+    icon: String, color: Color, action: @escaping () -> Void, isDisabled: Bool
+) -> some View {
     Button(action: action) {
         Image(systemName: icon)
             .foregroundColor(color)
@@ -500,44 +532,46 @@ struct DocumentRow: View {
     // MARK: - Properties
     let document: DocumentModel
     let isSelected: Bool
-    
+    @Environment(\.theme) private var theme  // Access the current theme
+
     // MARK: - View Body
     var body: some View {
         HStack(spacing: 12) {
             // Document type icon with background
             ZStack {
                 Circle()
-                    .fill(document.viewIconColor.opacity(0.15)) // Use extension property
+                    .fill(document.viewIconColor.opacity(0.15))
                     .frame(width: 36, height: 36)
-                
-                Image(systemName: document.viewIconName) // Use extension property
-                    .foregroundColor(document.viewIconColor) // Use extension property
+
+                Image(systemName: document.viewIconName)
+                    .foregroundColor(document.viewIconColor)
             }
-            
+
             // Document metadata information
             documentInfo
-            
+
             Spacer()
-            
+
             // Selection indicator
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.blue)
+                    .foregroundColor(theme.primaryColor)
                     .font(.system(size: 20))
             }
         }
     }
-    
+
     // MARK: - UI Components
-    
+
     /// Document information display
     private var documentInfo: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Document filename
             Text(document.fileName)
                 .font(.headline)
+                .foregroundColor(theme.textPrimaryColor)
                 .lineLimit(1)
-            
+
             // Document metadata row
             HStack(spacing: 6) {
                 if document.isProcessed {
@@ -545,11 +579,11 @@ struct DocumentRow: View {
                 } else if document.processingError != nil {
                     errorTag
                 }
-                
+
                 metadataText(document.mimeType)
                 metadataDivider
-                metadataText(document.formattedFileSize) // Use extension property
-                
+                metadataText(document.formattedFileSize)
+
                 // Chunk count for processed documents
                 if document.isProcessed {
                     metadataDivider
@@ -557,7 +591,7 @@ struct DocumentRow: View {
                         Image(systemName: "square.on.square")
                             .font(.system(size: 10))
                             .foregroundColor(.green.opacity(0.8))
-                        
+
                         Text("\(document.chunkCount)")
                             .font(.caption)
                             .foregroundColor(.green)
@@ -565,7 +599,7 @@ struct DocumentRow: View {
                 }
             }
         }
-    } // End of documentInfo
+    }
 
     // MARK: - Internal Helper Views/Functions for DocumentRow
 
@@ -581,7 +615,7 @@ struct DocumentRow: View {
             )
             .foregroundColor(.green)
     }
-    
+
     /// Tag showing error status
     private var errorTag: some View {
         Text("Error")
@@ -590,23 +624,23 @@ struct DocumentRow: View {
             .padding(.vertical, 2)
             .background(
                 Capsule()
-                    .fill(Color.red.opacity(0.15))
+                    .fill(theme.errorLight)
             )
-            .foregroundColor(.red)
+            .foregroundColor(theme.errorColor)
     }
-    
+
     /// Metadata divider dot
     private var metadataDivider: some View {
         Text("•")
             .font(.caption)
-            .foregroundColor(.secondary)
+            .foregroundColor(theme.textSecondaryColor)
     }
-    
+
     /// Helper function for consistent metadata text styling
     private func metadataText(_ text: String) -> some View {
         Text(text)
             .font(.caption)
-            .foregroundColor(.secondary)
+            .foregroundColor(theme.textSecondaryColor)
     }
-    
-} // End of DocumentRow struct
+
+}  // End of DocumentRow struct
