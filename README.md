@@ -1,5 +1,3 @@
--pro-e# OpenCone iOS App
-
 OpenCone is an iOS application implementing a Retrieval Augmented Generation (RAG) system. It allows users to process local documents, generate vector embeddings using OpenAI, store them in Pinecone, and perform semantic search to get AI-generated answers based on the document content.
 
 ## Features
