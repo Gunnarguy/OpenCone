@@ -7,12 +7,12 @@ struct OpenConeApp: App {
     // Core services used throughout the app
     private let fileProcessorService = FileProcessorService()
     private let textProcessorService = TextProcessorService()
-    private let logger = Logger.shared // Centralized logging instance
+    private let logger = Logger.shared  // Centralized logging instance
 
     // View models managing state for different features
-    @StateObject private var settingsViewModel = SettingsViewModel() // Manages app settings and API keys
-    @State private var documentsViewModel: DocumentsViewModel? // Manages document processing
-    @State private var searchViewModel: SearchViewModel? // Manages search functionality
+    @StateObject private var settingsViewModel = SettingsViewModel()  // Manages app settings and API keys
+    @State private var documentsViewModel: DocumentsViewModel?  // Manages document processing
+    @State private var searchViewModel: SearchViewModel?  // Manages search functionality
 
     // Tracks the current state of the app (loading, welcome, main, error)
     @State private var appState: AppState = .loading
@@ -26,13 +26,13 @@ struct OpenConeApp: App {
                 case .loading:
                     // Show loading indicator while initializing
                     LoadingView()
-                        .onAppear(perform: handleAppLaunch) // Trigger launch logic when view appears
+                        .onAppear(perform: handleAppLaunch)  // Trigger launch logic when view appears
 
                 case .welcome:
                     // Show welcome/setup screen for first launch or missing keys
                     WelcomeView(
                         settingsViewModel: settingsViewModel,
-                        onComplete: handleWelcomeComplete // Callback when setup is done
+                        onComplete: handleWelcomeComplete  // Callback when setup is done
                     )
 
                 case .main:
@@ -47,7 +47,7 @@ struct OpenConeApp: App {
                         // Fallback error view if view models are unexpectedly nil
                         ErrorView(
                             message: "Failed to load main application components.",
-                            retryAction: { appState = .loading } // Retry initialization
+                            retryAction: { appState = .loading }  // Retry initialization
                         )
                     }
 
@@ -55,20 +55,11 @@ struct OpenConeApp: App {
                     // Show a generic error view with a retry option
                     ErrorView(
                         message: message,
-                        retryAction: { appState = .welcome } // Go back to welcome/setup on retry
+                        retryAction: { appState = .welcome }  // Go back to welcome/setup on retry
                     )
                 }
             }
-            // Apply dark mode setting globally if needed (can be done here or in MainView)
-            .preferredColorScheme(settingsViewModel.isDarkMode ? .dark : .light)
-            .onAppear {
-                // Ensure appearance is set correctly when the window group appears
-                setAppearance(darkMode: settingsViewModel.isDarkMode)
-            }
-            .onChange(of: settingsViewModel.isDarkMode) { _, newValue in
-                 // Update appearance dynamically when the setting changes
-                setAppearance(darkMode: newValue)
-            }
+            .withTheme()  // Apply the current theme to the entire app
         }
     }
 
@@ -132,8 +123,10 @@ struct OpenConeApp: App {
         DispatchQueue.main.async {
             self.documentsViewModel = viewModels.documentsVM
             self.searchViewModel = viewModels.searchVM
-            self.appState = .main // Transition to the main application view
-            logger.log(level: .success, message: "Services and ViewModels initialized. App state set to .main.")
+            self.appState = .main  // Transition to the main application view
+            logger.log(
+                level: .success,
+                message: "Services and ViewModels initialized. App state set to .main.")
 
             // Start loading Pinecone indexes in the background
             self.loadIndexes(documentsVM: viewModels.documentsVM, searchVM: viewModels.searchVM)
@@ -143,11 +136,15 @@ struct OpenConeApp: App {
     /// Validates that essential API keys (OpenAI, Pinecone) and the Pinecone Project ID are configured.
     /// - Returns: `true` if all required keys/IDs are present, `false` otherwise.
     private func validateAPIKeys() -> Bool {
-        let isValid = !settingsViewModel.openAIAPIKey.isEmpty &&
-                      !settingsViewModel.pineconeAPIKey.isEmpty &&
-                      !settingsViewModel.pineconeProjectId.isEmpty // Project ID is crucial for Pinecone auth
+        let isValid =
+            !settingsViewModel.openAIAPIKey.isEmpty && !settingsViewModel.pineconeAPIKey.isEmpty
+            && !settingsViewModel.pineconeProjectId.isEmpty  // Project ID is crucial for Pinecone auth
         if !isValid {
-            logger.log(level: .warning, message: "API Key validation failed. Missing OpenAI Key, Pinecone Key, or Pinecone Project ID.")
+            logger.log(
+                level: .warning,
+                message:
+                    "API Key validation failed. Missing OpenAI Key, Pinecone Key, or Pinecone Project ID."
+            )
         }
         return isValid
     }
@@ -155,7 +152,11 @@ struct OpenConeApp: App {
     /// Handles the scenario where required API keys are missing during initialization.
     /// Logs an error and sets the app state back to `.welcome` to prompt the user for setup.
     private func handleMissingAPIKeys() {
-        logger.log(level: .error, message: "Cannot initialize services: Required API keys or Project ID are missing. Redirecting to Welcome screen.")
+        logger.log(
+            level: .error,
+            message:
+                "Cannot initialize services: Required API keys or Project ID are missing. Redirecting to Welcome screen."
+        )
         // Set state to welcome to allow the user to enter keys
         appState = .welcome
     }
@@ -163,7 +164,9 @@ struct OpenConeApp: App {
     /// Creates instances of the core network/processing services.
     /// Requires valid API keys to be available in `settingsViewModel`.
     /// - Returns: A tuple containing initialized `OpenAIService`, `PineconeService`, and `EmbeddingService`.
-    private func createServices() -> (openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService) {
+    private func createServices() -> (
+        openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService
+    ) {
         // Initialize OpenAI service with its API key
         let openAIService = OpenAIService(apiKey: settingsViewModel.openAIAPIKey)
         // Initialize Pinecone service with its API key and Project ID
@@ -181,7 +184,11 @@ struct OpenConeApp: App {
     /// Creates instances of the main view models, injecting their required service dependencies.
     /// - Parameter services: A tuple containing the initialized core services.
     /// - Returns: A tuple containing initialized `DocumentsViewModel` and `SearchViewModel`.
-    private func createViewModels(with services: (openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService)) -> (documentsVM: DocumentsViewModel, searchVM: SearchViewModel) {
+    private func createViewModels(
+        with services: (
+            openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService
+        )
+    ) -> (documentsVM: DocumentsViewModel, searchVM: SearchViewModel) {
         // Initialize Documents view model with its dependencies
         let documentsVM = DocumentsViewModel(
             fileProcessorService: fileProcessorService,
@@ -220,11 +227,12 @@ struct OpenConeApp: App {
     /// Sets the application's user interface style (light/dark).
     /// - Parameter darkMode: A boolean indicating whether dark mode should be enabled.
     private func setAppearance(darkMode: Bool) {
-         // Access the first connected window scene to set the appearance
+        // Access the first connected window scene to set the appearance
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         // Use overrideUserInterfaceStyle to force light or dark mode
         scene?.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
-        logger.log(level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode.")
+        logger.log(
+            level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode.")
     }
 }
 
@@ -239,7 +247,7 @@ enum AppState {
     /// The main operational state where the user interacts with the core features.
     case main
     /// State indicating an unrecoverable error occurred during initialization.
-    case error(String) // Associated value holds the error message
+    case error(String)  // Associated value holds the error message
 }
 
 // MARK: - Helper Views
@@ -268,63 +276,63 @@ struct LoadingView: View {
             ProgressView()
                 .padding(.top, 20)
         }
-        .padding() // Add padding around the content
+        .padding()  // Add padding around the content
     }
 }
 
 /// A view displayed when a critical initialization error occurs.
 /// Provides an error message and a retry mechanism.
 struct ErrorView: View {
-    let message: String // The error message to display
-    let retryAction: () -> Void // Action to perform when the retry button is tapped
+    let message: String  // The error message to display
+    let retryAction: () -> Void  // Action to perform when the retry button is tapped
 
     var body: some View {
         VStack(spacing: 20) {
             // Error icon
-            Image(systemName: "exclamationmark.triangle.fill") // Use filled icon for more emphasis
+            Image(systemName: "exclamationmark.triangle.fill")  // Use filled icon for more emphasis
                 .resizable()
                 .scaledToFit()
-                .frame(width: 60, height: 60) // Slightly smaller icon
+                .frame(width: 60, height: 60)  // Slightly smaller icon
                 .foregroundColor(.orange)
 
             // Error title
             Text("Initialization Error")
-                .font(.title2.bold()) // Adjusted font size
+                .font(.title2.bold())  // Adjusted font size
 
             // Detailed error message
             Text(message)
-                .font(.body) // Use body font for better readability
+                .font(.body)  // Use body font for better readability
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal) // Add horizontal padding
+                .padding(.horizontal)  // Add horizontal padding
 
             // Retry button
             Button(action: retryAction) {
-                Label("Retry Setup", systemImage: "arrow.clockwise") // More descriptive label
+                Label("Retry Setup", systemImage: "arrow.clockwise")  // More descriptive label
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 10) // Adjusted padding
+                    .padding(.vertical, 10)  // Adjusted padding
                     .background(Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(8)
             }
             .padding(.top, 20)
         }
-        .padding() // Add padding around the content
+        .padding()  // Add padding around the content
     }
 }
 
 /// A reusable view component for displaying a feature highlight with an icon and text.
 /// Used primarily in the `WelcomeView`.
 struct FeatureRow: View {
-    let icon: String // SF Symbol name for the icon
-    let text: String // Description of the feature
+    let icon: String  // SF Symbol name for the icon
+    let text: String  // Description of the feature
 
     var body: some View {
         HStack(spacing: 12) {
             // Icon for the feature
             Image(systemName: icon)
                 .foregroundColor(.blue)
-                .frame(width: 24, alignment: .center) // Ensure consistent icon alignment
+                .frame(width: 24, alignment: .center)  // Ensure consistent icon alignment
 
             // Feature description text
             Text(text)

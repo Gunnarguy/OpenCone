@@ -1,7 +1,6 @@
 import Combine
 import Foundation
-
-// Removed incorrect import PineconeClient
+import SwiftUI
 
 // MARK: - Error Handling Enum
 
@@ -66,6 +65,16 @@ class SearchViewModel: ObservableObject {
         static let topKResults = 10  // Reduced from 20 for potentially faster/cheaper generation
         static let openAISystemPrompt =
             "Answer the user's question using ONLY the information provided in the context. If the answer isn't in the context, say you don't have enough information. Be concise and directly answer the question."
+
+        /// Transition duration for animations
+        static let transitionDuration: Double = 0.3
+
+        /// Semantic colors for result categories
+        static let scoreColors: [(threshold: Float, name: String)] = [
+            (0.9, "High Relevance"),
+            (0.7, "Medium Relevance"),
+            (0.0, "Low Relevance"),
+        ]
     }
 
     // MARK: - Dependencies
@@ -73,6 +82,7 @@ class SearchViewModel: ObservableObject {
     private let openAIService: OpenAIService
     private let embeddingService: EmbeddingService
     private let logger = Logger.shared
+    private var themeManager = ThemeManager.shared
 
     // Published properties for UI binding
     @Published var searchQuery = ""
@@ -85,6 +95,12 @@ class SearchViewModel: ObservableObject {
     @Published var namespaces: [String] = []
     @Published var selectedIndex: String? = nil
     @Published var selectedNamespace: String? = nil
+    @Published var lastSearchTime: Date? = nil
+    @Published var currentTheme: OCTheme = ThemeManager.shared.currentTheme
+
+    // Visual state properties
+    @Published var searchResultsOpacity: Double = 0.0
+    @Published var answerGenerationProgress: Double = 0.0
 
     // Cancellables for managing subscriptions
     private var cancellables = Set<AnyCancellable>()
@@ -96,6 +112,34 @@ class SearchViewModel: ObservableObject {
         self.pineconeService = pineconeService
         self.openAIService = openAIService
         self.embeddingService = embeddingService
+
+        // Subscribe to theme changes
+        themeManager.$currentTheme
+            .sink { [weak self] theme in
+                self?.currentTheme = theme
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Get color for a search result based on score
+    func getColorForScore(_ score: Float) -> Color {
+        if score > 0.9 {
+            return currentTheme.successColor
+        } else if score > 0.7 {
+            return currentTheme.infoColor
+        } else {
+            return currentTheme.warningColor
+        }
+    }
+
+    /// Get relevance label for a search result based on score
+    func getRelevanceLabel(_ score: Float) -> String {
+        for (threshold, name) in Constants.scoreColors {
+            if score >= threshold {
+                return name
+            }
+        }
+        return "Low Relevance"
     }
 
     /// Load available Pinecone indexes
@@ -107,11 +151,11 @@ class SearchViewModel: ObservableObject {
                 if !indexes.isEmpty && self.selectedIndex == nil {
                     self.selectedIndex = indexes[0]
                 }
-             }
-         } catch {
-             await handleError(SearchError.indexLoadingFailed(error)) // Add await
-         }
-     }
+            }
+        } catch {
+            await handleError(SearchError.indexLoadingFailed(error))  // Add await
+        }
+    }
 
     /// Set the current Pinecone index
     /// - Parameter indexName: Name of the index to set
@@ -121,11 +165,11 @@ class SearchViewModel: ObservableObject {
             await loadNamespaces()
             await MainActor.run {
                 self.selectedIndex = indexName
-             }
-         } catch {
-             await handleError(SearchError.indexSetFailed(error)) // Add await
-         }
-     }
+            }
+        } catch {
+            await handleError(SearchError.indexSetFailed(error))  // Add await
+        }
+    }
 
     /// Load available namespaces for the current index
     func loadNamespaces() async {
@@ -144,11 +188,11 @@ class SearchViewModel: ObservableObject {
                 if self.selectedNamespace == nil || !namespaces.contains(self.selectedNamespace!) {
                     self.selectedNamespace = namespaces.first
                 }
-             }
-         } catch {
-             await handleError(SearchError.namespaceLoadingFailed(error)) // Add await
-         }
-     }
+            }
+        } catch {
+            await handleError(SearchError.namespaceLoadingFailed(error))  // Add await
+        }
+    }
 
     /// Set the current namespace
     /// - Parameter namespace: Namespace to set
@@ -171,20 +215,23 @@ class SearchViewModel: ObservableObject {
         }
     }
 
-     /// Perform a search with the current query
-     func performSearch() async {
-         guard !searchQuery.isEmpty else {
-             await handleError(SearchError.missingSelection("a query")) // Add await
-             return
-         }
-         guard selectedIndex != nil else {
-             await handleError(SearchError.missingSelection("an index")) // Add await
-              return
-          }
- 
-         await resetSearchState()  // Add await - Reset state before starting
- 
-         do {
+    /// Perform a search with the current query
+    func performSearch() async {
+        guard !searchQuery.isEmpty else {
+            await handleError(SearchError.missingSelection("a query"))  // Add await
+            return
+        }
+        guard selectedIndex != nil else {
+            await handleError(SearchError.missingSelection("an index"))  // Add await
+            return
+        }
+
+        await resetSearchState()  // Add await - Reset state before starting
+
+        // Record search start time
+        let searchStartTime = Date()
+
+        do {
             // Generate embedding for query
             let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: searchQuery)
 
@@ -205,10 +252,22 @@ class SearchViewModel: ObservableObject {
                 )
             }
 
+            // Simulate answer generation progress for visual feedback
+            await MainActor.run {
+                self.searchResults = results
+                self.searchResultsOpacity = 1.0
+                self.answerGenerationProgress = 0.3
+            }
+
             // Generate answer using OpenAI
             let context = results.prefix(5).map { result in  // Still using top 5 for context generation
                 "Source: \(result.sourceDocument)\n\(result.content)"
             }.joined(separator: "\n\n")
+
+            // Progress update
+            await MainActor.run {
+                self.answerGenerationProgress = 0.6
+            }
 
             let answer = try await openAIService.generateCompletion(
                 systemPrompt: Constants.openAISystemPrompt,  // Use constant
@@ -217,38 +276,39 @@ class SearchViewModel: ObservableObject {
             )
 
             await MainActor.run {
-                self.searchResults = results
                 self.generatedAnswer = answer
                 self.isSearching = false
+                self.answerGenerationProgress = 1.0
+                self.lastSearchTime = searchStartTime
                 self.logger.log(
                     level: .success, message: "Search completed",
-                     context: "Found \(results.count) results")
-             }
-         // Removed specific catch blocks as types were not found
-         } catch {
-             // Log error appropriately - decide if it's embedding, query, or generation
-             // For now, defaulting to queryFailed, but this could be improved if needed
-             await handleError(SearchError.queryFailed(error))  // Add await - Generic fallback
-         }
-     }
-
-     /// Clear current search results and query
-     @MainActor // Mark as MainActor since it calls resetSearchState
-     func clearSearch() {
-         searchQuery = ""
-         resetSearchState()  // Use reset function
+                    context: "Found \(results.count) results")
+            }
+            // Removed specific catch blocks as types were not found
+        } catch {
+            // Log error appropriately - decide if it's embedding, query, or generation
+            // For now, defaulting to queryFailed, but this could be improved if needed
+            await handleError(SearchError.queryFailed(error))  // Add await - Generic fallback
+        }
     }
 
-     /// Generate an answer based on selected results
-     func generateAnswerFromSelected() async {
-         guard !selectedResults.isEmpty else {
-             await handleError(SearchError.missingSelection("at least one source document")) // Add await
-             return
-         }
-         guard !searchQuery.isEmpty else {
-             await handleError(SearchError.missingSelection("a query")) // Add await
-             return
-         }
+    /// Clear current search results and query
+    @MainActor  // Mark as MainActor since it calls resetSearchState
+    func clearSearch() {
+        searchQuery = ""
+        resetSearchState()  // Use reset function
+    }
+
+    /// Generate an answer based on selected results
+    func generateAnswerFromSelected() async {
+        guard !selectedResults.isEmpty else {
+            await handleError(SearchError.missingSelection("at least one source document"))  // Add await
+            return
+        }
+        guard !searchQuery.isEmpty else {
+            await handleError(SearchError.missingSelection("a query"))  // Add await
+            return
+        }
 
         await MainActor.run {
             self.isSearching = true
@@ -273,14 +333,14 @@ class SearchViewModel: ObservableObject {
                 self.isSearching = false
                 self.logger.log(
                     level: .success, message: "Answer generated from selected results",
-                     context: "Using \(selectedResults.count) results")
-             }
-         // Removed specific catch block as type was not found
-         } catch {
-             // Defaulting to answerGenerationFailed for any error in this block
-             await handleError(SearchError.answerGenerationFailed(error))  // Add await - Generic fallback
-         }
-     }
+                    context: "Using \(selectedResults.count) results")
+            }
+            // Removed specific catch block as type was not found
+        } catch {
+            // Defaulting to answerGenerationFailed for any error in this block
+            await handleError(SearchError.answerGenerationFailed(error))  // Add await - Generic fallback
+        }
+    }
 
     // MARK: - Private Helpers
 
@@ -298,14 +358,14 @@ class SearchViewModel: ObservableObject {
     /// - Parameter error: The SearchError that occurred.
     @MainActor
     private func handleError(_ error: SearchError) {
-         self.errorMessage = "\(error.localizedDescription) \(error.recoverySuggestion ?? "")"
-          self.isSearching = false  // Ensure searching indicator is turned off on error
-          // Use the fully qualified LogLevel as defined in Logger.swift / DocumentModel.swift
-          self.logger.log( 
-              level: ProcessingLogEntry.LogLevel.error, 
-              message: error.localizedDescription,
-              context: error.underlyingError?.localizedDescription ?? "No underlying error details.")
-      }
- }
- 
- // Removed placeholder error struct definitions
+        self.errorMessage = "\(error.localizedDescription) \(error.recoverySuggestion ?? "")"
+        self.isSearching = false  // Ensure searching indicator is turned off on error
+        // Use the fully qualified LogLevel as defined in Logger.swift / DocumentModel.swift
+        self.logger.log(
+            level: ProcessingLogEntry.LogLevel.error,
+            message: error.localizedDescription,
+            context: error.underlyingError?.localizedDescription ?? "No underlying error details.")
+    }
+}
+
+// Removed placeholder error struct definitions

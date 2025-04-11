@@ -4,9 +4,10 @@ import SwiftUI
 /// View for app settings
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var isShowingResetAlert = false
     @State private var isSaved = false
-    
+
     var body: some View {
         Form {
             // API Keys Section
@@ -14,31 +15,37 @@ struct SettingsView: View {
                 SecureField("OpenAI API Key", text: $viewModel.openAIAPIKey)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                
+
                 SecureField("Pinecone API Key", text: $viewModel.pineconeAPIKey)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                
+
                 SecureField("Pinecone Project ID", text: $viewModel.pineconeProjectId)
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                
+
                 Text("The Pinecone Project ID is required for API access.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             // Chunking Configuration
             Section(header: Text("Chunking Configuration")) {
-                Stepper("Chunk Size: \(viewModel.defaultChunkSize)", value: $viewModel.defaultChunkSize, in: 100...2000, step: 100)
-                
-                Stepper("Chunk Overlap: \(viewModel.defaultChunkOverlap)", value: $viewModel.defaultChunkOverlap, in: 0...500, step: 50)
-                
-                Text("Larger chunks preserve more context but can be less specific. Overlap helps maintain context between chunks.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Stepper(
+                    "Chunk Size: \(viewModel.defaultChunkSize)", value: $viewModel.defaultChunkSize,
+                    in: 100...2000, step: 100)
+
+                Stepper(
+                    "Chunk Overlap: \(viewModel.defaultChunkOverlap)",
+                    value: $viewModel.defaultChunkOverlap, in: 0...500, step: 50)
+
+                Text(
+                    "Larger chunks preserve more context but can be less specific. Overlap helps maintain context between chunks."
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
-            
+
             // Model Selection
             Section(header: Text("AI Models")) {
                 Picker("Embedding Model", selection: $viewModel.embeddingModel) {
@@ -46,33 +53,43 @@ struct SettingsView: View {
                         Text(model).tag(model)
                     }
                 }
-                
+
                 Picker("Completion Model", selection: $viewModel.completionModel) {
                     ForEach(viewModel.availableCompletionModels, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
-                
-                Text("The embedding model converts text to vectors. The completion model generates answers from search results.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                Text(
+                    "The embedding model converts text to vectors. The completion model generates answers from search results."
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
-            
-            // Appearance
+
+            // Theme Settings
             Section(header: Text("Appearance")) {
-                Toggle("Dark Mode", isOn: $viewModel.isDarkMode)
-                    .onChange(of: viewModel.isDarkMode) { oldValue, newValue in
-                        setAppearance(darkMode: newValue)
+                NavigationLink(destination: ThemeSettingsView()) {
+                    HStack {
+                        Text("Theme")
+                        Spacer()
+                        Text(themeManager.currentTheme.name)
+                            .foregroundColor(.secondary)
                     }
+                }
+
+                NavigationLink(destination: DesignSystemDemoView()) {
+                    Text("Design System Demo")
+                }
             }
-            
+
             // Actions
             Section {
                 Button(action: {
                     if viewModel.isConfigurationValid() {
                         viewModel.saveSettings()
                         isSaved = true
-                        
+
                         // Reset saved indicator after delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                             isSaved = false
@@ -88,7 +105,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                
+
                 Button(action: {
                     isShowingResetAlert = true
                 }) {
@@ -96,7 +113,7 @@ struct SettingsView: View {
                         .foregroundColor(.red)
                 }
             }
-            
+
             // App Info
             Section(header: Text("About")) {
                 HStack {
@@ -106,26 +123,32 @@ struct SettingsView: View {
                     Text("1.0.0")
                         .foregroundColor(.secondary)
                 }
-                
-                Text("An iOS Retrieval Augmented Generation system for document processing and semantic search.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
+                Text(
+                    "An iOS Retrieval Augmented Generation system for document processing and semantic search."
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
         }
         .alert(isPresented: $isShowingResetAlert) {
             Alert(
                 title: Text("Reset Settings"),
-                message: Text("Are you sure you want to reset all settings to default values? This won't clear your API keys."),
+                message: Text(
+                    "Are you sure you want to reset all settings to default values? This won't clear your API keys."
+                ),
                 primaryButton: .destructive(Text("Reset")) {
                     viewModel.resetToDefaults()
                 },
                 secondaryButton: .cancel()
             )
         }
-        .alert(item: Binding<IdentifiableError?>(
-            get: { viewModel.errorMessage.map { IdentifiableError($0) } },
-            set: { viewModel.errorMessage = $0?.message }
-        )) { error in
+        .alert(
+            item: Binding<IdentifiableError?>(
+                get: { viewModel.errorMessage.map { IdentifiableError($0) } },
+                set: { viewModel.errorMessage = $0?.message }
+            )
+        ) { error in
             Alert(
                 title: Text("Error"),
                 message: Text(error.message),
@@ -133,14 +156,15 @@ struct SettingsView: View {
             )
         }
     }
-    
+
     /// Set app appearance based on dark mode setting
     private func setAppearance(darkMode: Bool) {
         if #available(iOS 15.0, *) {
             let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
             scene?.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
         } else {
-            UIApplication.shared.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
+            UIApplication.shared.windows.first?.overrideUserInterfaceStyle =
+                darkMode ? .dark : .light
         }
     }
 }
@@ -149,7 +173,7 @@ struct SettingsView: View {
 struct IdentifiableError: Identifiable {
     let id = UUID()
     let message: String
-    
+
     init(_ message: String) {
         self.message = message
     }
@@ -160,7 +184,7 @@ struct IdentifiableError: Identifiable {
     viewModel.openAIAPIKey = "sk-••••••••••••••••••••••••••••••••"
     viewModel.pineconeAPIKey = "••••••••••••••••••••••••••••••••"
     viewModel.pineconeProjectId = "••••••••••••••••••••"
-    
+
     return NavigationView {
         SettingsView(viewModel: viewModel)
             .navigationTitle("Settings")
