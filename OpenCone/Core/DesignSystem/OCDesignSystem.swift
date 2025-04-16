@@ -1,4 +1,7 @@
 import SwiftUI
+import Combine
+import Foundation
+import UIKit
 
 /// Central design system for OpenCone that provides consistent spacing, sizing, and other design elements
 struct OCDesignSystem {

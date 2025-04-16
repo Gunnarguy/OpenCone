@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI  // Needed for Color in LogLevel
+import UIKit   // Needed for UIColor in LogLevel
+
 
 /// Represents a log entry in the processing log
 struct ProcessingLogEntry: Identifiable {

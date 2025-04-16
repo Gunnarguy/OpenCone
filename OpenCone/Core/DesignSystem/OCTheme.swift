@@ -1,4 +1,7 @@
+import Foundation
+import Combine
 import SwiftUI
+import UIKit
 
 /// Theme definition for OpenCone app
 struct OCTheme {

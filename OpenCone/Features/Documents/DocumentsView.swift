@@ -32,9 +32,6 @@ struct DocumentsView: View {
             .padding(.bottom, 20)
         }
         .background(theme.backgroundColor.ignoresSafeArea())
-        .toolbar {
-            addDocumentToolbarItem
-        }
         .sheet(isPresented: $showingDocumentPicker) {
             DocumentPicker(viewModel: viewModel)
         }
@@ -371,9 +368,38 @@ struct DocumentsView: View {
     /// Section containing action buttons for documents
     private var actionButtonsSection: some View {
         HStack(spacing: 16) {
+            // Add document button (moved from toolbar)
+            Button(action: {
+                showingDocumentPicker = true
+            }) {
+                HStack {
+                    Image(systemName: "plus")
+                    Text("Add File")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    viewModel.isProcessing
+                        ? AnyShapeStyle(theme.primaryColor.opacity(0.3))
+                        : AnyShapeStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    theme.primaryColor, theme.primaryColor.opacity(0.8),
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                )
+                .foregroundColor(.white)
+                .cornerRadius(12)
+                .shadow(
+                    color: viewModel.isProcessing ? Color.clear : theme.primaryColor.opacity(0.3),
+                    radius: 5, x: 0, y: 3)
+            }
+            .disabled(viewModel.isProcessing)
             // Process button to start document processing
             processButton
-
             // Remove button to delete selected documents
             removeButton
         }
@@ -453,19 +479,6 @@ struct DocumentsView: View {
                 radius: 5, x: 0, y: 3)
         }
         .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing)
-    }
-
-    /// Toolbar item for adding new documents
-    private var addDocumentToolbarItem: some ToolbarContent {
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Button(action: {
-                showingDocumentPicker = true
-            }) {
-                Image(systemName: "plus")
-                    .foregroundColor(theme.primaryColor)
-            }
-            .disabled(viewModel.isProcessing)
-        }
     }
 
     /// Content for the namespace creation dialog

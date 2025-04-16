@@ -1,4 +1,8 @@
 import SwiftUI
+import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @main
 struct OpenConeApp: App {
@@ -219,22 +223,31 @@ struct OpenConeApp: App {
             // Load indexes for the documents view
             await documentsVM.loadIndexes()
             // Load indexes for the search view
-            await searchVM.loadIndexes()
-            logger.log(level: .info, message: "Background index loading task completed.")
         }
     }
 
+    #if canImport(UIKit)
     /// Sets the application's user interface style (light/dark).
+    /// Requires UIKit.
     /// - Parameter darkMode: A boolean indicating whether dark mode should be enabled.
     private func setAppearance(darkMode: Bool) {
         // Access the first connected window scene to set the appearance
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        // Use overrideUserInterfaceStyle to force light or dark mode
-        scene?.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
-        logger.log(
-            level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode.")
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            logger.log(level: .warning, message: "Could not find UIWindowScene to set appearance.")
+            return
+        }
+        // Ensure UI updates happen on the main thread
+        DispatchQueue.main.async {
+            // Use overrideUserInterfaceStyle to force light or dark mode
+            scene.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
+            self.logger.log(
+                level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode.")
+        }
     }
+    #endif // canImport(UIKit)
 }
+
+// MARK: - App State
 
 // MARK: - App State
 

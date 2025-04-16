@@ -1,4 +1,11 @@
+import Combine
+import Foundation
 import SwiftUI
+import UIKit
+
+// Import the logger and view model dependencies
+
+// MARK: - Welcome View
 
 /// `WelcomeView` guides the user through the initial setup process on the first launch
 /// or when required API keys are missing. It consists of multiple steps:

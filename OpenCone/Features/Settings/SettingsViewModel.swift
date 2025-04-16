@@ -1,5 +1,9 @@
-import Combine
 // MARK: - SettingsViewModel.swift
+// SettingsViewModel.swift
+// OpenCone
+//
+// Created by [Gunnar Hostetler] on [4/15/2025].
+import Combine
 import Foundation
 import Security
 
@@ -23,9 +27,19 @@ class SettingsViewModel: ObservableObject {
 
     // Available model options
     let availableEmbeddingModels = [
-        "text-embedding-ada-002", "text-embedding-3-small", "text-embedding-3-large",
+        "text-embedding-ada-002",
+        "text-embedding-3-small",
+        "text-embedding-3-large",
     ]
-    let availableCompletionModels = ["gpt-4o-mini", "gpt-4o"]
+
+    // Updated completion models list with newer models
+    let availableCompletionModels = [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-4.1-nano-2025-04-14",
+        "gpt-4.1-mini-2025-04-14",
+        "gpt-4.1-2025-04-14",
+    ]
 
     private let logger = Logger.shared
     private var cancellables = Set<AnyCancellable>()

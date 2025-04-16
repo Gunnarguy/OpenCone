@@ -128,41 +128,46 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Chunk Size")
                     .font(.subheadline.bold())
-
                 HStack {
+                    // Slider for chunk size with larger step size for easier adjustment
                     Slider(
                         value: Binding(
                             get: { Double(viewModel.defaultChunkSize) },
                             set: { viewModel.defaultChunkSize = Int($0) }
                         ),
                         in: 100...2000,
-                        step: 100
+                        step: 100  // Increased step size for easier use
                     )
-
-                    Text("\(viewModel.defaultChunkSize)")
-                        .font(.subheadline.monospacedDigit())
-                        .frame(width: 50, alignment: .trailing)
+                    // Numeric input for direct entry
+                    TextField("", value: $viewModel.defaultChunkSize, formatter: NumberFormatter())
+                        .frame(width: 60)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
                 }
             }
-
             // Chunk Overlap Stepper
             VStack(alignment: .leading, spacing: 4) {
                 Text("Chunk Overlap")
                     .font(.subheadline.bold())
-
                 HStack {
+                    // Slider for chunk overlap with larger step size for easier adjustment
                     Slider(
                         value: Binding(
                             get: { Double(viewModel.defaultChunkOverlap) },
                             set: { viewModel.defaultChunkOverlap = Int($0) }
                         ),
                         in: 0...500,
-                        step: 50
+                        step: 50  // Increased step size for easier use
                     )
-
-                    Text("\(viewModel.defaultChunkOverlap)")
-                        .font(.subheadline.monospacedDigit())
-                        .frame(width: 50, alignment: .trailing)
+                    // Numeric input for direct entry
+                    TextField(
+                        "", value: $viewModel.defaultChunkOverlap, formatter: NumberFormatter()
+                    )
+                    .frame(width: 60)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
                 }
             }
 
@@ -183,12 +188,23 @@ struct SettingsView: View {
                 Text("Embedding Model")
                     .font(.subheadline.bold())
 
-                Picker(selection: $viewModel.embeddingModel, label: EmptyView()) {
+                Picker(selection: $viewModel.embeddingModel, label: Text(viewModel.embeddingModel))
+                {
                     ForEach(viewModel.availableEmbeddingModels, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
-                .pickerStyle(SegmentedPickerStyle())
+                .pickerStyle(MenuPickerStyle())
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .fill(themeManager.currentTheme.backgroundColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .stroke(
+                            themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
+                )
             }
 
             // Completion Model Picker
@@ -196,12 +212,24 @@ struct SettingsView: View {
                 Text("Completion Model")
                     .font(.subheadline.bold())
 
-                Picker(selection: $viewModel.completionModel, label: EmptyView()) {
+                Picker(
+                    selection: $viewModel.completionModel, label: Text(viewModel.completionModel)
+                ) {
                     ForEach(viewModel.availableCompletionModels, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
-                .pickerStyle(SegmentedPickerStyle())
+                .pickerStyle(MenuPickerStyle())
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .fill(themeManager.currentTheme.backgroundColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                        .stroke(
+                            themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
+                )
             }
 
             Text(
