@@ -1,14 +1,5 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
-
-// Import the explicit files containing the required types
-// without needing to reorganize project structure
-import Foundation
-// Note: Swift doesn't support file imports directly, so we
-// need to use typealias to handle visibilty of types from
-// other files in the same module
+import UIKit // Add import for LogExportView functionality
 
 /// View for displaying processing logs, driven by a ViewModel.
 struct ProcessingView: View {
@@ -18,11 +9,40 @@ struct ProcessingView: View {
         VStack {
             // Filter Controls
             // Filter Controls - Bind to ViewModel
-            FilterBar(
-                filterLevel: $viewModel.filterLevel,
-                searchText: $viewModel.searchText,
-                resetAction: viewModel.resetFilters
-            )
+            HStack {
+                Menu {
+                    Button("All Levels") {
+                        viewModel.filterLevel = nil
+                    }
+                    
+                    Divider()
+                    
+                    ForEach(ProcessingLogEntry.LogLevel.allCases, id: \.self) { level in
+                        Button(level.rawValue) {
+                            viewModel.filterLevel = level
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(viewModel.filterLevel?.rawValue ?? "All Levels") // Use viewModel state
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                    }
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+                }
+                
+                TextField("Search Logs", text: $viewModel.searchText) // Bind to viewModel
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                Button(action: viewModel.resetFilters) { // Call viewModel method
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .disabled(viewModel.searchText.isEmpty && viewModel.filterLevel == nil) // Use viewModel state
+            }
+            .padding(.horizontal)
             
             // Log Entries
             // Log Entries - Use ViewModel data
@@ -90,6 +110,31 @@ struct ProcessingView: View {
 
 // LogExportView remains the same for now, but could be simplified later
 
+#Preview {
+    // Perform setup actions *before* returning the View
+    let setupPreview: () -> Void = {
+        // Add sample log entries directly via the shared logger
+        // The ProcessingView's @StateObject will create its own ViewModel instance,
+        // which will then subscribe to Logger.shared updates.
+        let logger = Logger.shared // Assuming Logger is accessible here for preview setup
+        logger.clearLogs() // Clear previous preview logs if any
+        logger.log(level: .info, message: "Application started (Preview)")
+        logger.log(level: .info, message: "Loading documents", context: "DocumentsViewModel (Preview)")
+        logger.log(level: .warning, message: "Missing metadata for document", context: "sample.pdf (Preview)")
+        logger.log(level: .error, message: "Failed to extract text from document", context: "Error: File not found (Preview)")
+        logger.log(level: .success, message: "Successfully processed document", context: "Chunks: 24, Vectors: 24 (Preview)")
+    }
+    
+    // Execute the setup
+    setupPreview()
+    
+    // Return the View for the preview
+    return NavigationView { // Explicit return is fine here, outside the setup closure
+        ProcessingView() // Instantiate the view directly; @StateObject handles ViewModel creation
+            .navigationTitle("Processing Log")
+    }
+}
+
 /// Row for displaying a log entry
 struct LogEntryRow: View {
     let entry: ProcessingLogEntry
@@ -127,7 +172,7 @@ struct LogEntryRow: View {
             }
         }
         .padding(8)
-        .background(Color.secondary.opacity(0.1))
+        .background(Color(.systemGray6))
         .cornerRadius(8)
     }
     
@@ -155,9 +200,7 @@ struct LogExportView: View {
                 
                 HStack {
                     Button(action: {
-                        #if canImport(UIKit)
                         UIPasteboard.general.string = logs
-                        #endif
                     }) {
                         Label("Copy to Clipboard", systemImage: "doc.on.doc")
                             .frame(maxWidth: .infinity)
@@ -175,20 +218,14 @@ struct LogExportView: View {
                 .padding()
             }
             .navigationTitle("Export Logs")
-            // Fix navigationBarItems which is unavailable in macOS
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
-            }
+            .navigationBarItems(trailing: Button("Done") {
+                presentationMode.wrappedValue.dismiss()
+            })
         }
     }
-
+    
     /// Share logs using activity view controller
     private func shareLogs() {
-        #if canImport(UIKit)
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = windowScene.windows.first,
               let rootViewController = window.rootViewController else {
@@ -218,7 +255,6 @@ struct LogExportView: View {
         } catch {
             print("Error writing log file: \(error.localizedDescription)")
         }
-        #endif
     }
     
     /// Format current date for filename
@@ -230,49 +266,18 @@ struct LogExportView: View {
 }
 
 #Preview {
-    // Use PreviewData to create the sample view model
-    // let viewModel = PreviewData.sampleProcessingViewModel // Remove this line
-
-    // No explicit return needed
-    NavigationView {
-        ProcessingView() // Use the default initializer
+    // Create sample log entries for preview
+    let logger = Logger.shared
+    logger.clearLogs()
+    
+    logger.log(level: .info, message: "Application started")
+    logger.log(level: .info, message: "Loading documents", context: "DocumentsViewModel")
+    logger.log(level: .warning, message: "Missing metadata for document", context: "sample.pdf")
+    logger.log(level: .error, message: "Failed to extract text from document", context: "Error: File not found")
+    logger.log(level: .success, message: "Successfully processed document", context: "Chunks: 24, Vectors: 24")
+    
+    return NavigationView {
+        ProcessingView()
             .navigationTitle("Processing Log")
-            .withTheme() // Apply theme for consistent preview
-    }
-}
-
-/// A reusable bar for selecting log level, searching text, and resetting filters.
-struct FilterBar: View {
-    @Binding var filterLevel: ProcessingLogEntry.LogLevel?
-    @Binding var searchText: String
-    let resetAction: () -> Void
-
-    var body: some View {
-        HStack {
-            Menu {
-                Button("All Levels") { filterLevel = nil }
-                Divider()
-                ForEach(ProcessingLogEntry.LogLevel.allCases, id: \.self) { level in
-                    Button(level.rawValue) { filterLevel = level }
-                }
-            } label: {
-                HStack {
-                    Text(filterLevel?.rawValue ?? "All Levels")
-                    Image(systemName: "chevron.down").font(.caption)
-                }
-                .padding(8)
-                .background(Color.secondary.opacity(0.1)) // replaced systemGray6
-                .cornerRadius(8)
-            }
-
-            TextField("Search Logs", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-
-            Button(action: resetAction) {
-                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
-            }
-            .disabled(searchText.isEmpty && filterLevel == nil)
-        }
-        .padding(.horizontal)
     }
 }
