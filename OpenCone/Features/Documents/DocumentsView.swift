@@ -1,5 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
+// Add imports for types used in this view
+import Foundation // For URL, Date etc. if not implicitly imported by SwiftUI
+// Assuming these types are in the main module target
+// import OpenConeCore // Or specific imports if needed
 
 /// View for document management and processing
 /// Allows users to select Pinecone indexes, manage namespaces, and process documents
@@ -10,7 +14,7 @@ struct DocumentsView: View {
     @State private var showingNamespaceDialog = false
     @State private var newNamespace = ""
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.theme) private var theme  // Access the current theme
+    @Environment(\.theme) private var theme: OCTheme // Explicitly type the theme
 
     // MARK: - View Body
     var body: some View {
@@ -33,7 +37,8 @@ struct DocumentsView: View {
         }
         .background(theme.backgroundColor.ignoresSafeArea())
         .sheet(isPresented: $showingDocumentPicker) {
-            DocumentPicker(viewModel: viewModel)
+            // Assuming DocumentPicker is defined elsewhere and imported
+             DocumentPicker(viewModel: viewModel)
         }
         .alert("Create Namespace", isPresented: $showingNamespaceDialog) {
             namespaceDialogContent
@@ -237,13 +242,13 @@ struct DocumentsView: View {
     }
 
     /// Card view for a document
-    private func documentCard(for document: DocumentModel) -> some View {
+    private func documentCard(for document: DocumentModel) -> some View { // Ensure DocumentModel is imported/accessible
         HStack {
             // Main document info with selection capability
-            DocumentRow(
+            DocumentRow( // Ensure DocumentRow is imported/accessible
                 document: document, isSelected: viewModel.selectedDocuments.contains(document.id)
             )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading) // .infinity and .leading should be fine here
 
             // Details button for accessing document details
             documentDetailsButton(for: document)
@@ -266,8 +271,8 @@ struct DocumentsView: View {
     }
 
     /// Button for navigating to document details
-    private func documentDetailsButton(for document: DocumentModel) -> some View {
-        NavigationLink(destination: DocumentDetailsView(document: document)) {
+    private func documentDetailsButton(for document: DocumentModel) -> some View { // Ensure DocumentModel is imported/accessible
+        NavigationLink(destination: DocumentDetailsView(document: document)) { // Ensure DocumentDetailsView is imported/accessible
             Text("Details")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white)
@@ -314,8 +319,9 @@ struct DocumentsView: View {
                     }
 
                     // Processing statistics summary
+                    // Ensure DocumentsViewModel.ProcessingStats is accessible
                     if let stats = viewModel.processingStats {
-                        processingStatsView(stats)
+                         processingStatsView(stats)
                     }
                 }
                 .padding(16)
@@ -329,6 +335,7 @@ struct DocumentsView: View {
     }
 
     /// View for displaying processing statistics
+    // Ensure DocumentsViewModel.ProcessingStats is accessible
     private func processingStatsView(_ stats: DocumentsViewModel.ProcessingStats) -> some View {
         HStack(spacing: 20) {
             statItem(title: "Documents", value: "\(stats.totalDocuments)", icon: "doc.fill")
@@ -485,8 +492,8 @@ struct DocumentsView: View {
     private var namespaceDialogContent: some View {
         Group {
             TextField("Namespace Name", text: $newNamespace)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
+                 .textInputAutocapitalization(.never) // Correct modifier for autocapitalization
+                 .disableAutocorrection(true)
 
             Button("Cancel", role: .cancel) {
                 newNamespace = ""
@@ -505,13 +512,13 @@ struct DocumentsView: View {
     private var createIndexDialogContent: some View {
         Group {
             TextField("Index Name", text: $viewModel.newIndexName)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-                .onSubmit {  // Allow submitting with Enter key
+                 .textInputAutocapitalization(.never) // Correct modifier for autocapitalization
+                 .disableAutocorrection(true)
+                 .onSubmit {  // Allow submitting with Enter key
                     if !viewModel.newIndexName.isEmpty {
                         Task { await viewModel.createIndex() }
                     }
-                }
+                 }
 
             Button("Cancel", role: .cancel) {
                 viewModel.newIndexName = ""  // Clear field on cancel
@@ -540,120 +547,15 @@ private func styledButton(
     .disabled(isDisabled)
 }
 
-/// Row for displaying document information in the list
-struct DocumentRow: View {
-    // MARK: - Properties
-    let document: DocumentModel
-    let isSelected: Bool
-    @Environment(\.theme) private var theme  // Access the current theme
+// Preview - Remove explicit return
+#Preview {
+    // Use PreviewData to create the sample view model
+    // Ensure PreviewData and sampleDocumentsViewModel are accessible
+    let viewModel = PreviewData.sampleDocumentsViewModel
 
-    // MARK: - View Body
-    var body: some View {
-        HStack(spacing: 12) {
-            // Document type icon with background
-            ZStack {
-                Circle()
-                    .fill(document.viewIconColor.opacity(0.15))
-                    .frame(width: 36, height: 36)
-
-                Image(systemName: document.viewIconName)
-                    .foregroundColor(document.viewIconColor)
-            }
-
-            // Document metadata information
-            documentInfo
-
-            Spacer()
-
-            // Selection indicator
-            if isSelected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(theme.primaryColor)
-                    .font(.system(size: 20))
-            }
-        }
+    NavigationView {
+        DocumentsView(viewModel: viewModel)
+            .navigationTitle("Documents")
+            .withTheme() // Apply theme for consistent preview
     }
-
-    // MARK: - UI Components
-
-    /// Document information display
-    private var documentInfo: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Document filename
-            Text(document.fileName)
-                .font(.headline)
-                .foregroundColor(theme.textPrimaryColor)
-                .lineLimit(1)
-
-            // Document metadata row
-            HStack(spacing: 6) {
-                if document.isProcessed {
-                    processingTag
-                } else if document.processingError != nil {
-                    errorTag
-                }
-
-                metadataText(document.mimeType)
-                metadataDivider
-                metadataText(document.formattedFileSize)
-
-                // Chunk count for processed documents
-                if document.isProcessed {
-                    metadataDivider
-                    HStack(spacing: 2) {
-                        Image(systemName: "square.on.square")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green.opacity(0.8))
-
-                        Text("\(document.chunkCount)")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Internal Helper Views/Functions for DocumentRow
-
-    /// Tag showing processed status
-    private var processingTag: some View {
-        Text("Processed")
-            .font(.system(size: 10, weight: .medium))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(Color.green.opacity(0.15))
-            )
-            .foregroundColor(.green)
-    }
-
-    /// Tag showing error status
-    private var errorTag: some View {
-        Text("Error")
-            .font(.system(size: 10, weight: .medium))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(theme.errorLight)
-            )
-            .foregroundColor(theme.errorColor)
-    }
-
-    /// Metadata divider dot
-    private var metadataDivider: some View {
-        Text("•")
-            .font(.caption)
-            .foregroundColor(theme.textSecondaryColor)
-    }
-
-    /// Helper function for consistent metadata text styling
-    private func metadataText(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundColor(theme.textSecondaryColor)
-    }
-
-}  // End of DocumentRow struct
+}

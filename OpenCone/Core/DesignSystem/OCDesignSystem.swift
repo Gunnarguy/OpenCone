@@ -36,6 +36,7 @@ struct OCDesignSystem {
 
 // Extension to standardize view modifiers
 extension View {
+    // Removed @ViewBuilder as it's not applicable here
     func standardCard() -> some View {
         self.padding(OCDesignSystem.Spacing.standard)
             .background(ThemeManager.shared.currentTheme.cardBackgroundColor)
@@ -43,6 +44,7 @@ extension View {
             .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
 
+    // Removed @ViewBuilder as it's not applicable here
     func secondaryText() -> some View {
         self.font(.subheadline)
             .foregroundColor(ThemeManager.shared.currentTheme.textSecondaryColor)

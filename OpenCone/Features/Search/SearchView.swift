@@ -1028,82 +1028,16 @@ extension View {
     }
 }
 
-/// Helper for facilitating optional previews in SwiftUI
-struct SearchPreviewWrapper: View {
-    let isPreviewing: Bool
-
-    var body: some View {
-        if isPreviewing {
-            searchViewPreview()
-        } else {
-            Text("Preview not available")
-        }
-    }
-}
-
 // MARK: - Previews
 
 // Preview decorator
 #Preview {
-    SearchPreviewWrapper(isPreviewing: true)
-}
+    // Use PreviewData to create the sample view model
+    let viewModel = PreviewData.sampleSearchViewModel
 
-/// Helper function to create a preview of the search view
-private func searchViewPreview() -> some View {
-    // Create mock services
-    let openAIService = OpenAIService(apiKey: "preview-key")
-    let pineconeService = PineconeService(apiKey: "preview-key", projectId: "preview-project-id")
-    let embeddingService = EmbeddingService(openAIService: openAIService)
-
-    // Initialize the view model with mock services
-    let viewModel = SearchViewModel(
-        pineconeService: pineconeService,
-        openAIService: openAIService,
-        embeddingService: embeddingService
-    )
-
-    // Populate the view model with sample data for previewing the results state
-    viewModel.searchQuery = "What is RAG?"
-    viewModel.generatedAnswer =
-        "RAG (Retrieval Augmented Generation) is a technique that combines retrieval-based and generation-based approaches in natural language processing. It retrieves relevant documents from a database and then uses them as context for generating responses, improving accuracy and providing sources for the information."
-
-    // Add sample search results
-    viewModel.searchResults = [
-        SearchResultModel(
-            content:
-                "RAG systems combine the strengths of retrieval-based and generation-based approaches. By first retrieving relevant documents and then using them as context for generation, RAG systems can produce more accurate and grounded responses.",
-            sourceDocument: "intro_to_rag.pdf",
-            score: 0.98,
-            metadata: ["source": "intro_to_rag.pdf"]
-        ),
-        SearchResultModel(
-            content:
-                "Retrieval Augmented Generation (RAG) is an AI framework that enhances large language model outputs by incorporating relevant information fetched from external knowledge sources.",
-            sourceDocument: "ai_techniques.md",
-            score: 0.92,
-            metadata: ["source": "ai_techniques.md"]
-        ),
-        SearchResultModel(
-            content:
-                "The advantages of RAG include improved factual accuracy, reduced hallucinations, and the ability to access up-to-date information without retraining the model.",
-            sourceDocument: "rag_benefits.txt",
-            score: 0.87,
-            metadata: ["source": "rag_benefits.txt"]
-        ),
-    ]
-    // Update selectedResults based on the isSelected flag in sample data
-    viewModel.selectedResults = viewModel.searchResults.filter { $0.isSelected }
-
-    // Add sample indexes and namespaces for configuration preview
-    viewModel.pineconeIndexes = ["index-1", "my-main-index", "test-index"]
-    viewModel.selectedIndex = "my-main-index"
-    viewModel.namespaces = ["general", "project-alpha", "archive"]
-    viewModel.selectedNamespace = "general"
-
-    // Return the SearchView embedded in a NavigationView for realistic preview context
-    return NavigationView {
+    NavigationView {
         SearchView(viewModel: viewModel)
             .navigationTitle("Search")
-            .withTheme()
+            .withTheme() // Apply theme for consistent preview
     }
 }

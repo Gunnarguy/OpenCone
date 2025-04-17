@@ -111,9 +111,10 @@ struct SettingsView: View {
     // API Keys content
     private var apiKeysContent: some View {
         VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
-            secureFieldRow(title: "OpenAI API Key", binding: $viewModel.openAIAPIKey)
-            secureFieldRow(title: "Pinecone API Key", binding: $viewModel.pineconeAPIKey)
-            secureFieldRow(title: "Pinecone Project ID", binding: $viewModel.pineconeProjectId)
+            // Use the new SecureSettingsField component
+            SecureSettingsField(title: "OpenAI API Key", text: $viewModel.openAIAPIKey)
+            SecureSettingsField(title: "Pinecone API Key", text: $viewModel.pineconeAPIKey)
+            SecureSettingsField(title: "Pinecone Project ID", text: $viewModel.pineconeProjectId)
 
             Text("The Pinecone Project ID is required for API access.")
                 .font(.caption)
@@ -244,54 +245,35 @@ struct SettingsView: View {
     // Appearance content
     private var appearanceContent: some View {
         VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
-            NavigationLink(destination: ThemeSettingsView()) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Theme")
-                            .font(.subheadline.bold())
-
-                        Text(themeManager.currentTheme.name)
-                            .font(.caption)
-                            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
-                    }
-
-                    Spacer()
-
-                    // Theme color preview
+            // Use SettingsNavigationRow for Theme settings
+            SettingsNavigationRow(
+                title: "Theme",
+                subtitle: themeManager.currentTheme.name,
+                systemImage: "paintpalette", // Consistent icon
+                destination: ThemeSettingsView(),
+                accessory: {
+                    // Accessory view to show theme color previews
                     HStack(spacing: 4) {
                         Circle()
                             .fill(themeManager.currentTheme.primaryColor)
                             .frame(width: 16, height: 16)
-
                         Circle()
                             .fill(themeManager.currentTheme.secondaryColor)
                             .frame(width: 16, height: 16)
                     }
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(themeManager.currentTheme.textSecondaryColor)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PlainButtonStyle())
+            )
 
             Divider()
 
-            NavigationLink(destination: DesignSystemDemoView()) {
-                HStack {
-                    Text("Design System Demo")
-                        .font(.subheadline)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(themeManager.currentTheme.textSecondaryColor)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PlainButtonStyle())
+            // Use SettingsNavigationRow for Design System Demo
+            SettingsNavigationRow(
+                title: "Design System Demo",
+                subtitle: nil, // No subtitle needed
+                systemImage: "ruler", // More relevant icon
+                destination: DesignSystemDemoView()
+                // No accessory needed, default EmptyView will be used
+            )
         }
     }
 
@@ -353,26 +335,6 @@ struct SettingsView: View {
             .foregroundColor(themeManager.currentTheme.textSecondaryColor)
         }
     }
-
-    // Helper for secure text fields
-    private func secureFieldRow(title: String, binding: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.subheadline.bold())
-
-            SecureField(title, text: binding)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
-                        .fill(themeManager.currentTheme.backgroundColor)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
-                        .stroke(
-                            themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
-                )
-        }
-    }
 }
 
 /// Wrapper to make error messages identifiable for alerts
@@ -386,13 +348,12 @@ struct IdentifiableError: Identifiable {
 }
 
 #Preview {
-    let viewModel = SettingsViewModel()
-    viewModel.openAIAPIKey = "sk-••••••••••••••••••••••••••••••••"
-    viewModel.pineconeAPIKey = "••••••••••••••••••••••••••••••••"
-    viewModel.pineconeProjectId = "••••••••••••••••••••"
+    // Use PreviewData to create the sample view model
+    let viewModel = PreviewData.sampleSettingsViewModel
 
     return NavigationView {
         SettingsView(viewModel: viewModel)
             .navigationTitle("Settings")
+            .withTheme() // Apply theme for consistent preview
     }
 }
