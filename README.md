@@ -239,7 +239,7 @@ graph TD
 flowchart TD
     A[App Launch] --> B{First Launch?};
     B -- Yes --> C[Welcome Screen];
-    C --> D[Enter API Keys (OpenAI & Pinecone)];
+    C --> D["Enter API Keys (OpenAI & Pinecone)"];
     D --> E{Keys Valid?};
     E -- Yes --> F[Save Keys & Initialize Services];
     E -- No --> D;
