@@ -66,14 +66,15 @@ OpenCone follows the MVVM (Model-View-ViewModel) architectural pattern combined 
 
 ```mermaid
 graph TD
-    // Define CSS classes for styling subgraphs
+
+    %% Define CSS classes for styling subgraphs
     classDef viewStyle fill:#cde4ff,stroke:#333,stroke-width:2px
     classDef viewModelStyle fill:#ccffcc,stroke:#333,stroke-width:2px
     classDef serviceStyle fill:#fff0cc,stroke:#333,stroke-width:2px
     classDef modelStyle fill:#ffcccc,stroke:#333,stroke-width:2px
     classDef externalStyle fill:#e0e0e0,stroke:#333,stroke-width:2px
 
-    // Define subgraphs with simple IDs and descriptive labels
+    %% Define subgraphs with simple IDs and descriptive labels
     subgraph viewLayer ["View Layer (SwiftUI)"]
         direction LR
         MainView([MainView])
@@ -174,7 +175,7 @@ graph TD
     DesignSystemDemoView -.-> OCBadge
     ThemeSettingsView -.-> OCCard
 
-    // Apply classes to subgraphs
+    %% Apply classes to subgraphs
     class viewLayer viewStyle
     class viewModelLayer viewModelStyle
     class serviceLayer serviceStyle
