@@ -259,7 +259,7 @@ flowchart TD
         M --> N[TextProcessorService];
         N --> O[EmbeddingService];
         O --> P["OpenAIService (Embeddings)"];
-        P --> Q[PineconeService (Upload Vectors)];
+        P --> Q["PineconeService (Upload Vectors)"];
         Q --> I;
         I --> R[View Document Details];
     end
@@ -270,10 +270,10 @@ flowchart TD
         T --> S;
         S --> U[Enter Search Query];
         U --> V[EmbeddingService];
-        V --> W[OpenAIService (Embeddings)];
-        W --> X[PineconeService (Query Vectors)];
+        V --> W["OpenAIService (Embeddings)"];
+        W --> X["PineconeService (Query Vectors)"];
         X --> Y[Retrieve Relevant Chunks];
-        Y --> Z[OpenAIService (Completion)];
+        Y --> Z["OpenAIService (Completion)"];
         Z --> AA[Display Generated Answer & Sources];
         AA --> S;
     end
