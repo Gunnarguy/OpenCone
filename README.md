@@ -247,7 +247,7 @@ flowchart TD
     G -- Yes --> F;
     G -- No --> C;
 
-    F --> H[Main View (Tabs)];
+    F --> H["Main View (Tabs)"];
 
     subgraph Documents Tab
         H --> I[DocumentsView];
