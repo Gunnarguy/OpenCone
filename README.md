@@ -66,7 +66,15 @@ OpenCone follows the MVVM (Model-View-ViewModel) architectural pattern combined 
 
 ```mermaid
 graph TD
-    subgraph "View Layer (SwiftUI)"
+    // Define CSS classes for styling subgraphs
+    classDef viewStyle fill:#cde4ff,stroke:#333,stroke-width:2px
+    classDef viewModelStyle fill:#ccffcc,stroke:#333,stroke-width:2px
+    classDef serviceStyle fill:#fff0cc,stroke:#333,stroke-width:2px
+    classDef modelStyle fill:#ffcccc,stroke:#333,stroke-width:2px
+    classDef externalStyle fill:#e0e0e0,stroke:#333,stroke-width:2px
+
+    // Define subgraphs with simple IDs and descriptive labels
+    subgraph viewLayer ["View Layer (SwiftUI)"]
         direction LR
         MainView([MainView])
         DocumentsView([DocumentsView])
@@ -86,7 +94,7 @@ graph TD
         OCBadge([OCBadge])
     end
 
-    subgraph "ViewModel Layer (Combine)"
+    subgraph viewModelLayer ["ViewModel Layer (Combine)"]
         direction LR
         DocumentsViewModel([DocumentsViewModel])
         SearchViewModel([SearchViewModel])
@@ -94,7 +102,7 @@ graph TD
         ProcessingViewModel([ProcessingViewModel])
     end
 
-    subgraph "Service Layer"
+    subgraph serviceLayer ["Service Layer"]
         direction LR
         FileProcessorService([FileProcessorService])
         TextProcessorService([TextProcessorService])
@@ -105,7 +113,7 @@ graph TD
         ThemeManager([ThemeManager])
     end
 
-    subgraph "Model Layer"
+    subgraph modelLayer ["Model Layer"]
         direction LR
         DocumentModel([DocumentModel])
         ProcessingLogEntry([ProcessingLogEntry])
@@ -115,7 +123,7 @@ graph TD
         OCDesignSystem([OCDesignSystem])
     end
 
-    subgraph "External Services"
+    subgraph externalServices ["External Services"]
         OpenAI_API["OpenAI API"]
         Pinecone_API["Pinecone API"]
         FileSystem["iOS File System"]
@@ -166,12 +174,12 @@ graph TD
     DesignSystemDemoView -.-> OCBadge
     ThemeSettingsView -.-> OCCard
 
-    %% Styling (Moved to the end)
-    style "View Layer (SwiftUI)" fill:#cde4ff,stroke:#333,stroke-width:2px
-    style "ViewModel Layer (Combine)" fill:#ccffcc,stroke:#333,stroke-width:2px
-    style "Service Layer" fill:#fff0cc,stroke:#333,stroke-width:2px
-    style "Model Layer" fill:#ffcccc,stroke:#333,stroke-width:2px
-    style "External Services" fill:#e0e0e0,stroke:#333,stroke-width:2px
+    // Apply classes to subgraphs
+    class viewLayer viewStyle
+    class viewModelLayer viewModelStyle
+    class serviceLayer serviceStyle
+    class modelLayer modelStyle
+    class externalServices externalStyle
 ```
 
 - **`OpenCone/`**: Root directory for the application source code.
