@@ -116,9 +116,9 @@ graph TD
     end
 
     subgraph "External Services"
-        OpenAI_API([OpenAI API])
-        Pinecone_API([Pinecone API])
-        FileSystem([iOS File System])
+        OpenAI_API["OpenAI API"]
+        Pinecone_API["Pinecone API"]
+        FileSystem["iOS File System"]
     end
 
     %% View -> ViewModel Connections
@@ -147,7 +147,8 @@ graph TD
     EmbeddingService --> OpenAIService
     OpenAIService --> OpenAI_API
     PineconeService --> Pinecone_API
-    Logger --> Console/File
+    ConsoleFile["Console/File"]
+    Logger --> ConsoleFile
 
     %% Components Usage
     DocumentsView -.-> DocumentRow
