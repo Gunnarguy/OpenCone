@@ -258,7 +258,7 @@ flowchart TD
         L --> M[FileProcessorService];
         M --> N[TextProcessorService];
         N --> O[EmbeddingService];
-        O --> P[OpenAIService (Embeddings)];
+        O --> P["OpenAIService (Embeddings)"];
         P --> Q[PineconeService (Upload Vectors)];
         Q --> I;
         I --> R[View Document Details];
