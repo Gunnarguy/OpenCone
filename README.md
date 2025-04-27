@@ -253,7 +253,7 @@ flowchart TD
         H --> I[DocumentsView];
         I --> J{Select Index/Namespace};
         J --> I;
-        I --> K[Add Document(s)];
+        I --> K["Add Document(s)"];
         K --> L[Process Selected Documents];
         L --> M[FileProcessorService];
         M --> N[TextProcessorService];
