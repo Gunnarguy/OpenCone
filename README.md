@@ -166,6 +166,7 @@ graph TD
     DesignSystemDemoView -.-> OCBadge
     ThemeSettingsView -.-> OCCard
 
+    %% Styling (Moved to the end)
     style "View Layer (SwiftUI)" fill:#cde4ff,stroke:#333,stroke-width:2px
     style "ViewModel Layer (Combine)" fill:#ccffcc,stroke:#333,stroke-width:2px
     style "Service Layer" fill:#fff0cc,stroke:#333,stroke-width:2px
