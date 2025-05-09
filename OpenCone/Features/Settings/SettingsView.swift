@@ -351,7 +351,7 @@ struct IdentifiableError: Identifiable {
     // Use PreviewData to create the sample view model
     let viewModel = PreviewData.sampleSettingsViewModel
 
-    return NavigationView {
+    NavigationView {
         SettingsView(viewModel: viewModel)
             .navigationTitle("Settings")
             .withTheme()  // Apply theme for consistent preview

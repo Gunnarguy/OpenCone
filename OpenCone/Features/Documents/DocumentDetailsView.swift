@@ -515,7 +515,7 @@ struct DocumentDetailsView_Previews: PreviewProvider {
     let documentWithStats = PreviewData.sampleDocuments[0]  // Document with stats
     let documentWithoutStats = PreviewData.sampleDocuments[2]  // Pending document
 
-    return Group {
+    Group {
         NavigationView {
             DocumentDetailsView(document: documentWithStats)
                 .navigationTitle("Details (With Stats)")
