@@ -29,7 +29,7 @@ DEVELOPMENT_TEAM = YOUR_TEAM_ID
 // MARK: - Paths
 
 // Set the path to the provisioning profile
-PROVISIONING_PROFILE_SPECIFIER = ""
+
 
 // MARK: - Swift Compiler Settings
 
