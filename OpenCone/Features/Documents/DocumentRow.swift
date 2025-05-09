@@ -119,16 +119,54 @@ struct DocumentRow: View {
 }  // End of DocumentRow struct
 
 #Preview {
-    // Create sample documents for preview
-    let processedDoc = PreviewData.sampleDocuments[0]
-    let errorDoc = PreviewData.sampleDocuments[1]
-    let pendingDoc = PreviewData.sampleDocuments[2]
+    // Define sample DocumentModel instances directly
+    // Ensure these initializers match your actual DocumentModel definition
+    let processedDoc = DocumentModel(
+        fileName: "processed_preview.pdf",
+        filePath: URL(string: "file:///processed_preview.pdf")!,
+        securityBookmark: nil,
+        mimeType: "application/pdf",
+        fileSize: 1024,
+        dateAdded: Date(),
+        isProcessed: true,
+        processingError: nil as String?, // Corrected order and explicit type for nil
+        chunkCount: 5,
+        processingStats: nil as DocumentProcessingStats? // Explicit type for nil
+    )
 
-    return VStack(spacing: 10) {
-        DocumentRow(document: processedDoc, isSelected: true)
-        DocumentRow(document: errorDoc, isSelected: false)
-        DocumentRow(document: pendingDoc, isSelected: false)
+    let errorDoc = DocumentModel(
+        fileName: "error_preview.doc",
+        filePath: URL(string: "file:///error_preview.doc")!,
+        securityBookmark: nil,
+        mimeType: "application/msword",
+        fileSize: 512,
+        dateAdded: Date().addingTimeInterval(-86400), // 1 day ago
+        isProcessed: false,
+        processingError: "Preview error text", // Corrected order
+        chunkCount: 0,
+        processingStats: nil as DocumentProcessingStats? // Explicit type for nil
+    )
+
+    let pendingDoc = DocumentModel(
+        fileName: "pending_preview.txt",
+        filePath: URL(string: "file:///pending_preview.txt")!,
+        securityBookmark: nil,
+        mimeType: "text/plain",
+        fileSize: 100,
+        dateAdded: Date().addingTimeInterval(-172800), // 2 days ago
+        isProcessed: false,
+        processingError: nil as String?, // Corrected order and explicit type for nil
+        chunkCount: 0,
+        processingStats: nil as DocumentProcessingStats? // Explicit type for nil
+    )
+
+    Group {
+        VStack(spacing: 10) {
+            DocumentRow(document: processedDoc, isSelected: true)
+            DocumentRow(document: errorDoc, isSelected: false)
+            DocumentRow(document: pendingDoc, isSelected: false)
+        }
+        .padding()
+        .withTheme() // Assuming .withTheme() is a valid ViewModifier
     }
-    .padding()
-    .withTheme()  // Apply theme for consistent preview
 }

@@ -440,11 +440,15 @@ struct DocumentDetailsView_Previews: PreviewProvider {
         let document = DocumentModel(
             fileName: "sample.pdf",
             filePath: URL(string: "file:///sample.pdf")!,
+            // Assuming securityBookmark is optional and can be nil for previews
+            securityBookmark: nil,
             mimeType: "application/pdf",
             fileSize: 1024 * 1024,
             dateAdded: Date(),
             isProcessed: true,
-            chunkCount: 24
+            processingError: nil as String?, // Explicitly typed nil
+            chunkCount: 24,
+            processingStats: nil // Will be set below
         )
 
         // Create sample processing stats
@@ -488,7 +492,7 @@ struct DocumentDetailsView_Previews: PreviewProvider {
 
         // Add sample log entries
         let logger = Logger.shared
-        logger.clearLogs()
+        logger.clearLogs() // Clear previous logs for a clean preview
         logger.log(level: .info, message: "Starting to process document", context: "sample.pdf")
         logger.log(
             level: .info, message: "Text extracted",
@@ -511,19 +515,57 @@ struct DocumentDetailsView_Previews: PreviewProvider {
 }
 
 #Preview {
-    // Use PreviewData to get a sample document
-    let documentWithStats = PreviewData.sampleDocuments[0]  // Document with stats
-    let documentWithoutStats = PreviewData.sampleDocuments[2]  // Pending document
+    // Define sample documents directly for the #Preview block
+    let sampleProcessedDocument = DocumentModel(
+        fileName: "Sample Report Preview.pdf",
+        filePath: URL(fileURLWithPath: "/path/to/Sample Report Preview.pdf"),
+        securityBookmark: nil,
+        mimeType: "application/pdf",
+        fileSize: 1_234_567,
+        dateAdded: Date().addingTimeInterval(-86400),  // Added yesterday
+        isProcessed: true,
+        processingError: nil as String?,
+        chunkCount: 42,
+        processingStats: { // Create sample stats directly
+            var stats = DocumentProcessingStats()
+            let baseTime = Date().addingTimeInterval(-300) // 5 minutes ago
+            stats.startTime = baseTime
+            stats.endTime = Date()
+            stats.addPhase(phase: .textExtraction, start: baseTime, end: baseTime.addingTimeInterval(30))
+            stats.addPhase(phase: .chunking, start: baseTime.addingTimeInterval(30), end: baseTime.addingTimeInterval(60))
+            stats.addPhase(phase: .embeddingGeneration, start: baseTime.addingTimeInterval(60), end: baseTime.addingTimeInterval(180))
+            stats.addPhase(phase: .vectorUpsert, start: baseTime.addingTimeInterval(180), end: baseTime.addingTimeInterval(240))
+            stats.extractedTextLength = 150_000
+            stats.totalTokens = 35_000
+            stats.vectorsUploaded = 42
+            stats.chunkSizes = (1...42).map { _ in Int.random(in: 500...1500) }
+            stats.tokenDistribution = (1...42).map { _ in Int.random(in: 600...1000) }
+            return stats
+        }()
+    )
+
+    let samplePendingDocument = DocumentModel(
+        fileName: "Presentation Slides Preview.pptx",
+        filePath: URL(fileURLWithPath: "/path/to/Presentation Slides Preview.pptx"),
+        securityBookmark: nil,
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        fileSize: 3_456_789,
+        dateAdded: Date(),  // Added today
+        isProcessed: false,
+        processingError: nil as String?,
+        chunkCount: 0,
+        processingStats: nil
+    )
 
     Group {
         NavigationView {
-            DocumentDetailsView(document: documentWithStats)
+            DocumentDetailsView(document: sampleProcessedDocument)
                 .navigationTitle("Details (With Stats)")
                 .withTheme()
         }
 
         NavigationView {
-            DocumentDetailsView(document: documentWithoutStats)
+            DocumentDetailsView(document: samplePendingDocument)
                 .navigationTitle("Details (No Stats)")
                 .withTheme()
         }

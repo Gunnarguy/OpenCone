@@ -1032,12 +1032,7 @@ extension View {
 
 // Preview decorator
 #Preview {
-    // Use PreviewData to create the sample view model
-    let viewModel = PreviewData.sampleSearchViewModel
-
-    NavigationView {
-        SearchView(viewModel: viewModel)
-            .navigationTitle("Search")
-            .withTheme()  // Apply theme for consistent preview
-    }
+    // Use PreviewData to get a sample SearchViewModel
+    SearchView(viewModel: PreviewData.sampleSearchViewModel)
+        .withTheme() // Assuming .withTheme() is a valid ViewModifier
 }
