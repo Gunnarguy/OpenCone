@@ -266,6 +266,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "OpenCone/Info.plist OpenCone/Assets.xcassets OpenCone/Preview\\ Content";
+				DEVELOPMENT_TEAM = Z3E334EXZD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = OpenCone/Info.plist;
@@ -305,6 +306,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "OpenCone/Info.plist OpenCone/Assets.xcassets OpenCone/Preview\\ Content";
+				DEVELOPMENT_TEAM = Z3E334EXZD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = OpenCone/Info.plist;
