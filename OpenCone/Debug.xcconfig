@@ -1,0 +1,58 @@
+//
+//  Debug.xcconfig
+//  OpenAssistant
+//
+//  Created by Gunnar Hostetler on 9/20/24.
+//
+// Configuration settings file format documentation can be found at:
+// https://help.apple.com/xcode/#/dev745c5c974
+
+// MARK: - Build Settings
+
+// Enable debugging
+GCC_PREPROCESSOR_DEFINITIONS = DEBUG=1
+
+// Enable detailed logging
+OTHER_SWIFT_FLAGS = -DDEBUG
+
+// MARK: - Optimization Settings
+
+// Disable optimization for debug builds
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+
+// MARK: - Code Signing
+
+// Use development team for code signing
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+
+// MARK: - Paths
+
+// Set the path to the provisioning profile
+PROVISIONING_PROFILE_SPECIFIER = YOUR_PROVISIONING_PROFILE
+
+// MARK: - Swift Compiler Settings
+
+// Enable Swift strict concurrency checking
+SWIFT_CONCURRENCY_CHECKS = strict
+
+// Enable Swift async/await back deployment
+SWIFT_BACK_DEPLOYMENT = YES
+
+// MARK: - Additional Settings
+
+// Enable address sanitizer (comment out if using thread sanitizer)
+// ENABLE_ADDRESS_SANITIZER = YES
+
+// Enable thread sanitizer (comment out if using address sanitizer)
+// ENABLE_THREAD_SANITIZER = YES
+
+// Enable undefined behavior sanitizer
+ENABLE_UNDEFINED_BEHAVIOR_SANITIZER = YES
+
+// MARK: - Documentation Links
+
+// Xcode Build Settings Reference
+// https://developer.apple.com/documentation/xcode/build-settings-reference
+
+// Swift Compiler Flags
+// https://developer.apple.com/documentation/swift/swift-compiler-flags

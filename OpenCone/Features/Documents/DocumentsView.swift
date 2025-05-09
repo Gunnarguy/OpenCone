@@ -548,15 +548,3 @@ private func styledButton(
     .disabled(isDisabled)
 }
 
-// Preview - Remove explicit return
-#Preview {
-    // Use PreviewData to create the sample view model
-    // Ensure PreviewData and sampleDocumentsViewModel are accessible
-    let viewModel = PreviewData.sampleDocumentsViewModel
-
-    NavigationView {
-        DocumentsView(viewModel: viewModel)
-            .navigationTitle("Documents")
-            .withTheme()  // Apply theme for consistent preview
-    }
-}

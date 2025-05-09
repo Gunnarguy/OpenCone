@@ -1028,11 +1028,3 @@ extension View {
     }
 }
 
-// MARK: - Previews
-
-// Preview decorator
-#Preview {
-    // Use PreviewData to get a sample SearchViewModel
-    SearchView(viewModel: PreviewData.sampleSearchViewModel)
-        .withTheme() // Assuming .withTheme() is a valid ViewModifier
-}

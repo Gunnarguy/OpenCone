@@ -346,14 +346,3 @@ struct IdentifiableError: Identifiable {
         self.message = message
     }
 }
-
-#Preview {
-    // Use PreviewData to create the sample view model
-    let viewModel = PreviewData.sampleSettingsViewModel
-
-    NavigationView {
-        SettingsView(viewModel: viewModel)
-            .navigationTitle("Settings")
-            .withTheme()  // Apply theme for consistent preview
-    }
-}
