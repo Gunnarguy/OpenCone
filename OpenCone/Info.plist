@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Access needed for photo uploads and media selection for File uploads.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Access needed for File uploads.</string>
+	<key>NSFileProviderPresenceUsageDescription</key>
+	<string>Access needed to integrate Files from system storage and cloud providers.</string>
+	<key>NSFileProviderDomainUsageDescription</key>
+	<string>Access needed to integrate Files with iCloud and other cloud services.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Document</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>
