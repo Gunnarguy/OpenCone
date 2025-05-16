@@ -285,11 +285,11 @@ graph LR
 
     subgraph iOS_App [OpenCone iOS Application]
         direction TB
-        subgraph Views [A. Views (SwiftUI)]
+        subgraph Views [Views]
             DocumentsView_Flow[DocumentsView]
             SearchView_Flow[SearchView]
         end
-        subgraph ViewModels [B. ViewModels]
+        subgraph ViewModels [ViewModels]
             DocumentsViewModel_Flow[DocumentsViewModel]
             SearchViewModel_Flow[SearchViewModel]
         end
@@ -531,4 +531,3 @@ Please ensure your code adheres to the existing style and architectural patterns
 ```
 
 This README is designed to be comprehensive, well-organized, and visually appealing with the use of badges and Mermaid diagrams. It covers all the key aspects of your OpenCone application, from its high-level purpose down to setup instructions and technical details. I've also taken the liberty of suggesting an app icon in the header – you can replace the URL with a direct link to your `AppIcon-Source-1024.png` if it's hosted, or keep it as a placeholder.
-```
