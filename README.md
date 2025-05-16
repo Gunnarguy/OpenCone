@@ -1,8 +1,4 @@
-Absolutely, Gunnar\! Let's craft a "pretty and organized" README that reflects the deep analysis and comprehensive understanding of your OpenCone application.
 
-This version will use the structure from your existing README as a base but will be significantly enhanced with the detailed information we've discussed, accurate diagrams, and a focus on clarity and completeness for any developer (or your future self\!) looking to understand the project.
-
-````markdown
 <div align="center">
   <img src="https://raw.githubusercontent.com/gunnarhostetler/OpenCone/main/OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-Source-1024.png" width="120" />
   <h1 align="center">OpenCone</h1>
@@ -285,11 +281,11 @@ graph LR
 
     subgraph iOS_App [OpenCone iOS Application]
         direction TB
-        subgraph Views [A. Views (SwiftUI)]
+        subgraph Views [Views]
             DocumentsView_Flow[DocumentsView]
             SearchView_Flow[SearchView]
         end
-        subgraph ViewModels [B. ViewModels]
+        subgraph ViewModels [ViewModels]
             DocumentsViewModel_Flow[DocumentsViewModel]
             SearchViewModel_Flow[SearchViewModel]
         end
@@ -531,4 +527,3 @@ Please ensure your code adheres to the existing style and architectural patterns
 ```
 
 This README is designed to be comprehensive, well-organized, and visually appealing with the use of badges and Mermaid diagrams. It covers all the key aspects of your OpenCone application, from its high-level purpose down to setup instructions and technical details. I've also taken the liberty of suggesting an app icon in the header – you can replace the URL with a direct link to your `AppIcon-Source-1024.png` if it's hosted, or keep it as a placeholder.
-```
