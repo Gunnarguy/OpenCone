@@ -1,7 +1,6 @@
-Absolutely, Gunnar\! Let's craft a "pretty and organized" README that reflects the deep analysis and comprehensive understanding of your OpenCone application.
+# README.md
 
-This version will use the structure from your existing README as a base but will be significantly enhanced with the detailed information we've discussed, accurate diagrams, and a focus on clarity and completeness for any developer (or your future self\!) looking to understand the project.
-
+```markdown
 ````markdown
 <div align="center">
   <img src="https://raw.githubusercontent.com/gunnarhostetler/OpenCone/main/OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-Source-1024.png" width="120" />
