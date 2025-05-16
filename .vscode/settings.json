@@ -1,8 +1,0 @@
-{
-    "github.copilot.chat.agent.thinkingTool": true,
-    "chat.agent.enabled": true,
-    "github.copilot.chat.codesearch.enabled": true,
-    "github.copilot.nextEditSuggestions.enabled": true,
-    "github.copilot.chat.editor.temporalContext.enabled": true,
-    "github.copilot.chat.edits.temporalContext.enabled": true
-}

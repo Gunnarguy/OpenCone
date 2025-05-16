@@ -1,0 +1,35 @@
+echo "##active_line2##"
+# macOS
+echo "##active_line3##"
+.DS_Store
+echo "##active_line4##"
+
+echo "##active_line5##"
+# Xcode
+echo "##active_line6##"
+*.xcworkspace/
+echo "##active_line7##"
+xcuserdata/
+echo "##active_line8##"
+*.xcuserdatad/
+echo "##active_line9##"
+*.xcuserstate
+echo "##active_line10##"
+*.xccheckout
+echo "##active_line11##"
+*.xcodeproj/
+echo "##active_line12##"
+*.xcscheme
+echo "##active_line13##"
+*.xcdebugger/
+echo "##active_line14##"
+*.xcsettings
+echo "##active_line15##"
+*.xcscmblueprint
+echo "##active_line16##"
+DerivedData/
+echo "##active_line17##"
+# VSCode
+echo "##active_line18##"
+.vscode/
+echo "##active_line19##"
