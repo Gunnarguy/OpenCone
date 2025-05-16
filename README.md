@@ -1,4 +1,3 @@
-
 <div align="center">
   <img src="https://raw.githubusercontent.com/gunnarhostetler/OpenCone/main/OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-Source-1024.png" width="120" />
   <h1 align="center">OpenCone</h1>
@@ -107,7 +106,7 @@ OpenCone adheres to the **MVVM (Model-View-ViewModel)** architectural pattern, p
 
 ```mermaid
 graph TD
-    subgraph UserInterface [📱 User Interface (SwiftUI Views)]
+    subgraph UserInterface [User Interface - SwiftUI Views]
         direction TB
         WelcomeView_UI[WelcomeView]
         MainView_UI[MainView Tabs]
@@ -202,7 +201,7 @@ graph TD
     class Services_Layer svc
     class Core_Infrastructure core
     class External_Dependencies ext
-````
+```
 
 -----
 
@@ -289,7 +288,7 @@ graph LR
             DocumentsViewModel_Flow[DocumentsViewModel]
             SearchViewModel_Flow[SearchViewModel]
         end
-        subgraph Services_App [C. Services]
+        subgraph Services_App [Services]
             FileProcessor_Svc[FileProcessorSvc]
             TextProcessor_Svc[TextProcessorSvc]
             Embedding_Svc[EmbeddingSvc]
@@ -336,7 +335,7 @@ graph LR
     Pinecone_Svc -->|Query Vector| Pinecone_API_Flow
     Pinecone_API_Flow -->|Relevant Chunks| Pinecone_Svc
     Pinecone_Svc -->|Chunks| SearchViewModel_Flow
-    SearchViewModel_Flow -->|7. Generate Answer (RAG)| OpenAI_Svc
+    SearchViewModel_Flow -->|"7. Generate Answer (RAG)"| OpenAI_Svc
     OpenAI_Svc -->|Original Query + Context Chunks| OpenAI_API_Flow
     OpenAI_API_Flow -->|Generated Answer| OpenAI_Svc
     OpenAI_Svc -->|Answer| SearchViewModel_Flow
