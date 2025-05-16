@@ -1,7 +1,6 @@
 # README.md
 
 ```markdown
-````markdown
 <div align="center">
   <img src="https://raw.githubusercontent.com/gunnarhostetler/OpenCone/main/OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-Source-1024.png" width="120" />
   <h1 align="center">OpenCone</h1>
