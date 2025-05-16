@@ -114,7 +114,7 @@ graph TD
         SearchView_UI[SearchView & Results]
         ProcessingLogView_UI[ProcessingLogView]
         SettingsView_UI[SettingsView & Theme]
-        DesignSystem_Components[OCButton, OCCard, OCBadge]
+        DesignSystem_Components["OCButton, OCCard, OCBadge"]
     end
 
     subgraph ViewModels_Layer ["🧠 ViewModels (Combine / @Published)"]
@@ -138,10 +138,10 @@ graph TD
     subgraph Core_Infrastructure ["⚙️ Core Infrastructure"]
         direction TB
         OpenConeApp_App[OpenConeApp Lifecycle]
-        Configuration_Core[Configuration (Defaults & Env)]
-        Logger_Core[Logger (Singleton)]
-        OCDesignSystem_Core[OCDesignSystem (Constants)]
-        Models_Data[Data Models (DocumentModel, etc.)]
+        Configuration_Core["Configuration (Defaults & Env)"]
+        Logger_Core["Logger (Singleton)"]
+        OCDesignSystem_Core["OCDesignSystem (Constants)"]
+        Models_Data["Data Models (DocumentModel, etc.)"]
     end
 
     subgraph External_Dependencies ["☁️ External APIs & System Services"]
@@ -523,5 +523,3 @@ Please ensure your code adheres to the existing style and architectural patterns
 
 -----
 
-```
-This README is designed to be comprehensive, well-organized, and visually appealing with the use of badges and Mermaid diagrams. It covers all the key aspects of your OpenCone application, from its high-level purpose down to setup instructions and technical details. I've also taken the liberty of suggesting an app icon in the header – you can replace the URL with a direct link to your `AppIcon-Source-1024.png` if it's hosted, or keep it as a placeholder.
