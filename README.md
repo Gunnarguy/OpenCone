@@ -106,7 +106,7 @@ OpenCone adheres to the **MVVM (Model-View-ViewModel)** architectural pattern, p
 
 ```mermaid
 graph TD
-    subgraph UserInterface [User Interface - SwiftUI Views]
+    subgraph UserInterface ["User Interface - SwiftUI Views"]
         direction TB
         WelcomeView_UI[WelcomeView]
         MainView_UI[MainView Tabs]
@@ -117,7 +117,7 @@ graph TD
         DesignSystem_Components[OCButton, OCCard, OCBadge]
     end
 
-    subgraph ViewModels_Layer [🧠 ViewModels (Combine / @Published)]
+    subgraph ViewModels_Layer ["🧠 ViewModels (Combine / @Published)"]
         direction TB
         SettingsViewModel_VM[SettingsViewModel]
         DocumentsViewModel_VM[DocumentsViewModel]
@@ -126,7 +126,7 @@ graph TD
         ThemeManager_Core[ThemeManager]
     end
 
-    subgraph Services_Layer [🛠️ Services (Business Logic & API Clients)]
+    subgraph Services_Layer ["🛠️ Services (Business Logic & API Clients)"]
         direction TB
         FileProcessorService_Svc[FileProcessorService]
         TextProcessorService_Svc[TextProcessorService]
@@ -135,7 +135,7 @@ graph TD
         PineconeService_Svc[PineconeService]
     end
 
-    subgraph Core_Infrastructure [⚙️ Core Infrastructure]
+    subgraph Core_Infrastructure ["⚙️ Core Infrastructure"]
         direction TB
         OpenConeApp_App[OpenConeApp Lifecycle]
         Configuration_Core[Configuration (Defaults & Env)]
@@ -144,7 +144,7 @@ graph TD
         Models_Data[Data Models (DocumentModel, etc.)]
     end
 
-    subgraph External_Dependencies [☁️ External APIs & System Services]
+    subgraph External_Dependencies ["☁️ External APIs & System Services"]
         direction TB
         OpenAI_API_Ext["OpenAI API"]
         Pinecone_API_Ext["Pinecone API"]
@@ -336,7 +336,7 @@ graph LR
     Pinecone_API_Flow -->|Relevant Chunks| Pinecone_Svc
     Pinecone_Svc -->|Chunks| SearchViewModel_Flow
     SearchViewModel_Flow -->|"7. Generate Answer (RAG)"| OpenAI_Svc
-    OpenAI_Svc -->|Original Query + Context Chunks| OpenAI_API_Flow
+    OpenAI_Svc -->|"Original Query + Context Chunks"| OpenAI_API_Flow
     OpenAI_API_Flow -->|Generated Answer| OpenAI_Svc
     OpenAI_Svc -->|Answer| SearchViewModel_Flow
     SearchViewModel_Flow -->|Update UI with Answer & Sources| SearchView_Flow
@@ -524,5 +524,4 @@ Please ensure your code adheres to the existing style and architectural patterns
 -----
 
 ```
-
 This README is designed to be comprehensive, well-organized, and visually appealing with the use of badges and Mermaid diagrams. It covers all the key aspects of your OpenCone application, from its high-level purpose down to setup instructions and technical details. I've also taken the liberty of suggesting an app icon in the header – you can replace the URL with a direct link to your `AppIcon-Source-1024.png` if it's hosted, or keep it as a placeholder.
