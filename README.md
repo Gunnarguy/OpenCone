@@ -172,7 +172,7 @@ graph TD
     SearchView_UI --> SearchViewModel_VM
     ProcessingLogView_UI --> ProcessingViewModel_VM
     SettingsView_UI --> SettingsViewModel_VM
-    ThemeManager_Core --> UserDefaults_Ext  %% For saving theme preference
+    ThemeManager_Core --> UserDefaults_Ext
 
     DocumentsViewModel_VM --> FileProcessorService_Svc
     DocumentsViewModel_VM --> TextProcessorService_Svc
