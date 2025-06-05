@@ -415,8 +415,8 @@ graph LR
       * An active **OpenAI API Key**. You can obtain one from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
       * An active **Pinecone API Key** and **Project ID**.
           * Ensure you are using a **Serverless** Pinecone project.
-          * API Key (starts with `pcsk_`) can be found at [app.pinecone.io/projects/(your-org)/projects/(your-project)/keys](https://www.google.com/search?q=https://app.pinecone.io/projects/\(your-org\)/projects/\(your-project\)/keys).
-          * Project ID can be found at [app.pinecone.io/organizations/(your-org)/projects](https://www.google.com/search?q=https://app.pinecone.io/organizations/\(your-org\)/projects).
+          * API Key (starts with `pcsk_`) can be found at [app.pinecone.io/projects/(your-org)/projects/(your-project)/keys](https://app.pinecone.io/projects/(your-org)/projects/(your-project)/keys).
+          * Project ID can be found at [app.pinecone.io/organizations/(your-org)/projects](https://app.pinecone.io/organizations/(your-org)/projects).
 
 ### Installation & Running
 
@@ -496,8 +496,14 @@ Beyond the initial API key setup, OpenCone offers further customization through 
 
   * **Theme**: Customize the app's look and feel by selecting a theme (Light, Dark, Midnight, Forest). Changes are applied instantly.
 
+## 📹 Video Demo Checklist
+When recording a walkthrough, consider highlighting:
+1. Launch the app and complete the WelcomeView API key setup.
+2. Add a document, process it, and open the details screen.
+3. Perform a search and show the generated answer with sources.
+4. Demonstrate filtering in the Processing Log tab.
+5. Switch themes in Settings and preview the DesignSystem demo.
 -----
-
 ## 🤝 Contributing
 
 While OpenCone is primarily a project by Gunnar Hostetler, contributions in the form of feedback, bug reports, or feature suggestions are welcome. Please feel free to open an issue on the GitHub repository to discuss potential changes or identify problems.
