@@ -1,19 +1,21 @@
+# OpenCone: On-Device RAG for iOS
+
 OpenCone is a sophisticated, native iOS application designed to empower users to process, embed, and perform semantic searches on their documents directly from their iPhone or iPad. Built with SwiftUI, Combine, and modern `async/await`, it provides a seamless and reactive user experience for interacting with powerful AI models from OpenAI and Pinecone.
 
 ---
 
 ## 📚 Table of Contents
 
-- [Overview](https://www.google.com/search?q=%23overview)
-- [Key Features](https://www.google.com/search?q=%23key-features)
-- [Architecture](https://www.google.com/search?q=%23architecture)
-- [Detailed Project Structure](https://www.google.com/search?q=%23detailed-project-structure)
-- [Core Application & Data Flow](https://www.google.com/search?q=%23core-application--data-flow)
-- [Core Components & Their Interactions](https://www.google.com/search?q=%23core-components--their-interactions)
-- [Potential Refinements & Considerations](https://www.google.com/search?q=%23potential-refinements--considerations)
-- [Getting Started](https://www.google.com/search?q=%23getting-started)
-- [Contributing](https://www.google.com/search?q=%23contributing)
-- [License](https://www.google.com/search?q=%23license)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Detailed Project Structure](#detailed-project-structure)
+- [Core Application & Data Flow](#core-application--data-flow)
+- [Core Components & Their Interactions](#core-components--their-interactions)
+- [Potential Refinements & Considerations](#potential-refinements--considerations)
+- [Getting Started](#getting-started)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -106,8 +108,7 @@ graph TD
 
 ## Detailed Project Structure
 
-\<details\>
-\<summary\>\<strong\>\<code\>📂 OpenCone/App/\</code\>\</strong\>\</summary\>
+### 📂 `OpenCone/App/`
 
 | File                | Summary                                                                                                                                   |
 | :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -115,10 +116,7 @@ graph TD
 | `MainView.swift`    | Contains the root `TabView` that orchestrates navigation between the app's primary features: Documents, Search, Logs, and Settings.       |
 | `WelcomeView.swift` | The initial onboarding view shown on first launch or when API keys are missing. Guides the user through entering credentials.             |
 
-\</details\>
-
-\<details\>
-\<summary\>\<strong\>\<code\>📂 OpenCone/Core/\</code\>\</strong\>\</summary\>
+### 📂 `OpenCone/Core/`
 
 | File                       | Summary                                                                                                                                                   |
 | :------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,10 +129,7 @@ graph TD
 | **`Components/`**          | Contains reusable, themed SwiftUI components like `OCButton`, `OCCard`, and `OCBadge`.                                                                    |
 | **`Extensions/`**          | Contains helpful extensions on standard Swift/SwiftUI types, such as `Binding+Extensions.swift`.                                                          |
 
-\</details\>
-
-\<details\>
-\<summary\>\<strong\>\<code\>📂 OpenCone/Features/\</code\>\</strong\>\</summary\>
+### 📂 `OpenCone/Features/`
 
 | File                        | Summary                                                                                                                                                           |
 | :-------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -152,10 +147,7 @@ graph TD
 | `SettingsView.swift`        | The main UI for the Settings tab, allowing users to configure API keys, processing parameters, and AI models.                                                     |
 | `SettingsViewModel.swift`   | Manages the state and persistence (`UserDefaults`) of all application settings.                                                                                   |
 
-\</details\>
-
-\<details\>
-\<summary\>\<strong\>\<code\>📂 OpenCone/Services/\</code\>\</strong\>\</summary\>
+### 📂 `OpenCone/Services/`
 
 | File                         | Summary                                                                                                                                                                   |
 | :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -165,120 +157,127 @@ graph TD
 | `PineconeService.swift`      | Manages all interactions with the Pinecone API, including index/namespace management, vector upsertion, and querying, with built-in retry and rate-limiting logic.        |
 | `EmbeddingService.swift`     | Orchestrates the process of generating vector embeddings by taking text chunks, interacting with `OpenAIService`, and converting the results into Pinecone-ready vectors. |
 
-\</details\>
-
 ---
 
 ## Core Application & Data Flow
 
-The application's flow is managed by a state machine in `OpenConeApp.swift`, ensuring a smooth and logical user experience from first launch to core functionality.
+### **1. Application Lifecycle & State Machine**
 
-- **App Initialization & Onboarding**: On launch, `OpenConeApp.swift` checks for a `hasLaunchedBefore` flag in `UserDefaults`.
+The application's entry point, `OpenConeApp.swift`, manages the overall state of the UI through a simple state machine defined by the `AppState` enum.
 
-  - **First Launch**: If the flag is missing, the app state transitions to `.welcome`. The `WelcomeView` is displayed, guiding the user through a multi-step process to enter their OpenAI and Pinecone API keys.
-  - **Subsequent Launches**: The app loads keys from `UserDefaults` via the `SettingsViewModel` and proceeds to initialize its core services.
+- **`@main` `OpenConeApp`**:
+  - On launch, it immediately checks for the presence of required API keys (`OpenAI` and `Pinecone`) in `UserDefaults`.
+  - **`AppState`**:
+    - `.loading`: The initial state while keys are being verified.
+    - `.welcome`: If any key is missing, the app transitions to this state, presenting the `WelcomeView` to prompt the user for their credentials.
+    - `.main`: Once keys are validated, the app transitions to the main `TabView` (`MainView`), unlocking the core features.
+    - `.error`: A state for handling critical, unrecoverable errors (though not explicitly used in the main flow).
+  - This state-driven approach ensures that users cannot access features that depend on APIs without first providing the necessary configuration.
 
-- **Service Initialization**: The `initializeServices()` function acts as a critical gate.
+### **2. The Asynchronous Document Processing Pipeline**
 
-  - It validates that all necessary API keys and the Pinecone Project ID are present. If not, it redirects the user back to the `.welcome` state.
-  - If validation passes, it initializes the singleton `OpenAIService`, `PineconeService`, and `EmbeddingService`. These services are then injected into the `DocumentsViewModel` and `SearchViewModel`.
-  - Upon successful creation of the view models, the app state transitions to `.main`.
+The core of OpenCone's functionality is its robust, asynchronous pipeline for ingesting documents. This process is primarily orchestrated by the `DocumentsViewModel` and involves several services.
 
-- **Main Interface & Navigation**: Once in the `.main` state, the `MainView` is presented. This view is the app's hub, containing a `TabView` that provides access to the four primary features:
+- **Trigger**: The user selects one or more files via the `DocumentPicker` (a `UIViewControllerRepresentable` wrapper for `UIDocumentPickerViewController`).
+- **`DocumentsViewModel.handlePickedDocuments(urls:)`**:
+  1.  **Security-Scoped Access**: For each URL, it secures persistent, sandboxed access to the file.
+  2.  **`DocumentModel` Creation**: A `DocumentModel` is created for each file to track its state (`.pending`, `.processing`, `.completed`, `.failed`).
+  3.  **Asynchronous Processing**: It kicks off a `Task` for each document to perform the processing concurrently.
+- **`processDocument(document:)` (within `DocumentsViewModel`)**:
+  1.  **File Processing (`FileProcessorService`)**:
+      - Reads the file data.
+      - Extracts raw text. This is a critical step that uses `PDFKit` for PDFs and `VisionKit`'s OCR capabilities for images, making the app highly versatile.
+  2.  **Text Processing (`TextProcessorService`)**:
+      - The extracted text is intelligently split into smaller pieces (`ChunkModel`) based on the file's MIME type to ensure semantic coherence.
+      - A unique hash is generated for the document's content to prevent re-processing identical files.
+  3.  **Embedding Generation (`EmbeddingService` & `OpenAIService`)**:
+      - The text chunks are sent to the OpenAI API via `OpenAIService` to be converted into numerical vector embeddings.
+      - This process is batched to handle API rate limits gracefully.
+  4.  **Vector Upsert (`PineconeService`)**:
+      - The resulting vectors, along with their metadata (source document ID, chunk text), are "upserted" (uploaded) into the user's selected Pinecone index and namespace.
+- **Real-time Feedback**: Throughout this entire pipeline, the `Logger` service is called at the beginning and end of each major step (e.g., "Starting text extraction," "Completed embedding generation"). The `ProcessingView` observes these log entries via Combine and displays them in real-time, providing the user with transparent, detailed feedback on the app's activity.
 
-  1.  **Documents**: For uploading, processing, and managing files.
-  2.  **Search**: For performing semantic search and asking questions.
-  3.  **Logs**: For viewing real-time application activity.
-  4.  **Settings**: For configuring API keys, processing parameters, and app appearance.
+### **3. Retrieval Augmented Generation (RAG)**
 
-- **Reactive Data Flow in Action**: The application is highly reactive. For example, when a user taps "Process" in the `DocumentsView`:
-  1.  The `DocumentsView` calls an `async` function in its `DocumentsViewModel`.
-  2.  The `ViewModel` orchestrates a sequence of calls to the `FileProcessorService`, `TextProcessorService`, `EmbeddingService`, and `PineconeService`.
-  3.  Throughout this long-running task, the `ViewModel` updates `@Published` properties (e.g., `isProcessing`, `processingProgress`, `currentProcessingStatus`).
-  4.  The `DocumentsView`, observing these properties, automatically updates its UI to show progress bars, status messages, and disable/enable controls, providing real-time feedback without complex UI management code.
+The `SearchViewModel` orchestrates the RAG flow, which turns a user's question into a well-supported answer.
+
+- **Trigger**: The user types a query into the `SearchView` and submits it.
+- **`SearchViewModel.performSearch()`**:
+  1.  **Query Embedding (`OpenAIService`)**: The user's natural language query is first converted into a vector embedding using the same OpenAI model that was used for the documents.
+  2.  **Vector Search (`PineconeService`)**: This new query vector is sent to the Pinecone API. Pinecone performs a similarity search and returns the top `k` most semantically similar vectors from the index.
+  3.  **Context Aggregation**: The `SearchViewModel` retrieves the original text chunks associated with the vectors returned by Pinecone. This text forms the "context" for the final answer.
+  4.  **Answer Synthesis (`OpenAIService`)**: The original query and the retrieved context are combined into a carefully crafted prompt. This prompt is sent to an OpenAI completion model (like `gpt-4o`), which generates a concise, synthesized answer based _only_ on the provided information.
+  5.  **Display**: The final answer and its source chunks are displayed in the `SearchView`.
 
 ---
 
 ## Core Components & Their Interactions
 
-The app's modularity is achieved through a clear separation of concerns, with each component having a distinct responsibility.
+### **Dependency Injection**
 
-- **`OpenConeApp.swift` (The Conductor)**: The `@main` entry point. It owns the primary `StateObject`s (`SettingsViewModel`, etc.) and manages the high-level `AppState` (e.g., `.loading`, `.welcome`, `.main`). It is responsible for initializing all services and view models and injecting them where needed.
+- The application employs a manual form of Dependency Injection. The primary services (`OpenAIService`, `PineconeService`, etc.) are instantiated once in `OpenConeApp` and passed down to the ViewModels that need them (e.g., `MainView` creates `DocumentsViewModel` and injects the required services). This promotes loose coupling and makes components easier to test or replace.
 
-- **`WelcomeView` & `SettingsViewModel` (The Gatekeepers)**:
+### **State Management**
 
-  - `WelcomeView` handles the initial onboarding. It uses the `SettingsViewModel` to capture and validate API keys.
-  - `SettingsViewModel` is the single source of truth for all application settings. It persists data to `UserDefaults` and provides it to the rest of the app.
+- **Application State**: Managed by the `AppState` enum in `OpenConeApp.swift`, controlling the top-level view hierarchy.
+- **View State**: Each feature's state is managed by its corresponding `ViewModel` (e.g., `DocumentsViewModel`, `SearchViewModel`). These `ObservableObject`s use `@Published` properties to drive UI updates in their respective SwiftUI `View`s.
+- **Shared State**:
+  - **`ThemeManager`**: A shared `ObservableObject` singleton that manages the application's current theme. Any view can subscribe to it to react to theme changes.
+  - **`Logger`**: A shared singleton that centralizes all log messages. It uses a Combine `PassthroughSubject` to broadcast new `ProcessingLogEntry` items to any interested subscribers, most notably the `ProcessingViewModel`.
 
-- **`MainView` (The Hub)**: Contains the `TabView` and holds instances of the primary feature ViewModels (`DocumentsViewModel`, `SearchViewModel`). It acts as the root of the main application interface.
+### **Real-time, Reactive Logging System**
 
-- **The Service Layer (The Workers)**: These are stateless, reusable components that handle all the heavy lifting.
+A key architectural feature is the centralized, reactive logging system, which provides exceptional observability into the app's operations.
 
-  - `FileProcessorService`: Handles all file I/O, using `PDFKit` for PDF text extraction and `VisionKit` for OCR on images.
-  - `TextProcessorService`: Implements logic for splitting text into appropriately sized chunks with overlap.
-  - `OpenAIService` & `PineconeService`: Encapsulate all network communication, request/response models, and error handling for their respective APIs.
-  - `EmbeddingService`: A coordinator service that uses the `OpenAIService` to convert text chunks into vectors.
+- **`Logger.swift` (Singleton)**:
+  - Contains a `public static let shared` instance, making it accessible from anywhere in the app (ViewModels, Services, etc.).
+  - Features a Combine `PassthroughSubject<ProcessingLogEntry, Never>`, which acts as a broadcast channel for log messages.
+  - The `log(...)` method creates a `ProcessingLogEntry` and sends it through the subject.
+- **`ProcessingViewModel.swift`**:
+  - In its initializer, it subscribes to the `Logger.shared.logEntryPublisher`.
+  - It maintains a `@Published var logEntries: [ProcessingLogEntry]` array.
+  - Using a `.sink` operator, it appends each new log entry received from the publisher to its `logEntries` array.
+- **`ProcessingView.swift`**:
+  - Observes the `ProcessingViewModel`.
+  - The UI automatically updates via SwiftUI's declarative nature whenever the `logEntries` array in the ViewModel changes.
 
-- **The ViewModel Layer (The Brains)**: Each primary feature has a dedicated ViewModel that manages its state and business logic.
-
-  - `DocumentsViewModel`: Orchestrates the entire document processing pipeline by calling the various services in the correct order.
-  - `SearchViewModel`: Implements the full Retrieval Augmented Generation (RAG) flow, from embedding the user's query to fetching context from Pinecone and generating a final answer with OpenAI.
-  - `ProcessingViewModel`: Subscribes to the shared `Logger` instance via a Combine pipeline and manages the state for the `ProcessingView` (filtering, searching, etc.).
-
-- **`Logger.swift` (The Scribe)**: A shared singleton that collects `ProcessingLogEntry` items from all over the app. It uses a Combine `@Published` property to allow any part of the app (specifically the `ProcessingViewModel`) to react to new log entries in real-time.
+This setup decouples the log _producers_ (any component that calls `Logger.log(...)`) from the log _consumer_ (`ProcessingViewModel`), creating a highly efficient and real-time feedback mechanism for the user.
 
 ---
 
 ## Potential Refinements & Considerations
 
-1.  **Enhance Security**: Migrate API key storage from `UserDefaults` to the **Keychain**. While `UserDefaults` is convenient, Keychain provides hardware-backed encryption and is the standard for securely storing sensitive secrets on iOS.
-2.  **Increase Unit Test Coverage**: The project currently lacks a dedicated test target. Adding unit tests for the Service layer and business logic within the ViewModels would significantly improve code quality, prevent regressions, and make future refactoring safer.
-3.  **Optimize Memory Management for Large Files**: While `autoreleasepool` is used during chunking, processing extremely large documents (\>100MB) could still lead to memory pressure. Implementing a streaming or line-by-line processing approach in `FileProcessorService` and `TextProcessorService` would make the app more robust.
-4.  **Improve Accessibility**: Enhance the application for users with disabilities by adding accessibility labels, hints, and values to all SwiftUI views. Ensure proper focus order and support for Dynamic Type and VoiceOver.
+- **Formal Dependency Injection Container**: While manual injection works, a library like `Swinject` could formalize dependency management, especially if the object graph becomes more complex.
+- **Error Handling Granularity**: Error handling could be made more granular, with custom error types for different failure modes (e.g., `PineconeError`, `OpenAIError`) to provide more specific feedback to the user.
+- **State Persistence**: Beyond `UserDefaults` for settings, using Core Data or SwiftData could provide a more robust solution for persisting `DocumentModel` objects and their states across app launches.
+- **Background Processing**: For very large files, implementing `BGProcessingTask` from the BackgroundTasks framework would allow the processing pipeline to continue even if the user backgrounds the app.
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-
-- **Xcode**: 15.0 or later
-- **Swift**: 5.9+
-- **iOS**: 15.0 or later
-- **Accounts**:
-  - An Apple Developer account (for on-device deployment).
-  - An OpenAI API Key.
-  - A Pinecone API Key and Project ID (from a **Serverless** project).
-
-### Installation & Setup
-
 1.  **Clone the Repository**:
-
     ```bash
-    git clone https://github.com/gunnarhostetler/OpenCone.git
+    git clone https://github.com/your-username/OpenCone.git
     cd OpenCone
     ```
-
-2.  **Provide API Keys**:
-    You have two options to configure the required API keys:
-
-    - **(In-App)**: Build and run the app. The initial welcome screen will prompt you to enter your OpenAI and Pinecone credentials.
-    - **(Environment Variables for Xcode)**:
-      1.  In Xcode, go to **Product → Scheme → Edit Scheme...**
-      2.  Select the **Run** action, then go to the **Arguments** tab.
-      3.  In the "Environment Variables" section, add the following:
-          - `OPENAI_API_KEY`: `your_openai_api_key`
-          - `PINECONE_API_KEY`: `your_pinecone_api_key`
-          - `PINECONE_PROJECT_ID`: `your_pinecone_project_id`
-
-3.  **Run the App**:
-    Open `OpenCone.xcodeproj` in Xcode, select an iOS Simulator or a connected device, and press **Cmd+R** to build and run.
+2.  **Open the Project**:
+    - Open `OpenCone.xcodeproj` in Xcode.
+3.  **Configure API Keys**:
+    - The app requires API keys for OpenAI and Pinecone. For local debugging, these can be set as environment variables in the Xcode scheme.
+    - Go to **Product > Scheme > Edit Scheme...**
+    - Select the **Run** action and go to the **Arguments** tab.
+    - Add the following to the "Environment Variables" section:
+      - `OPENAI_API_KEY`: Your secret key from OpenAI.
+      - `PINECONE_API_KEY`: Your secret key from Pinecone.
+4.  **Build and Run**:
+    - Select a target simulator or a physical device and press the Run button.
 
 ---
 
 ## Contributing
 
-Contributions are welcome\! Please fork the repository and submit a pull request with your proposed changes. For major features, please open an issue first to discuss what you would like to change.
+Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs, feature requests, or improvements.
 
 ---
 
