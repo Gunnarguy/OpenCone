@@ -19,6 +19,11 @@ struct ThemeModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.theme, themeManager.currentTheme)
+            // Apply global accent color to controls (buttons, links, toggles, etc.)
+            .tint(themeManager.currentTheme.accentColor)
+            // Ensure the theme's background color fills the screen behind all content
+            .background(themeManager.currentTheme.backgroundColor.ignoresSafeArea())
+            // Keep system chrome in the correct light/dark mode
             .preferredColorScheme(
                 themeManager.currentTheme.id == "dark" || themeManager.currentTheme.id == "midnight"
                     ? .dark : .light)

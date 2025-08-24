@@ -52,17 +52,19 @@ struct OCTheme {
     static let dark = OCTheme(
         id: "dark",
         name: "Dark",
-        primaryColor: Color.blue,
-        secondaryColor: Color(hex: "#7E76FF"),
-        backgroundColor: Color(.systemBackground),
-        cardBackgroundColor: Color(.secondarySystemBackground),
-        textPrimaryColor: Color(.label),
-        textSecondaryColor: Color(.secondaryLabel),
-        accentColor: Color.blue,
-        successColor: Color.green,
-        warningColor: Color.orange,
-        errorColor: Color.red,
-        infoColor: Color.blue
+    // Use a deeper, high-contrast palette for a more "true dark" look
+    // that matches the OpenAssistant aesthetic.
+    primaryColor: Color(hex: "#3366FF"),
+    secondaryColor: Color(hex: "#7E76FF"),
+    backgroundColor: Color(hex: "#121A2B"), // deep desaturated blue/black
+    cardBackgroundColor: Color(hex: "#1A2540"), // slightly lifted from background
+    textPrimaryColor: Color.white,
+    textSecondaryColor: Color.white.opacity(0.7),
+    accentColor: Color(hex: "#3366FF"),
+    successColor: Color(hex: "#4CD964"),
+    warningColor: Color(hex: "#FF9500"),
+    errorColor: Color(hex: "#FF3B30"),
+    infoColor: Color(hex: "#5AC8FA")
     )
 
     /// Midnight blue theme
