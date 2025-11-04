@@ -464,7 +464,6 @@ class SearchViewModel: ObservableObject {
             }
 
             self.currentStreamTask = Task {
-                defer { watchdogTask.cancel() }
                 do {
                     var deltaCount = 0
                     try await openAIService.streamCompletion(
@@ -555,6 +554,7 @@ class SearchViewModel: ObservableObject {
                                     }
                                 }
                                 await MainActor.run {
+                                    watchdogTask.cancel() // Clean up watchdog since stream completed successfully
                                     self.isSearching = false
                                     self.answerGenerationProgress = 1.0
                                     self.lastSearchTime = searchStartTime
@@ -569,11 +569,13 @@ class SearchViewModel: ObservableObject {
                         }
                     )
                 } catch is CancellationError {
+                    watchdogTask.cancel() // Clean up watchdog on cancellation
                     await MainActor.run {
                         self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
                     }
                     // Suppress UI error; watchdog or user cancel will handle state and message finalization
                 } catch {
+                    watchdogTask.cancel() // Clean up watchdog on error
                     await self.handleError(SearchError.answerGenerationFailed(error))
                 }
             }
@@ -691,7 +693,6 @@ class SearchViewModel: ObservableObject {
         }
 
         self.currentStreamTask = Task {
-            defer { watchdogTask.cancel() }
             do {
                 var deltaCount = 0
                 try await openAIService.streamCompletion(
@@ -782,6 +783,7 @@ class SearchViewModel: ObservableObject {
                                 }
                             }
                             await MainActor.run {
+                                watchdogTask.cancel() // Clean up watchdog since stream completed successfully
                                 self.isSearching = false
                                 self.currentStreamTask = nil
                                 self.logger.log(
@@ -794,11 +796,13 @@ class SearchViewModel: ObservableObject {
                     }
                 )
             } catch is CancellationError {
+                watchdogTask.cancel() // Clean up watchdog on cancellation
                 await MainActor.run {
                     self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
                 }
                 // Suppress UI error; watchdog or user cancel will handle state and message finalization
             } catch {
+                watchdogTask.cancel() // Clean up watchdog on error
                 await self.handleError(SearchError.answerGenerationFailed(error))
             }
         }
