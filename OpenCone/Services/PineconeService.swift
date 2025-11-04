@@ -9,6 +9,12 @@ class PineconeService {
     private let baseURL = "https://api.pinecone.io"
     private var indexHost: String?
     private var currentIndex: String?
+
+    // Location and metadata cache
+    private let cloud: String
+    private let region: String
+    private var indexHostCache: [String: (host: String, ts: Date)] = [:]
+    private let hostCacheTTL: TimeInterval = 300 // 5 minutes
     
     // Network session management
     private let session: URLSession
@@ -20,10 +26,33 @@ class PineconeService {
     // Rate limiting
     private var lastRequestTime: Date?
     private let minRequestInterval: TimeInterval = 0.1 // 100ms between requests
+
+    // Health / Circuit breaker
+    private enum HealthStatus {
+        case unknown, healthy, unhealthy
+    }
+    private var healthStatus: HealthStatus = .unknown
+    private var consecutiveHealthFailures: Int = 0
+    private var circuitOpenUntil: Date? = nil
+    private let healthFailureThreshold: Int = 2
+    private let circuitOpenSeconds: TimeInterval = 20
+
+    /// Whether the circuit is currently open due to recent consecutive failures.
+    var isCircuitOpen: Bool {
+        if let until = circuitOpenUntil {
+            return Date() < until
+        }
+        return false
+    }
     
     init(apiKey: String, projectId: String) {
         self.apiKey = apiKey
         self.projectId = projectId
+
+        // Load location preferences from secure store
+        let store = SecureSettingsStore.shared
+        self.cloud = store.getPineconeCloud()
+        self.region = store.getPineconeRegion()
         
         // Configure session with better timeout and caching policies
         let configuration = URLSessionConfiguration.default
@@ -40,6 +69,11 @@ class PineconeService {
     func setCurrentIndex(_ indexName: String) async throws {
         self.currentIndex = indexName
         try await getIndexHost(for: indexName)
+
+        // Reset health/circuit state when switching indexes
+        self.healthStatus = .unknown
+        self.consecutiveHealthFailures = 0
+        self.circuitOpenUntil = nil
         
         // Validate that we have a host after setting index
         guard indexHost != nil else {
@@ -48,11 +82,73 @@ class PineconeService {
         
         logger.log(level: .info, message: "Successfully set current index to '\(indexName)'")
     }
+
+    /// Describe a Pinecone index to get its details, including dimension
+    /// - Parameter name: Name of the index
+    /// - Returns: Full description of the index
+    func describeIndex(name: String) async throws -> IndexDescribeResponse {
+        let endpoint = "\(baseURL)/indexes/\(name)"
+        
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "GET"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+        
+        var result: IndexDescribeResponse?
+        
+        try await withRetries(maxRetries: maxRetries) {
+            do {
+                try await self.applyRateLimit()
+                
+                let (data, response) = try await session.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw PineconeError.invalidResponse
+                }
+                
+                if httpResponse.statusCode != 200 {
+                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
+                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
+                    logger.log(level: .error, message: "Pinecone API error (describeIndex): Status \(httpResponse.statusCode), Message: \(message)")
+                    
+                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                    } else {
+                        throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+                    }
+                }
+                
+                result = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
+            } catch {
+                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
+                    throw error
+                } else {
+                    logger.log(level: .error, message: "Failed to describe index: \(error.localizedDescription)")
+                    throw error
+                }
+            }
+        }
+        
+        guard let indexDescription = result else {
+            throw PineconeError.requestFailed(statusCode: 0, message: "Failed to describe index: Unknown error")
+        }
+        
+        return indexDescription
+    }
     
     /// Get the host URL for a Pinecone index
     /// - Parameter indexName: Name of the index
     /// - Returns: Host URL
     private func getIndexHost(for indexName: String) async throws {
+        // Serve from cache if fresh
+        if let cached = indexHostCache[indexName], Date().timeIntervalSince(cached.ts) < hostCacheTTL {
+            self.indexHost = cached.host
+            logger.log(level: .info, message: "Using cached host for index '\(indexName)': \(cached.host)")
+            return
+        }
+
         let endpoint = "\(baseURL)/indexes/\(indexName)"
         
         var request = URLRequest(url: URL(string: endpoint)!)
@@ -61,6 +157,8 @@ class PineconeService {
         // Use both API Key and Project ID for JWT authentication
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        // Standardize API version header
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         
         // Use retry mechanism for this critical operation
         try await withRetries(maxRetries: maxRetries) {
@@ -69,6 +167,10 @@ class PineconeService {
                 try await self.applyRateLimit()
                 
                 let (data, response) = try await session.data(for: request)
+                
+                guard !data.isEmpty else {
+                    throw PineconeError.emptyResponse
+                }
                 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -89,6 +191,8 @@ class PineconeService {
                 
                 let indexInfo = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
                 self.indexHost = indexInfo.host
+                // Cache the host with timestamp
+                indexHostCache[indexName] = (host: indexInfo.host, ts: Date())
                 logger.log(level: .info, message: "Index host set to: \(indexInfo.host)")
             } catch {
                 // Log the error and rethrow for retry mechanism to handle
@@ -108,6 +212,7 @@ class PineconeService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         
         var result: IndexListResponse?
         
@@ -165,8 +270,8 @@ class PineconeService {
             "metric": "cosine",
             "spec": [
                 "serverless": [
-                    "cloud": "aws",
-                    "region": Configuration.pineconeEnvironment
+                    "cloud": self.cloud,
+                    "region": self.region
                 ]
             ]
         ]
@@ -180,6 +285,7 @@ class PineconeService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         request.httpBody = jsonData
         
         var result: IndexCreateResponse?
@@ -235,6 +341,7 @@ class PineconeService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         
         var result: Bool = false
         
@@ -311,6 +418,71 @@ class PineconeService {
         return false
     }
     
+    /// Quick preflight health check for index host with short timeouts.
+    /// - Returns: true if healthy (HTTP 200); false for non-200 or any error.
+    func healthCheck() async -> Bool {
+        // If the circuit is open, fail fast.
+        if isCircuitOpen {
+            logger.log(level: .warning, message: "Pinecone circuit open; skipping health check")
+            return false
+        }
+        guard let indexHost = indexHost, let _ = currentIndex else {
+            logger.log(level: .warning, message: "No index selected; health check failed")
+            return false
+        }
+        let endpoint = "https://\(indexHost)/describe_index_stats"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "GET"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+
+        // Short timeout session for preflight
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 5.0
+        cfg.timeoutIntervalForResource = 5.0
+        cfg.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let shortSession = URLSession(configuration: cfg)
+
+        do {
+            let (_, response) = try await shortSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                markHealthFailure(reason: "Invalid response in health check")
+                return false
+            }
+            if httpResponse.statusCode == 200 {
+                markHealthSuccess()
+                return true
+            } else {
+                markHealthFailure(reason: "Health check non-200: \(httpResponse.statusCode)")
+                return false
+            }
+        } catch {
+            markHealthFailure(reason: "Health check error: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func markHealthSuccess() {
+        if consecutiveHealthFailures > 0 || healthStatus != .healthy {
+            logger.log(level: .info, message: "Pinecone health OK; closing circuit if open")
+        }
+        healthStatus = .healthy
+        consecutiveHealthFailures = 0
+        circuitOpenUntil = nil
+    }
+
+    private func markHealthFailure(reason: String) {
+        consecutiveHealthFailures += 1
+        healthStatus = .unhealthy
+        logger.log(level: .warning, message: "Pinecone health failure (\(consecutiveHealthFailures)/\(healthFailureThreshold)): \(reason)")
+        if consecutiveHealthFailures >= healthFailureThreshold {
+            circuitOpenUntil = Date().addingTimeInterval(circuitOpenSeconds)
+            logger.log(level: .warning, message: "Pinecone circuit opened for \(Int(circuitOpenSeconds))s")
+        }
+    }
+
     /// List namespaces for the current index
     /// - Returns: Array of namespace names
     func listNamespaces() async throws -> [String] {
@@ -325,6 +497,7 @@ class PineconeService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         
         var result: IndexStatsResponse?
         
@@ -426,6 +599,7 @@ class PineconeService {
             request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
             request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+            request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
             request.httpBody = jsonData
             
             // Use retry mechanism for this operation
@@ -511,6 +685,7 @@ class PineconeService {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
         request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
         request.httpBody = jsonData
         
         // Use retry mechanism for query operations
@@ -540,7 +715,13 @@ class PineconeService {
                     }
                 }
                 
-                result = try JSONDecoder().decode(QueryResponse.self, from: data)
+                do {
+                    result = try JSONDecoder().decode(QueryResponse.self, from: data)
+                } catch {
+                    let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
+                    logger.log(level: .error, message: "Pinecone decode error (query). Raw response: \(raw)")
+                    throw error
+                }
             } catch {
                 if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
                     // This will be caught by withRetries for retry
@@ -624,6 +805,56 @@ struct UpsertResponse: Codable {
     let upsertedCount: Int
 }
 
+enum JSONValue: Codable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let b = try? container.decode(Bool.self) {
+            self = .bool(b)
+        } else if let n = try? container.decode(Double.self) {
+            self = .number(n)
+        } else if let s = try? container.decode(String.self) {
+            self = .string(s)
+        } else if let arr = try? container.decode([JSONValue].self) {
+            self = .array(arr)
+        } else if let obj = try? container.decode([String: JSONValue].self) {
+            self = .object(obj)
+        } else {
+            throw DecodingError.typeMismatch(JSONValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unsupported JSONValue"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let s): try container.encode(s)
+        case .number(let n): try container.encode(n)
+        case .bool(let b): try container.encode(b)
+        case .object(let o): try container.encode(o)
+        case .array(let a): try container.encode(a)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    // Convenience accessors
+    var string: String? {
+        switch self {
+        case .string(let s): return s
+        case .number(let n): return String(n)
+        case .bool(let b): return b ? "true" : "false"
+        default: return nil
+        }
+    }
+}
+
 struct QueryResponse: Codable {
     let matches: [QueryMatch]
     let namespace: String?
@@ -631,8 +862,8 @@ struct QueryResponse: Codable {
 
 struct QueryMatch: Codable {
     let id: String
-    let score: Float
-    let metadata: [String: String]?
+    let score: Double
+    let metadata: [String: JSONValue]?
 }
 
 struct PineconeErrorResponse: Codable {
@@ -648,6 +879,7 @@ enum PineconeError: Error {
     case rateLimitExceeded
     case retryableError(statusCode: Int)
     case maxRetriesExceeded
+    case emptyResponse
 }
 
 // MARK: - Helper Methods

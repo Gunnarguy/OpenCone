@@ -13,12 +13,30 @@ class SettingsViewModel: ObservableObject {
     @Published var openAIAPIKey: String = ""
     @Published var pineconeAPIKey: String = ""
     @Published var pineconeProjectId: String = ""
+    @Published var pineconeCloud: String = SecureSettingsStore.shared.getPineconeCloud()
+    @Published var pineconeRegion: String = SecureSettingsStore.shared.getPineconeRegion()
 
     // Configuration settings
     @Published var defaultChunkSize: Int = Configuration.defaultChunkSize
     @Published var defaultChunkOverlap: Int = Configuration.defaultChunkOverlap
     @Published var embeddingModel: String = Configuration.embeddingModel
     @Published var completionModel: String = Configuration.completionModel
+
+    // OpenAI generation parameters
+    @Published var temperature: Double = 0.3
+    @Published var topP: Double = 0.95
+    @Published var reasoningEffort: String = "medium" // low|medium|high
+    @Published var conversationMode: String = "server" // "server" (Responses-managed) | "client" (bounded history)
+
+    // UI preferences
+    @Published var showAnswerPanelBelowChat: Bool = (UserDefaults.standard.object(forKey: "ui.showAnswerPanelBelowChat") as? Bool) ?? true {
+        didSet {
+            UserDefaults.standard.set(self.showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
+        }
+    }
+
+    /// Derived: whether the selected completion model is reasoning-capable
+    var isReasoning: Bool { Configuration.isReasoningModel(completionModel) }
 
     // Appearance settings (removed isDarkMode as it's now handled by ThemeManager)
 
@@ -34,6 +52,7 @@ class SettingsViewModel: ObservableObject {
 
     // Updated completion models list with newer models
     let availableCompletionModels = [
+        "gpt-5",
         "gpt-4o-mini",
         "gpt-4o",
         "gpt-4.1-nano-2025-04-14",
@@ -41,32 +60,51 @@ class SettingsViewModel: ObservableObject {
         "gpt-4.1-2025-04-14",
     ]
 
+    let availableReasoningEffortOptions = ["low", "medium", "high"]
+    let availableConversationModes = ["server", "client"]
+
     private let logger = Logger.shared
     private var cancellables = Set<AnyCancellable>()
+    private let store = SecureSettingsStore.shared
+    private let validator = CredentialValidator()
+
+    // Live validation statuses
+    @Published var openAIStatus: CredentialStatus = .unknown
+    @Published var pineconeStatus: CredentialStatus = .unknown
 
     init() {
         // Load saved settings when initialized
         loadSettings()
+        // Debounced live validation
+        $openAIAPIKey
+            .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.runOpenAIValidation()
+            }
+            .store(in: &cancellables)
+
+        Publishers.CombineLatest($pineconeAPIKey, $pineconeProjectId)
+            .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.runPineconeValidation()
+            }
+            .store(in: &cancellables)
     }
 
     /// Load API keys from secure storage
     func loadAPIKeys() {
-        openAIAPIKey = UserDefaults.standard.string(forKey: "openAIAPIKey") ?? ""
-        pineconeAPIKey = UserDefaults.standard.string(forKey: "pineconeAPIKey") ?? ""
-        pineconeProjectId = UserDefaults.standard.string(forKey: "pineconeProjectId") ?? ""
-
-        // In a production app, this would use KeyChain instead of UserDefaults
-        // This is a simplified implementation for demo purposes
+        openAIAPIKey = store.getOpenAIKey()
+        pineconeAPIKey = store.getPineconeAPIKey()
+        pineconeProjectId = store.getPineconeProjectId()
     }
 
     /// Save API keys to secure storage
     func saveAPIKeys() {
-        UserDefaults.standard.set(openAIAPIKey, forKey: "openAIAPIKey")
-        UserDefaults.standard.set(pineconeAPIKey, forKey: "pineconeAPIKey")
-        UserDefaults.standard.set(pineconeProjectId, forKey: "pineconeProjectId")
-
-        // In a production app, this would use KeyChain instead of UserDefaults
-        logger.log(level: .info, message: "API keys saved")
+        _ = store.setOpenAIKey(openAIAPIKey)
+        _ = store.setPineconeAPIKey(pineconeAPIKey)
+        _ = store.setPineconeProjectId(pineconeProjectId)
+        logger.log(level: .info, message: "API keys saved to Keychain")
     }
 
     /// Load all settings
@@ -75,6 +113,9 @@ class SettingsViewModel: ObservableObject {
 
         // Load API keys
         loadAPIKeys()
+        // Load Pinecone location prefs
+        pineconeCloud = store.getPineconeCloud()
+        pineconeRegion = store.getPineconeRegion()
 
         // Load configuration settings from UserDefaults
         defaultChunkSize =
@@ -91,6 +132,30 @@ class SettingsViewModel: ObservableObject {
             UserDefaults.standard.string(forKey: "embeddingModel") ?? Configuration.embeddingModel
         completionModel =
             UserDefaults.standard.string(forKey: "completionModel") ?? Configuration.completionModel
+
+        // Load generation parameters
+        temperature =
+            (UserDefaults.standard.object(forKey: "openai.temperature") as? Double) ?? 0.3
+        topP =
+            (UserDefaults.standard.object(forKey: "openai.topP") as? Double) ?? 0.95
+        reasoningEffort =
+            UserDefaults.standard.string(forKey: "openai.reasoningEffort") ?? "medium"
+
+        // Clamp to valid ranges
+        temperature = min(max(temperature, 0.0), 2.0)
+        topP = min(max(topP, 0.0), 1.0)
+        if !availableReasoningEffortOptions.contains(reasoningEffort) {
+            reasoningEffort = "medium"
+        }
+
+        // Conversation mode
+        conversationMode = UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server"
+        if !availableConversationModes.contains(conversationMode) {
+            conversationMode = "server"
+        }
+
+        // UI preferences
+    showAnswerPanelBelowChat = (UserDefaults.standard.object(forKey: "ui.showAnswerPanelBelowChat") as? Bool) ?? true
     }
 
     /// Save all settings
@@ -103,6 +168,17 @@ class SettingsViewModel: ObservableObject {
         UserDefaults.standard.set(defaultChunkOverlap, forKey: "defaultChunkOverlap")
         UserDefaults.standard.set(embeddingModel, forKey: "embeddingModel")
         UserDefaults.standard.set(completionModel, forKey: "completionModel")
+        UserDefaults.standard.set(temperature, forKey: "openai.temperature")
+        UserDefaults.standard.set(topP, forKey: "openai.topP")
+        UserDefaults.standard.set(reasoningEffort, forKey: "openai.reasoningEffort")
+        UserDefaults.standard.set(conversationMode, forKey: "openai.conversationMode")
+
+        // UI preferences
+        UserDefaults.standard.set(showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
+
+        // Persist Pinecone location prefs
+        store.setPineconeCloud(pineconeCloud)
+        store.setPineconeRegion(pineconeRegion)
 
         logger.log(level: .info, message: "SettingsViewModel: Settings saved to UserDefaults.")
     }
@@ -113,9 +189,48 @@ class SettingsViewModel: ObservableObject {
         defaultChunkOverlap = Configuration.defaultChunkOverlap
         embeddingModel = Configuration.embeddingModel
         completionModel = Configuration.completionModel
+        temperature = 0.3
+        topP = 0.95
+        reasoningEffort = "medium"
+        conversationMode = "server"
+    showAnswerPanelBelowChat = true
 
         logger.log(level: .info, message: "Settings reset to defaults")
     }
+
+    // MARK: - Live validation
+
+    private func runOpenAIValidation() {
+        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            openAIStatus = .unknown
+            return
+        }
+        openAIStatus = .validating
+        Task {
+            let status = await validator.validateOpenAIKey(key)
+            await MainActor.run { self.openAIStatus = status }
+        }
+    }
+
+    private func runPineconeValidation() {
+        let key = pineconeAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pid = pineconeProjectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty || !pid.isEmpty else {
+            pineconeStatus = .unknown
+            return
+        }
+        pineconeStatus = .validating
+        Task {
+            let status = await validator.validatePinecone(apiKey: key, projectId: pid)
+            await MainActor.run { self.pineconeStatus = status }
+        }
+    }
+
+    // Public validate triggers
+    func validateOpenAI() { runOpenAIValidation() }
+    func validatePinecone() { runPineconeValidation() }
+    func validateAll() { runOpenAIValidation(); runPineconeValidation() }
 
     /// Validates if the Pinecone API key has the correct format
     /// - Returns: True if the key is non-empty and starts with "pcsk_"

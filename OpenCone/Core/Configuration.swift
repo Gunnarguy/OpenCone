@@ -70,22 +70,22 @@ struct Configuration {
     /// Retrieves the OpenAI API key. (Placeholder - Reads from static property).
     /// - Returns: The configured OpenAI API key.
     static func getOpenAIAPIKey() -> String {
-        // Production implementation: Retrieve securely from Keychain.
-        return openAIAPIKey
+        // Retrieve securely from Keychain-backed store
+        return SecureSettingsStore.shared.getOpenAIKey()
     }
     
     /// Retrieves the Pinecone API key. (Placeholder - Reads from static property).
     /// - Returns: The configured Pinecone API key.
     static func getPineconeAPIKey() -> String {
-        // Production implementation: Retrieve securely from Keychain.
-        return pineconeAPIKey
+        // Retrieve securely from Keychain-backed store
+        return SecureSettingsStore.shared.getPineconeAPIKey()
     }
     
     /// Retrieves the Pinecone Project ID. (Placeholder - Reads from static property).
     /// - Returns: The configured Pinecone Project ID.
     static func getPineconeProjectId() -> String {
-        // Production implementation: Retrieve securely from Keychain.
-        return pineconeProjectId
+        // Retrieve securely from Keychain-backed store
+        return SecureSettingsStore.shared.getPineconeProjectId()
     }
     
     /// Saves the OpenAI API key. (Placeholder - Prints confirmation).
@@ -107,5 +107,27 @@ struct Configuration {
     static func savePineconeProjectId(_ id: String) {
         // Production implementation: Save securely to Keychain.
         print("Placeholder: Pinecone project ID saved (should use Keychain)")
+    }
+
+    // MARK: - Pinecone Location (Cloud/Region)
+
+    /// Returns the preferred Pinecone cloud provider (e.g., "aws", "gcp")
+    static func getPineconeCloud() -> String {
+        return SecureSettingsStore.shared.getPineconeCloud()
+    }
+
+    /// Returns the preferred Pinecone region (e.g., "us-east-1")
+    static func getPineconeRegion() -> String {
+        return SecureSettingsStore.shared.getPineconeRegion()
+    }
+
+    // MARK: - Model Capabilities
+
+    /// List of reasoning-capable models
+    static let reasoningModels: Set<String> = ["gpt-5"]
+
+    /// Returns true if the given model supports the Responses "reasoning" parameters
+    static func isReasoningModel(_ model: String) -> Bool {
+        return reasoningModels.contains(model)
     }
 }

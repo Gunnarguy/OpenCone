@@ -45,6 +45,19 @@ struct SettingsView: View {
                     appearanceContent
                 }
 
+                // Search UI preferences
+                settingSection(
+                    title: "Search UI",
+                    systemImage: "text.bubble"
+                ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Show Answer Panel under Chat", isOn: $viewModel.showAnswerPanelBelowChat)
+                        Text("When enabled, the Answer & Sources panel stays docked under the conversation. Turn OFF to use a compact chat layout and open the panel on demand.")
+                            .font(.caption)
+                            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                    }
+                }
+
                 // Actions section
                 actionsSection
 
@@ -116,10 +129,116 @@ struct SettingsView: View {
             SecureSettingsField(title: "Pinecone API Key", text: $viewModel.pineconeAPIKey)
             SecureSettingsField(title: "Pinecone Project ID", text: $viewModel.pineconeProjectId)
 
+            // Pinecone location preferences
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Pinecone Location")
+                    .font(.subheadline.bold())
+
+                HStack {
+                    // Cloud picker
+                    Picker("Cloud", selection: $viewModel.pineconeCloud) {
+                        Text("AWS").tag("aws")
+                        Text("GCP").tag("gcp")
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                            .fill(themeManager.currentTheme.backgroundColor)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                            .stroke(themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
+                    )
+
+                    // Region picker (basic presets; can be expanded)
+                    Picker("Region", selection: $viewModel.pineconeRegion) {
+                        Text("us-east-1").tag("us-east-1")
+                        Text("us-west-2").tag("us-west-2")
+                        Text("eu-central-1").tag("eu-central-1")
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                            .fill(themeManager.currentTheme.backgroundColor)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                            .stroke(themeManager.currentTheme.textSecondaryColor.opacity(0.3), lineWidth: 1)
+                    )
+                }
+            }
+
+            // Live credential status + validate
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Credential Status")
+                    .font(.subheadline.bold())
+
+                HStack(spacing: 8) {
+                    statusBadge("OpenAI", viewModel.openAIStatus)
+                    statusBadge("Pinecone", viewModel.pineconeStatus)
+
+                    Spacer()
+
+                    Button(action: {
+                        viewModel.validateAll()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.shield")
+                            Text("Validate")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(themeManager.currentTheme.primaryColor.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+
             Text("The Pinecone Project ID is required for API access.")
                 .font(.caption)
                 .foregroundColor(themeManager.currentTheme.textSecondaryColor)
         }
+    }
+
+    // Helper: status badge
+    @ViewBuilder
+    private func statusBadge(_ label: String, _ status: CredentialStatus) -> some View {
+        let (icon, text, color): (String, String, Color) = {
+            switch status {
+            case .unknown:
+                return ("questionmark.circle", "Unknown", themeManager.currentTheme.textSecondaryColor)
+            case .validating:
+                return ("hourglass", "Validating…", .orange)
+            case .valid:
+                return ("checkmark.circle.fill", "Valid", themeManager.currentTheme.successColor)
+            case .invalid:
+                return ("xmark.octagon.fill", "Invalid", themeManager.currentTheme.errorColor)
+            case .rateLimited(let secs):
+                return ("clock.fill", "Rate limited (\(secs)s)", .orange)
+            }
+        }()
+
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+            Text("\(label): \(text)")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textPrimaryColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(themeManager.currentTheme.backgroundColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(color.opacity(0.3), lineWidth: 1)
+        )
     }
 
     // Processing settings content
@@ -233,8 +352,66 @@ struct SettingsView: View {
                 )
             }
 
+            // Generation Parameters
+            if viewModel.isReasoning {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Reasoning Effort")
+                        .font(.subheadline.bold())
+                    Picker("Effort", selection: $viewModel.reasoningEffort) {
+                        ForEach(viewModel.availableReasoningEffortOptions, id: \.self) { opt in
+                            Text(opt.capitalized).tag(opt)
+                        }
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                }
+                .padding(.top, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Temperature")
+                        .font(.subheadline.bold())
+                    HStack {
+                        Slider(value: $viewModel.temperature, in: 0.0...2.0, step: 0.1)
+                        Text(String(format: "%.1f", viewModel.temperature))
+                            .font(.caption)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+
+                    Text("Top P")
+                        .font(.subheadline.bold())
+                        .padding(.top, 6)
+                    HStack {
+                        Slider(value: $viewModel.topP, in: 0.0...1.0, step: 0.05)
+                        Text(String(format: "%.2f", viewModel.topP))
+                            .font(.caption)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+                .padding(.top, 4)
+            }
+
+            // Conversation Mode
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Conversation Mode")
+                    .font(.subheadline.bold())
+
+                Picker("Conversation Mode", selection: $viewModel.conversationMode) {
+                    Text("Server-managed (OpenAI)").tag("server")
+                    Text("Client-bounded (Local)").tag("client")
+                }
+                .pickerStyle(SegmentedPickerStyle())
+
+                Text(
+                    viewModel.conversationMode == "server"
+                    ? "Uses OpenAI Responses threads to maintain conversation across turns. Best for coherence; still grounded by RAG context each turn."
+                    : "Sends a bounded local history with each request (no server thread). More deterministic prompt shape at the cost of larger tokens."
+                )
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            }
+            .padding(.top, 8)
+
             Text(
-                "The embedding model converts text to vectors. The completion model generates answers from search results."
+                "The embedding model converts text to vectors. The completion model generates answers. Reasoning models expose Effort; other models use Temperature and Top P."
             )
             .font(.caption)
             .foregroundColor(themeManager.currentTheme.textSecondaryColor)

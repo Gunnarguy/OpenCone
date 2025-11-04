@@ -162,11 +162,13 @@ class EmbeddingService {
         return embeddingModels
     }
     
-    /// Generate a single embedding for a query text
-    /// - Parameter query: The query text
+    /// Generate a single embedding for a query text, optionally with a specific dimension
+    /// - Parameters:
+    ///   - query: The query text
+    ///   - dimension: The desired vector dimension
     /// - Returns: A vector embedding
-    func generateQueryEmbedding(for query: String) async throws -> [Float] {
-        let embeddings = try await openAIService.createEmbeddings(texts: [query])
+    func generateQueryEmbedding(for query: String, dimension: Int? = nil) async throws -> [Float] {
+        let embeddings = try await openAIService.createEmbeddings(texts: [query], dimension: dimension)
         
         guard let embedding = embeddings.first else {
             logger.log(level: .error, message: "Failed to generate embedding for query")

@@ -122,13 +122,29 @@ struct WelcomeView: View {
     }
 
     /// Determines if the 'Next' button should be disabled.
-    /// It's disabled only on the API Key step (step 1) if any required key is empty.
+    /// On step 1, requires non-empty keys and live validation to be valid (rate limited also allowed).
     private var isNextButtonDisabled: Bool {
-        // Check if it's the API key step and if any key is missing.
-        return currentStep == 1
-            && (settingsViewModel.openAIAPIKey.isEmpty || settingsViewModel.pineconeAPIKey.isEmpty
-                || settingsViewModel.pineconeProjectId.isEmpty  // Project ID is also required.
-                )
+        guard currentStep == 1 else { return false }
+        // Basic emptiness checks
+        guard !settingsViewModel.openAIAPIKey.isEmpty,
+              !settingsViewModel.pineconeAPIKey.isEmpty,
+              !settingsViewModel.pineconeProjectId.isEmpty else {
+            return true
+        }
+        // Live validation checks
+        let openAIValid: Bool = {
+            switch settingsViewModel.openAIStatus {
+            case .valid, .rateLimited: return true
+            default: return false
+            }
+        }()
+        let pineconeValid: Bool = {
+            switch settingsViewModel.pineconeStatus {
+            case .valid, .rateLimited: return true
+            default: return false
+            }
+        }()
+        return !(openAIValid && pineconeValid)
     }
 
     // MARK: - Step Content Views
@@ -174,6 +190,10 @@ struct WelcomeView: View {
     /// Displays the `APIKeyEntryView` for entering API keys.
     private var apiKeyStep: some View {
         APIKeyEntryView(settingsViewModel: settingsViewModel)
+            .onAppear {
+                // Trigger initial validation when user reaches this step
+                settingsViewModel.validateAll()
+            }
     }
 
     /// The content view for the final step (index 2).
@@ -348,10 +368,91 @@ struct APIKeyEntryView: View {
                     .foregroundColor(isPineconeConfigValid ? .secondary : .red)
                 }
             }
+
+            // Live credential status and validate action
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Credential Status")
+                    .font(.subheadline)
+                    .bold()
+
+                HStack(spacing: 10) {
+                    statusBadge("OpenAI", settingsViewModel.openAIStatus)
+                    statusBadge("Pinecone", settingsViewModel.pineconeStatus)
+
+                    Spacer()
+
+                    Button {
+                        settingsViewModel.validateAll()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.shield")
+                            Text("Validate")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+
+                // Hint text
+                Group {
+                    switch settingsViewModel.openAIStatus {
+                    case .invalid(let msg):
+                        Text("OpenAI: \(msg)").font(.caption).foregroundColor(.red)
+                    case .rateLimited(let s):
+                        Text("OpenAI: Rate limited, retry in \(s)s").font(.caption).foregroundColor(.orange)
+                    default: EmptyView()
+                    }
+                }
+                Group {
+                    switch settingsViewModel.pineconeStatus {
+                    case .invalid(let msg):
+                        Text("Pinecone: \(msg)").font(.caption).foregroundColor(.red)
+                    case .rateLimited(let s):
+                        Text("Pinecone: Rate limited, retry in \(s)s").font(.caption).foregroundColor(.orange)
+                    default: EmptyView()
+                    }
+                }
+            }
+            .padding(.top, 8)
+            .padding(.horizontal, 4)
+
             .padding(.top, 20)
         }
     }
-
+    
+        /// Small status pill for credential state
+    @ViewBuilder
+    private func statusBadge(_ label: String, _ status: CredentialStatus) -> some View {
+        let (icon, text, color): (String, String, Color) = {
+            switch status {
+            case .unknown: return ("questionmark.circle", "Unknown", .gray)
+            case .validating: return ("hourglass", "Validating…", .orange)
+            case .valid: return ("checkmark.circle.fill", "Valid", .green)
+            case .invalid: return ("xmark.octagon.fill", "Invalid", .red)
+            case .rateLimited(let secs): return ("clock.fill", "Rate limited (\(secs)s)", .orange)
+            }
+        }()
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+            Text("\(label): \(text)")
+                .font(.caption)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(color.opacity(0.3), lineWidth: 1)
+        )
+    }
+    
     /// Validates if the Pinecone API key is not empty and starts with "pcsk_".
     private var isPineconeKeyValid: Bool {
         // Check if the key is non-empty and has the correct prefix.

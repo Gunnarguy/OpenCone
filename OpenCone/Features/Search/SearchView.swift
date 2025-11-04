@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Main Search View
 
@@ -9,45 +10,86 @@ struct SearchView: View {
     @Environment(\.theme) private var theme  // Access the current theme
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Configuration section for selecting index and namespace
-            SearchConfigurationView(viewModel: viewModel)
-                .transition(.move(edge: .top).combined(with: .opacity))
+        VStack(spacing: 8) {
+            // Configuration section (index/namespace)
+            QuickSwitcherView(viewModel: viewModel)
 
-            // Input field for the user's query and search button
-            SearchBarView(viewModel: viewModel)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            // Thread controls
+            HStack {
+                Spacer()
+                OCButton(
+                    title: "New Topic",
+                    icon: "bubble.left.and.bubble.right",
+                    style: .outline,
+                    action: { viewModel.newTopic() }
+                )
+                .disabled(viewModel.isSearching)
+            }
+            .padding(.horizontal, 16)
 
-            // Conditional display based on the search state
-            if viewModel.isSearching {
-                // Show loading indicator while searching
-                SearchLoadingView()
-                    .transition(.opacity)
-            } else if !viewModel.generatedAnswer.isEmpty {
-                // Show results tabs (Answer and Sources) if an answer is generated
-                SearchResultsTabView(viewModel: viewModel)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if viewModel.searchResults.isEmpty && !viewModel.searchQuery.isEmpty {
-                // Show 'No Results' if search completed with no matches
-                NoResultsView()
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                // Show initial prompt view before any search
-                InitialStateView()
+            // Chat messages list
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        if viewModel.messages.isEmpty && !viewModel.isSearching {
+                            InitialStateView()
+                                .padding(.top, 16)
+                        } else {
+                            ForEach(viewModel.messages) { message in
+                                ChatBubble(
+                                    message: message,
+                                    onCitationTap: { source in
+                                        viewModel.focusResult(for: source)
+                                    }
+                                )
+                                    .id(message.id)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.top, 8)
+                        }
+                    }
+                }
+                .onChange(of: viewModel.messages.count) { _, _ in
+                    if let lastId = viewModel.messages.last?.id {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+
+            // Sources panel - show when we have search results
+            if !viewModel.searchResults.isEmpty {
+                SourcesTabView(viewModel: viewModel)
+                    .frame(maxHeight: 280)
                     .transition(.opacity)
             }
+
+            // Input bar
+            ChatInputBar(
+                text: Binding(
+                    get: { viewModel.searchQuery },
+                    set: { viewModel.searchQuery = $0 }
+                ),
+                isSending: viewModel.isSearching,
+                onSend: {
+                    Task { await viewModel.performSearch() }
+                },
+                onStop: {
+                    viewModel.cancelActiveSearch()
+                }
+            )
+            .disabled(viewModel.selectedIndex == nil)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewModel.isSearching)
-        .animation(
-            .spring(response: 0.4, dampingFraction: 0.8), value: viewModel.generatedAnswer.isEmpty
-        )
-        .animation(
-            .spring(response: 0.4, dampingFraction: 0.8), value: viewModel.searchResults.isEmpty
-        )
-        .animation(
-            .spring(response: 0.4, dampingFraction: 0.8), value: viewModel.searchQuery.isEmpty
-        )
         .background(theme.backgroundColor.ignoresSafeArea())
+        .overlay(alignment: .top) {
+            if let error = viewModel.errorMessage, !error.isEmpty {
+                ErrorBanner(message: error)
+                    .padding(.top, 8)
+            }
+        }
     }
 }
 
@@ -488,183 +530,6 @@ struct InitialStateView: View {
     }
 }
 
-// MARK: - Search Results Tab View
-
-/// A `TabView` that organizes the search results into two tabs:
-/// one for the AI-generated answer and one for the source documents.
-struct SearchResultsTabView: View {
-    @ObservedObject var viewModel: SearchViewModel  // Shared view model
-    @Environment(\.theme) private var theme  // Access the current theme
-    @State private var selectedTab = 0
-    @State private var tabBarHeight: CGFloat = 46
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Custom tab bar
-            HStack(spacing: 0) {
-                ForEach(0..<2) { index in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            selectedTab = index
-                        }
-                    }) {
-                        VStack(spacing: 8) {
-                            Image(systemName: index == 0 ? "text.bubble.fill" : "doc.text.fill")
-                                .font(
-                                    .system(
-                                        size: 16,
-                                        weight: selectedTab == index ? .semibold : .regular))
-
-                            Text(index == 0 ? "Answer" : "Sources")
-                                .font(
-                                    .system(
-                                        size: 15,
-                                        weight: selectedTab == index ? .semibold : .regular))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .foregroundColor(
-                            selectedTab == index ? theme.primaryColor : theme.textSecondaryColor
-                        )
-                        .background(
-                            selectedTab == index
-                                ? theme.primaryLight
-                                : Color.clear
-                        )
-                        .animation(.easeInOut(duration: 0.2), value: selectedTab)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            .background(theme.cardBackgroundColor)
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 2)
-            .padding(.horizontal)
-            .frame(height: tabBarHeight)
-
-            // Tab content
-            ZStack {
-                if selectedTab == 0 {
-                    // Answer tab
-                    AnswerTabView(viewModel: viewModel)
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .leading).combined(with: .opacity),
-                                removal: .move(edge: .trailing).combined(with: .opacity)
-                            ))
-                } else {
-                    // Sources tab
-                    SourcesTabView(viewModel: viewModel)
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .move(edge: .leading).combined(with: .opacity)
-                            ))
-                }
-            }
-            .animation(.easeInOut(duration: 0.3), value: selectedTab)
-
-            // Last search time indicator
-            if let searchTime = viewModel.lastSearchTime {
-                HStack {
-                    Spacer()
-                    Text("Search completed at \(formattedTime(searchTime))")
-                        .font(.caption)
-                        .foregroundColor(theme.textSecondaryColor)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // Format time for display
-    private func formattedTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-}
-
-// MARK: - Answer Tab View
-
-/// The content view for the "Answer" tab, displaying the generated text response
-/// and buttons for regenerating the answer or clearing the search.
-struct AnswerTabView: View {
-    @ObservedObject var viewModel: SearchViewModel  // Shared view model
-    @Environment(\.theme) private var theme  // Access the current theme
-    @State private var answerOpacity = 0.0
-    @State private var answerOffset: CGFloat = 20
-
-    var body: some View {
-        ScrollView {  // Allow scrolling for potentially long answers
-            OCCard {
-                VStack(alignment: .leading, spacing: 16) {  // Reduced spacing
-                    // Header for the answer section
-                    HStack {
-                        Text("Generated Answer")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(theme.textPrimaryColor)
-
-                        Spacer()
-
-                        // Badge indicating the answer is AI-generated
-                        OCBadge("AI Generated", style: .info)
-                    }
-
-                    // Display the generated answer text
-                    Text(viewModel.generatedAnswer)
-                        .font(.body)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundColor(theme.textPrimaryColor)
-                        .background(theme.cardBackgroundColor)
-                        .cornerRadius(10)
-                        .opacity(answerOpacity)
-                        .offset(y: answerOffset)
-
-                    // Action buttons row
-                    HStack(spacing: 12) {
-                        // Show Regenerate button only if results are selected
-                        if !viewModel.selectedResults.isEmpty {
-                            OCButton(
-                                title: "Regenerate Answer",
-                                icon: "arrow.triangle.2.circlepath",
-                                style: .primary
-                            ) {
-                                Task {
-                                    await viewModel.generateAnswerFromSelected()
-                                }
-                            }
-                            .transition(.scale.combined(with: .opacity))
-                        }
-
-                        // Button to clear the current search state
-                        OCButton(
-                            title: "Clear Results",
-                            icon: "xmark",
-                            style: .outline
-                        ) {
-                            viewModel.clearSearch()
-                        }
-                    }
-                    .disabled(viewModel.isSearching)  // Disable all buttons during search
-                }
-            }
-            .padding()
-        }
-        .background(theme.backgroundColor)
-        .onAppear {
-            // Animate answer appearance
-            withAnimation(.easeOut(duration: 0.5)) {
-                answerOpacity = 1.0
-                answerOffset = 0
-            }
-        }
-    }
-}
-
 // MARK: - Sources Tab View
 
 /// The content view for the "Sources" tab, displaying a list of relevant
@@ -688,6 +553,30 @@ struct SourcesTabView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            // Header
+            HStack {
+                Text("Sources")
+                    .font(.headline)
+                    .foregroundColor(theme.textPrimaryColor)
+                
+                Spacer()
+                
+                if !viewModel.selectedResults.isEmpty {
+                    OCButton(
+                        title: "Regenerate",
+                        icon: "arrow.triangle.2.circlepath",
+                        style: .outline
+                    ) {
+                        Task {
+                            await viewModel.generateAnswerFromSelected()
+                        }
+                    }
+                    .disabled(viewModel.isSearching)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
             // Filter pills row
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -734,20 +623,34 @@ struct SourcesTabView: View {
             }
 
             // Results list
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(filteredResults) { result in
-                        SearchResultRow(
-                            result: result,
-                            isSelected: result.isSelected,
-                            viewModel: viewModel
-                        ) {
-                            viewModel.toggleResultSelection(result)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(filteredResults) { result in
+                            SearchResultRow(
+                                result: result,
+                                isSelected: result.isSelected,
+                                viewModel: viewModel
+                            ) {
+                                viewModel.toggleResultSelection(result)
+                            }
+                            .id(result.id)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 16)
+                }
+                .onChange(of: viewModel.highlightedResultID) { _, newId in
+                    guard let targetId = newId else { return }
+                    if !filteredResults.contains(where: { $0.id == targetId }) {
+                        withAnimation { selectedFilter = nil }
+                    }
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(targetId, anchor: .top)
                         }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 16)
             }
         }
         .background(theme.backgroundColor)
@@ -826,9 +729,11 @@ struct SearchResultRow: View {
     let onTap: () -> Void  // Action to perform when the row is tapped (toggles selection)
 
     @Environment(\.theme) private var theme  // Access the current theme
-    @State private var isExpanded = false  // State to control content expansion
 
     var body: some View {
+        let isExpanded = viewModel.expandedResultIDs.contains(result.id)
+        let isHighlighted = viewModel.highlightedResultID == result.id
+
         OCCard(padding: isExpanded ? 16 : 12, cornerRadius: 14) {
             VStack(alignment: .leading, spacing: 0) {
                 // Header part of the row (metadata, selection indicator, expand button)
@@ -836,11 +741,11 @@ struct SearchResultRow: View {
                     result: result,
                     isSelected: isSelected,
                     isExpanded: isExpanded,
+                    isHighlighted: isHighlighted,
                     viewModel: viewModel,
                     onToggleExpand: {
-                        // Animate the expansion/collapse of the content view
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            isExpanded.toggle()
+                            viewModel.toggleResultExpansion(for: result.id)
                         }
                     }
                 )
@@ -859,7 +764,10 @@ struct SearchResultRow: View {
         .overlay(
             // Border that changes color based on selection state
             RoundedRectangle(cornerRadius: 14)
-                .stroke(isSelected ? theme.primaryColor.opacity(0.6) : Color.clear, lineWidth: 2)
+                .stroke(
+                    isHighlighted ? theme.primaryColor : (isSelected ? theme.primaryColor.opacity(0.6) : Color.clear),
+                    lineWidth: isHighlighted ? 3 : (isSelected ? 2 : 0)
+                )
         )
     }
 }
@@ -872,6 +780,7 @@ struct ResultHeaderView: View {
     let result: SearchResultModel  // Data for the result
     let isSelected: Bool  // Selection state
     let isExpanded: Bool  // Expansion state
+    let isHighlighted: Bool
     let viewModel: SearchViewModel  // Access to view model for theming
     let onToggleExpand: () -> Void  // Action for the expand/collapse button
 
@@ -888,7 +797,7 @@ struct ResultHeaderView: View {
 
                     Text(sourceFileName(from: result.sourceDocument))
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(theme.textPrimaryColor)
+                        .foregroundColor(isHighlighted ? theme.primaryColor : theme.textPrimaryColor)
                         .lineLimit(1)  // Prevent long filenames from wrapping
                 }
 
@@ -945,11 +854,11 @@ struct ResultHeaderView: View {
     // Create visually appealing document type icon
     private func documentTypeIcon() -> some View {
         let iconName = getDocumentIcon(from: result.sourceDocument)
-        let iconColor = viewModel.getColorForScore(result.score)
+        let iconColor = isHighlighted ? theme.primaryColor : viewModel.getColorForScore(result.score)
 
         return ZStack {
             RoundedRectangle(cornerRadius: 6)
-                .fill(iconColor.opacity(0.15))
+                .fill(iconColor.opacity(isHighlighted ? 0.25 : 0.15))
                 .frame(width: 28, height: 28)
 
             Image(systemName: iconName)
@@ -1018,6 +927,304 @@ struct ResultContentView: View {
     }
 }
 
+ // MARK: - Quick Switcher (Index • Namespace)
+
+struct QuickSwitcherView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+
+    @State private var showIndexSheet = false
+    @State private var showNamespaceSheet = false
+    @State private var indexQuery: String = ""
+    @State private var namespaceQuery: String = ""
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Summary pill button
+            OCCard(padding: 0, cornerRadius: 14) {
+                Button(action: { showIndexSheet = true }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder")
+                            .foregroundColor(theme.primaryColor)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Index • Namespace")
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondaryColor)
+                            Text("\(viewModel.selectedIndex ?? "Select Index") • \(viewModel.selectedNamespace ?? "Default")")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(theme.textPrimaryColor)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 52) // 44+ tap target
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isSearching)
+            }
+            .padding(.horizontal, 16)
+
+            // Namespace chips for small sets
+            if !viewModel.namespaces.isEmpty && viewModel.namespaces.count <= 6 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // Default namespace (nil)
+                        NamespaceChip(
+                            title: "Default",
+                            selected: viewModel.selectedNamespace == nil,
+                            theme: theme
+                        ) {
+                            hapticSelection()
+                            viewModel.setNamespace(nil)
+                        }
+                        ForEach(viewModel.namespaces, id: \.self) { ns in
+                            NamespaceChip(
+                                title: ns,
+                                selected: viewModel.selectedNamespace == ns,
+                                theme: theme
+                            ) {
+                                hapticSelection()
+                                viewModel.setNamespace(ns)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+        // Index Sheet
+        .sheet(isPresented: $showIndexSheet) {
+            IndexListSheet(
+                title: "Select Index",
+                allItems: viewModel.pineconeIndexes,
+                query: $indexQuery,
+                onRefresh: {
+                    Task { await viewModel.loadIndexes() }
+                },
+                onSelect: { index in
+                    hapticSelection()
+                    showIndexSheet = false
+                    Task {
+                        await viewModel.setIndex(index)
+                        // If multiple namespaces, open namespace sheet automatically
+                        await MainActor.run {
+                            if viewModel.namespaces.count > 1 {
+                                showNamespaceSheet = true
+                            }
+                        }
+                    }
+                }
+            )
+        }
+        // Namespace Sheet
+        .sheet(isPresented: $showNamespaceSheet) {
+            NamespaceListSheet(
+                title: "Select Namespace",
+                allItems: viewModel.namespaces,
+                query: $namespaceQuery,
+                onRefresh: {
+                    Task { await viewModel.loadNamespaces() }
+                },
+                onSelect: { ns in
+                    hapticSelection()
+                    viewModel.setNamespace(ns)
+                    showNamespaceSheet = false
+                }
+            )
+        }
+        .onAppear {
+            // If no index yet but we have indexes loaded, nudge user with sheet
+            if viewModel.selectedIndex == nil && !viewModel.pineconeIndexes.isEmpty {
+                showIndexSheet = true
+            }
+        }
+    }
+
+    private func hapticSelection() {
+        let generator = UISelectionFeedbackGenerator()
+        generator.selectionChanged()
+    }
+}
+
+private struct NamespaceChip: View {
+    let title: String
+    let selected: Bool
+    let theme: OCTheme
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if selected { Image(systemName: "checkmark.circle.fill") }
+                Text(title)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                Capsule()
+                    .fill(selected ? theme.primaryLight : theme.cardBackgroundColor)
+            )
+            .foregroundColor(selected ? theme.primaryColor : theme.textSecondaryColor)
+            .overlay(
+                Capsule()
+                    .stroke(selected ? theme.primaryColor.opacity(0.6) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Namespace \(title)")
+    }
+}
+
+// Generic searchable sheet for Indexes
+private struct IndexListSheet: View {
+    let title: String
+    let allItems: [String]
+    @Binding var query: String
+    let onRefresh: () -> Void
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+
+    var filtered: [String] {
+        guard !query.isEmpty else { return allItems }
+        return allItems.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(filtered, id: \.self) { item in
+                    Button {
+                        onSelect(item)
+                    } label: {
+                        HStack {
+                            Image(systemName: "tray.full")
+                                .foregroundColor(theme.primaryColor)
+                            Text(item)
+                                .font(.system(size: 18))
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        .frame(height: 48)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .listStyle(.insetGrouped)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
+            .refreshable { onRefresh() }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// Generic searchable sheet for Namespaces
+private struct NamespaceListSheet: View {
+    let title: String
+    let allItems: [String]
+    @Binding var query: String
+    let onRefresh: () -> Void
+    let onSelect: (String?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+
+    var filtered: [String] {
+        guard !query.isEmpty else { return allItems }
+        return allItems.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                // Default (nil) option
+                Button {
+                    onSelect(nil)
+                } label: {
+                    HStack {
+                        Image(systemName: "circle")
+                            .foregroundColor(theme.textSecondaryColor)
+                        Text("Default")
+                            .font(.system(size: 18))
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    .frame(height: 48)
+                }
+                .buttonStyle(PlainButtonStyle())
+
+                ForEach(filtered, id: \.self) { item in
+                    Button {
+                        onSelect(item)
+                    } label: {
+                        HStack {
+                            Image(systemName: "tag")
+                                .foregroundColor(theme.primaryColor)
+                            Text(item)
+                                .font(.system(size: 18))
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        .frame(height: 48)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .listStyle(.insetGrouped)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
+            .refreshable { onRefresh() }
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct ErrorBanner: View {
+    let message: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(theme.errorColor)
+            Text(message)
+                .font(.caption)
+                .foregroundColor(theme.errorColor)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.errorLight)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(theme.errorColor.opacity(0.6), lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
+        .accessibilityLabel("Error: \(message)")
+    }
+}
+
 // MARK: - Extensions and Helpers
 
 extension View {
@@ -1027,4 +1234,3 @@ extension View {
             #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
-

@@ -23,6 +23,16 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
+            // MARK: Search Tab
+            NavigationView {
+                SearchView(viewModel: searchViewModel)
+                    .navigationTitle("Document Search")
+            }
+            .tabItem {
+                Label("Document Search", systemImage: "magnifyingglass")
+            }
+            .tag(0)
+
             // MARK: Documents Tab
             NavigationView {
                 DocumentsView(viewModel: documentsViewModel)
@@ -30,16 +40,6 @@ struct MainView: View {
             }
             .tabItem {
                 Label("Documents", systemImage: "doc.fill")
-            }
-            .tag(0)
-
-            // MARK: Search Tab
-            NavigationView {
-                SearchView(viewModel: searchViewModel)
-                    .navigationTitle("Search")
-            }
-            .tabItem {
-                Label("Search", systemImage: "magnifyingglass")
             }
             .tag(1)
 
