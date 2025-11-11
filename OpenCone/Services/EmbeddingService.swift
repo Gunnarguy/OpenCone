@@ -5,6 +5,12 @@ class EmbeddingService {
     
     private let logger = Logger.shared
     private let openAIService: OpenAIService
+    private static let isoDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private let maxPreviewLength = 512
     
     init(openAIService: OpenAIService) {
         self.openAIService = openAIService
@@ -16,6 +22,7 @@ class EmbeddingService {
     /// - Returns: Array of EmbeddingModel objects
     func generateEmbeddings(
         for chunks: [ChunkModel],
+        dimension: Int? = nil,
         progressCallback: ((Int, Int) async -> Void)? = nil // Add optional callback
     ) async throws -> [EmbeddingModel] {
         guard !chunks.isEmpty else {
@@ -26,14 +33,20 @@ class EmbeddingService {
         // For large batch of chunks, process in smaller batches to conserve memory
         if chunks.count > 50 {
             // Pass the callback down to the batch function
-            return try await generateEmbeddingsInBatches(for: chunks, progressCallback: progressCallback)
+            return try await generateEmbeddingsInBatches(for: chunks, dimension: dimension, progressCallback: progressCallback)
         }
         
         // Process in a single batch for smaller input
         logger.log(level: .info, message: "Generating embeddings for \(chunks.count) chunks")
         
-        let texts = chunks.map { $0.content }
-        let embeddings = try await openAIService.createEmbeddings(texts: texts)
+    let texts = chunks.map { $0.content }
+        let targetDimension = dimension ?? Configuration.embeddingDimension
+        let embeddings = try await openAIService.createEmbeddings(texts: texts, dimension: targetDimension)
+
+        if let actualDimension = embeddings.first?.count, actualDimension != targetDimension {
+            logger.log(level: .error, message: "Embedding dimension mismatch: expected \(targetDimension), received \(actualDimension)")
+            throw EmbeddingError.dimensionMismatch
+        }
         
         guard embeddings.count == chunks.count else {
             logger.log(level: .error, message: "Embedding count mismatch: \(embeddings.count) embeddings for \(chunks.count) chunks")
@@ -43,29 +56,12 @@ class EmbeddingService {
         // Pre-allocate array to avoid resizing
         var embeddingModels: [EmbeddingModel] = []
         embeddingModels.reserveCapacity(chunks.count)
-        
-        // Use autoreleasepool for memory management during the loop
+
         autoreleasepool {
             for (index, vector) in embeddings.enumerated() {
                 let chunk = chunks[index]
-                let vectorId = "\(chunk.contentHash)_\(index)"
-                
-                // Only include necessary metadata to reduce memory usage
-                let metadata: [String: String] = [
-                    "text": chunk.content.count > 1000 ? String(chunk.content.prefix(1000)) + "..." : chunk.content,
-                    "source": chunk.sourceDocument,
-                    "hash": chunk.contentHash
-                ]
-                
-                let embeddingModel = EmbeddingModel(
-                    vectorId: vectorId,
-                    vector: vector,
-                    chunkId: chunk.id,
-                    contentHash: chunk.contentHash,
-                    metadata: metadata
-                )
-                
-                embeddingModels.append(embeddingModel)
+                let model = makeEmbeddingModel(for: chunk, vector: vector, absoluteIndex: index)
+                embeddingModels.append(model)
             }
         }
         
@@ -79,6 +75,7 @@ class EmbeddingService {
     /// - Returns: Array of EmbeddingModel objects
     private func generateEmbeddingsInBatches(
         for chunks: [ChunkModel],
+        dimension: Int?,
         progressCallback: ((Int, Int) async -> Void)? = nil // Add callback parameter
     ) async throws -> [EmbeddingModel] {
         logger.log(level: .info, message: "Generating embeddings in batches for \(chunks.count) chunks")
@@ -105,44 +102,27 @@ class EmbeddingService {
                 
                 // Get embeddings for this batch
                 let texts = batch.map { $0.content }
-                let embeddings = try await openAIService.createEmbeddings(texts: texts)
+                let targetDimension = dimension ?? Configuration.embeddingDimension
+                let embeddings = try await openAIService.createEmbeddings(texts: texts, dimension: targetDimension)
+
+                if let actualDimension = embeddings.first?.count, actualDimension != targetDimension {
+                    logger.log(level: .error, message: "Embedding dimension mismatch in batch: expected \(targetDimension), received \(actualDimension)")
+                    throw EmbeddingError.dimensionMismatch
+                }
                 
                 guard embeddings.count == batch.count else {
                     logger.log(level: .error, message: "Batch embedding count mismatch: \(embeddings.count) embeddings for \(batch.count) chunks")
                     throw EmbeddingError.countMismatch
                 }
                 
-                var batchModels: [EmbeddingModel] = []
-                batchModels.reserveCapacity(batch.count)
-                
-                // Process each embedding in the batch with autoreleasepool
                 autoreleasepool {
                     for (idx, vector) in embeddings.enumerated() {
                         let chunk = batch[idx]
-                        let vectorId = "\(chunk.contentHash)_\(idx + index * batchSize)"
-                        
-                        let metadata: [String: String] = [
-                            "text": chunk.content.count > 1000 ? String(chunk.content.prefix(1000)) + "..." : chunk.content,
-                            "source": chunk.sourceDocument,
-                            "hash": chunk.contentHash
-                        ]
-                        
-                        let embeddingModel = EmbeddingModel(
-                            vectorId: vectorId,
-                            vector: vector,
-                            chunkId: chunk.id,
-                            contentHash: chunk.contentHash,
-                            metadata: metadata
-                        )
-                        
-                        batchModels.append(embeddingModel)
+                        let absoluteIndex = index * batchSize + idx
+                        let model = makeEmbeddingModel(for: chunk, vector: vector, absoluteIndex: absoluteIndex)
+                        embeddingModels.append(model)
                     }
                 }
-                
-                // Add this batch's models to the overall result
-                let batchEmbeddings = batchModels
-                
-                embeddingModels.append(contentsOf: batchEmbeddings)
                 
                 // Report progress after processing the batch
                 await progressCallback?(index, totalBatches)
@@ -228,6 +208,105 @@ class EmbeddingService {
             .prefix(topK) // Take only top K results
             .map { ($0.0, $0.1) }
     }
+
+    // MARK: - Metadata Helpers
+
+    private func makeEmbeddingModel(for chunk: ChunkModel, vector: [Float], absoluteIndex: Int) -> EmbeddingModel {
+        let vectorId = makeVectorId(for: chunk, absoluteIndex: absoluteIndex)
+        let metadata = buildMetadata(for: chunk)
+        return EmbeddingModel(
+            vectorId: vectorId,
+            vector: vector,
+            chunkId: chunk.id,
+            contentHash: chunk.contentHash,
+            metadata: metadata
+        )
+    }
+
+    private func makeVectorId(for chunk: ChunkModel, absoluteIndex: Int) -> String {
+        let documentComponent = sanitizeIdentifierComponent(chunk.metadata.documentId ?? chunk.sourceDocument)
+        let chunkComponent = "c\(chunk.metadata.chunkIndex)"
+        let hashComponent = String(chunk.contentHash.prefix(12))
+
+        var identifier = "\(documentComponent)_\(chunkComponent)_\(hashComponent)"
+        if identifier.count > 96 {
+            let truncatedDocument = String(documentComponent.prefix(48))
+            identifier = "\(truncatedDocument)_\(chunkComponent)_\(hashComponent)"
+        }
+
+        if identifier.isEmpty {
+            identifier = "vec_\(absoluteIndex)_\(hashComponent)"
+        }
+
+        return identifier
+    }
+
+    private func buildMetadata(for chunk: ChunkModel) -> [String: String] {
+        var metadata: [String: String] = [:]
+        metadata["text"] = chunk.content
+        metadata["content_preview"] = makeContentPreview(from: chunk.content)
+        metadata["doc_id"] = chunk.metadata.documentId ?? chunk.sourceDocument
+        metadata["doc_title"] = chunk.metadata.additionalMetadata?["fileName"] ?? chunk.sourceDocument
+        metadata["source"] = chunk.sourceDocument
+        metadata["chunk_index"] = String(chunk.metadata.chunkIndex)
+        metadata["chunk_total"] = String(chunk.metadata.totalChunks)
+        metadata["chunk_hash"] = chunk.contentHash
+        metadata["token_count"] = String(chunk.tokenCount)
+        metadata["char_count"] = String(chunk.content.count)
+        metadata["mime_type"] = chunk.metadata.additionalMetadata?["mimeType"] ?? chunk.metadata.mimeType
+        metadata["processed_at"] = Self.isoDateFormatter.string(from: chunk.metadata.dateProcessed)
+
+        if let sourcePath = chunk.metadata.additionalMetadata?["sourcePath"], !sourcePath.isEmpty {
+            metadata["source_path"] = sourcePath
+        }
+        if let ingestId = chunk.metadata.additionalMetadata?["ingestSessionId"], !ingestId.isEmpty {
+            metadata["ingest_session_id"] = ingestId
+        }
+        if let fileSize = chunk.metadata.additionalMetadata?["fileSize"], !fileSize.isEmpty {
+            metadata["file_size"] = fileSize
+        }
+        if let pageNumber = chunk.metadata.position?.page {
+            metadata["page_number"] = String(pageNumber)
+        }
+
+        if let additional = chunk.metadata.additionalMetadata {
+            for (key, value) in additional where metadata[key] == nil && !value.isEmpty {
+                metadata[key] = value
+            }
+        }
+
+        return metadata.reduce(into: [String: String]()) { partialResult, entry in
+            let trimmed = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            partialResult[entry.key] = trimmed
+        }
+    }
+
+    private func makeContentPreview(from text: String) -> String {
+        guard text.count > maxPreviewLength else { return text }
+        let endIndex = text.index(text.startIndex, offsetBy: maxPreviewLength)
+        return String(text[text.startIndex..<endIndex]) + "…"
+    }
+
+    private func sanitizeIdentifierComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        var sanitized = ""
+        sanitized.reserveCapacity(value.count)
+        var previousWasDash = false
+
+        for scalar in value.lowercased().unicodeScalars {
+            if allowed.contains(scalar) {
+                let character = Character(scalar)
+                sanitized.append(character)
+                previousWasDash = character == "-" || character == "_"
+            } else if !previousWasDash {
+                sanitized.append("-")
+                previousWasDash = true
+            }
+        }
+
+        return sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "-_"))
+    }
 }
 
 enum EmbeddingError: Error {
@@ -235,4 +314,19 @@ enum EmbeddingError: Error {
     case countMismatch
     case dimensionMismatch
     case apiError(String)
+}
+
+extension EmbeddingError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .generationFailed:
+            return "Failed to generate embeddings."
+        case .countMismatch:
+            return "Embedding count did not match the number of requested inputs."
+        case .dimensionMismatch:
+            return "Embedding dimension did not match the Pinecone index requirement."
+        case .apiError(let message):
+            return "Embedding API error: \(message)"
+        }
+    }
 }

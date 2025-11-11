@@ -86,6 +86,9 @@ class TextProcessorService {
             var chunks: [ChunkModel] = []
             chunks.reserveCapacity(textChunks.count)
             
+            let isoFormatter = ISO8601DateFormatter()
+            let processedDate = metadata["dateProcessed"].flatMap { isoFormatter.date(from: $0) } ?? Date()
+
             // Process chunks in batches to avoid memory spikes
             let batchSize = min(100, max(1, textChunks.count / 4))
             let batches = stride(from: 0, to: textChunks.count, by: batchSize)
@@ -111,13 +114,20 @@ class TextProcessorService {
                         // Create a content hash
                         let contentHash = generateContentHash(for: chunkText)
                         
-                        // Create chunk metadata
+                        var additionalMetadata = metadata
+                        additionalMetadata["chunkCharacterCount"] = String(chunkText.count)
+                        additionalMetadata["chunkTokenCount"] = String(tokenCount)
+                        additionalMetadata["chunkIndex"] = String(index)
+                        additionalMetadata["chunkTotal"] = String(textChunks.count)
+
                         let chunkMetadata = ChunkMetadata(
                             source: metadata["source"] ?? "Unknown",
                             chunkIndex: index,
                             totalChunks: textChunks.count,
                             mimeType: mimeType,
-                            dateProcessed: Date()
+                            dateProcessed: processedDate,
+                            position: nil,
+                            additionalMetadata: additionalMetadata
                         )
                         
                         // Create chunk model and add to chunks array

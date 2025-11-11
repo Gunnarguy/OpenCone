@@ -22,6 +22,10 @@ final class SecureSettingsStore {
         // Non-secrets in UserDefaults
         static let pineconeCloud = "oc_pinecone_cloud"     // e.g., "aws", "gcp", "azure"
         static let pineconeRegion = "oc_pinecone_region"   // e.g., "us-east-1"
+        static let pineconeControlPlaneVersion = "oc_pinecone_control_plane_version"
+        static let pineconeDataPlaneVersion = "oc_pinecone_data_plane_version"
+        static let pineconeNamespaceVersion = "oc_pinecone_namespace_version"
+        static let pineconeMetadataFetchVersion = "oc_pinecone_metadata_fetch_version"
     }
 
     // MARK: - Public API (Secrets)
@@ -71,6 +75,38 @@ final class SecureSettingsStore {
 
     func setPineconeRegion(_ region: String) {
         UserDefaults.standard.set(region, forKey: Key.pineconeRegion)
+    }
+
+    func getPineconeControlPlaneVersion() -> String {
+        return UserDefaults.standard.string(forKey: Key.pineconeControlPlaneVersion) ?? "2024-07"
+    }
+
+    func setPineconeControlPlaneVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: Key.pineconeControlPlaneVersion)
+    }
+
+    func getPineconeDataPlaneVersion() -> String {
+        return UserDefaults.standard.string(forKey: Key.pineconeDataPlaneVersion) ?? "2024-07"
+    }
+
+    func setPineconeDataPlaneVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: Key.pineconeDataPlaneVersion)
+    }
+
+    func getPineconeNamespaceVersion() -> String {
+        return UserDefaults.standard.string(forKey: Key.pineconeNamespaceVersion) ?? "2025-04"
+    }
+
+    func setPineconeNamespaceVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: Key.pineconeNamespaceVersion)
+    }
+
+    func getPineconeMetadataFetchVersion() -> String {
+        return UserDefaults.standard.string(forKey: Key.pineconeMetadataFetchVersion) ?? "2025-10"
+    }
+
+    func setPineconeMetadataFetchVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: Key.pineconeMetadataFetchVersion)
     }
 
     // MARK: - Migration from legacy UserDefaults keys

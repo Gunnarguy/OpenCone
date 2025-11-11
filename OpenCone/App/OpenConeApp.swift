@@ -223,6 +223,7 @@ struct OpenConeApp: App {
             // Load indexes for the documents view
             await documentsVM.loadIndexes()
             // Load indexes for the search view
+            await searchVM.loadIndexes()
         }
     }
 

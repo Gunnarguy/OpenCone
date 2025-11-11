@@ -14,6 +14,9 @@ struct SearchView: View {
             // Configuration section (index/namespace)
             QuickSwitcherView(viewModel: viewModel)
 
+            // Metadata filter controls
+            MetadataFilterEditor(viewModel: viewModel)
+
             // Thread controls
             HStack {
                 Spacer()
@@ -924,6 +927,113 @@ struct ResultContentView: View {
                     }
                 }
         }
+    }
+}
+
+// MARK: - Metadata Filter Editor
+
+struct MetadataFilterEditor: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        OCCard(padding: 14, cornerRadius: 14) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Metadata Filters")
+                        .font(.headline)
+                        .foregroundColor(theme.textPrimaryColor)
+
+                    Spacer()
+
+                    if !viewModel.metadataFilters.isEmpty {
+                        Button(action: viewModel.clearMetadataFilters) {
+                            Text("Clear All")
+                                .font(.caption.bold())
+                                .foregroundColor(theme.primaryColor)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+
+                if let warning = viewModel.filterParseError {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundColor(theme.errorColor)
+                }
+
+                HStack(spacing: 8) {
+                    TextField("Field (e.g. doc_id)", text: $viewModel.newFilterField)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: viewModel.newFilterField) { _, _ in
+                            viewModel.clearFilterError()
+                        }
+
+                    TextField("Value or rule (e.g. [policy], >=2024)", text: $viewModel.newFilterValue)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { viewModel.commitNewMetadataFilter() }
+                        .onChange(of: viewModel.newFilterValue) { _, _ in
+                            viewModel.clearFilterError()
+                        }
+
+                    OCButton(
+                        title: "Add",
+                        icon: "line.3.horizontal.decrease.circle",
+                        style: .primary,
+                        size: .small,
+                        fullWidth: false,
+                        action: viewModel.commitNewMetadataFilter
+                    )
+                    .disabled(
+                        viewModel.newFilterField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        viewModel.newFilterValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+
+                if viewModel.metadataFilters.isEmpty {
+                    Text("No filters applied. Add a field and value to narrow results.")
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondaryColor)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(field)
+                                    .font(.subheadline.bold())
+                                    .foregroundColor(theme.textPrimaryColor)
+
+                                Text(filter.displayValue)
+                                    .font(.subheadline)
+                                    .foregroundColor(theme.textSecondaryColor)
+                                    .lineLimit(1)
+
+                                Spacer()
+
+                                Button {
+                                    viewModel.removeMetadataFilter(field: field)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(theme.textSecondaryColor)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .accessibilityLabel("Remove filter \(field)")
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 10)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(theme.cardBackgroundColor.opacity(0.7))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
     }
 }
 

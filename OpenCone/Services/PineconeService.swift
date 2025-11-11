@@ -1,5 +1,19 @@
 import Foundation
 
+struct PineconeServiceConfiguration {
+    let controlPlaneVersion: String
+    let dataPlaneVersion: String
+    let namespaceVersion: String
+    let metadataFetchVersion: String
+
+    static let `default` = PineconeServiceConfiguration(
+        controlPlaneVersion: Configuration.pineconeControlPlaneVersion,
+        dataPlaneVersion: Configuration.pineconeDataPlaneVersion,
+        namespaceVersion: Configuration.pineconeNamespaceVersion,
+        metadataFetchVersion: Configuration.pineconeMetadataFetchVersion
+    )
+}
+
 /// Service for interacting with Pinecone vector database
 class PineconeService {
     
@@ -9,6 +23,7 @@ class PineconeService {
     private let baseURL = "https://api.pinecone.io"
     private var indexHost: String?
     private var currentIndex: String?
+    private let apiConfiguration: PineconeServiceConfiguration
 
     // Location and metadata cache
     private let cloud: String
@@ -45,9 +60,10 @@ class PineconeService {
         return false
     }
     
-    init(apiKey: String, projectId: String) {
+    init(apiKey: String, projectId: String, configuration: PineconeServiceConfiguration = .default) {
         self.apiKey = apiKey
         self.projectId = projectId
+        self.apiConfiguration = configuration
 
         // Load location preferences from secure store
         let store = SecureSettingsStore.shared
@@ -91,10 +107,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         
         var result: IndexDescribeResponse?
         
@@ -153,12 +166,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Use both API Key and Project ID for JWT authentication
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        // Standardize API version header
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         
         // Use retry mechanism for this critical operation
         try await withRetries(maxRetries: maxRetries) {
@@ -209,10 +217,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         
         var result: IndexListResponse?
         
@@ -282,10 +287,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         request.httpBody = jsonData
         
         var result: IndexCreateResponse?
@@ -338,10 +340,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         
         var result: Bool = false
         
@@ -433,10 +432,7 @@ class PineconeService {
         let endpoint = "https://\(indexHost)/describe_index_stats"
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
 
         // Short timeout session for preflight
         let cfg = URLSessionConfiguration.ephemeral
@@ -483,62 +479,133 @@ class PineconeService {
         }
     }
 
-    /// List namespaces for the current index
-    /// - Returns: Array of namespace names
-    func listNamespaces() async throws -> [String] {
-        guard let indexHost = indexHost, let _ = currentIndex else {
+    private func describeIndexStats() async throws -> IndexStatsResponse {
+        guard let indexHost = indexHost, currentIndex != nil else {
             throw PineconeError.noIndexSelected
         }
-        
+
         let endpoint = "https://\(indexHost)/describe_index_stats"
-        
+
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
-        
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+
         var result: IndexStatsResponse?
-        
+
         try await withRetries(maxRetries: maxRetries) {
             do {
                 try await self.applyRateLimit()
-                
+
                 let (data, response) = try await session.data(for: request)
-                
+
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
                 }
-                
+
                 if httpResponse.statusCode != 200 {
                     let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
                     let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-                    logger.log(level: .error, message: "Pinecone API error (listNamespaces): Status \(httpResponse.statusCode), Message: \(message)")
-                    
+                    logger.log(level: .error, message: "Pinecone API error (describeIndexStats): Status \(httpResponse.statusCode), Message: \(message)")
+
                     if self.shouldRetry(statusCode: httpResponse.statusCode) {
                         throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
                     } else {
                         throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
                     }
                 }
-                
+
                 result = try JSONDecoder().decode(IndexStatsResponse.self, from: data)
             } catch {
                 if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
                     throw error
                 } else {
-                    logger.log(level: .error, message: "Failed to list namespaces: \(error.localizedDescription)")
+                    logger.log(level: .error, message: "Failed to describe index stats: \(error.localizedDescription)")
                     throw error
                 }
             }
         }
-        
+
         guard let indexStats = result else {
-            throw PineconeError.requestFailed(statusCode: 0, message: "Failed to list namespaces: Unknown error")
+            throw PineconeError.requestFailed(statusCode: 0, message: "Failed to describe index stats: Unknown error")
         }
-        
-        return Array(indexStats.namespaces.keys)
+
+        return indexStats
+    }
+
+    /// Fetch aggregate statistics for the current index, including namespace counts.
+    func fetchIndexStats() async throws -> IndexStatsResponse {
+        try await describeIndexStats()
+    }
+
+    /// List namespaces for the current index
+    /// - Returns: Array of namespace names
+    func listNamespaces() async throws -> [String] {
+        let stats = try await describeIndexStats()
+        return Array(stats.namespaces.keys)
+    }
+
+    /// Create a namespace for the current index (preview API)
+    func createNamespace(_ namespace: String) async throws {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        let endpoint = "https://\(indexHost)/namespaces"
+        let body = ["namespace": namespace]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.namespaceVersion)
+        request.httpBody = jsonData
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 && httpResponse.statusCode != 201 && httpResponse.statusCode != 204 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: "Failed to create namespace")
+            }
+        }
+
+        logger.log(level: .info, message: "Namespace created", context: namespace)
+    }
+
+    /// Delete a namespace for the current index (preview API)
+    func deleteNamespace(_ namespace: String) async throws {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        let endpoint = "https://\(indexHost)/namespaces/\(namespace)"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "DELETE"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.namespaceVersion)
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 && httpResponse.statusCode != 204 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: "Failed to delete namespace")
+            }
+        }
+
+        logger.log(level: .info, message: "Namespace deleted", context: namespace)
     }
     
     /// Upsert vectors to the current index
@@ -596,10 +663,7 @@ class PineconeService {
             
             var request = URLRequest(url: URL(string: endpoint)!)
             request.httpMethod = "POST"
-            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-            request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-            request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+            applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
             request.httpBody = jsonData
             
             // Use retry mechanism for this operation
@@ -648,6 +712,187 @@ class PineconeService {
         
         return UpsertResponse(upsertedCount: totalUpserted)
     }
+
+    /// Delete vectors by ids or metadata filter
+    func deleteVectors(ids: [String]? = nil, filter: [String: Any]? = nil, namespace: String? = nil, deleteAll: Bool = false) async throws -> DeleteResponse {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        guard deleteAll || ids != nil || filter != nil else {
+            throw PineconeError.invalidRequestData
+        }
+
+        var body: [String: Any] = [:]
+        if let ids = ids { body["ids"] = ids }
+        if let filter = filter { body["filter"] = filter }
+        if let namespace = namespace { body["namespace"] = namespace }
+        if deleteAll { body["deleteAll"] = true }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        let endpoint = "https://\(indexHost)/vectors/delete"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+        request.httpBody = jsonData
+
+        var responseModel: DeleteResponse?
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                let message = String(data: data, encoding: .utf8)
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+            }
+
+            responseModel = try JSONDecoder().decode(DeleteResponse.self, from: data)
+        }
+
+        return responseModel ?? DeleteResponse(matchedCount: nil, deletedCount: nil)
+    }
+
+    /// Update an existing vector's values or metadata
+    func updateVector(id: String, values: [Float]? = nil, metadata: [String: Any]? = nil, namespace: String? = nil) async throws -> UpdateResponse {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        var body: [String: Any] = ["id": id]
+        if let values = values { body["values"] = values }
+        if let metadata = metadata { body["setMetadata"] = metadata }
+        if let namespace = namespace { body["namespace"] = namespace }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        let endpoint = "https://\(indexHost)/vectors/update"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+        request.httpBody = jsonData
+
+        var responseModel: UpdateResponse?
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                let message = String(data: data, encoding: .utf8)
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+            }
+
+            responseModel = try JSONDecoder().decode(UpdateResponse.self, from: data)
+        }
+
+        return responseModel ?? UpdateResponse(upsertedCount: nil)
+    }
+
+    /// Fetch vectors by identifier
+    func fetchVectors(ids: [String], namespace: String? = nil) async throws -> FetchResponse {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        var body: [String: Any] = ["ids": ids]
+        if let namespace = namespace { body["namespace"] = namespace }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        let endpoint = "https://\(indexHost)/vectors/fetch"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+        request.httpBody = jsonData
+
+        var responseModel: FetchResponse?
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                let message = String(data: data, encoding: .utf8)
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+            }
+
+            responseModel = try JSONDecoder().decode(FetchResponse.self, from: data)
+        }
+
+        guard let model = responseModel else {
+            throw PineconeError.requestFailed(statusCode: 0, message: "Empty fetch response")
+        }
+
+        return model
+    }
+
+    /// Fetch vectors via metadata filter (preview API)
+    func fetchVectorsByMetadata(filter: [String: Any], namespace: String? = nil, limit: Int = 100) async throws -> [FetchedVector] {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        var body: [String: Any] = ["filter": filter, "limit": limit]
+        if let namespace = namespace { body["namespace"] = namespace }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        let endpoint = "https://\(indexHost)/vectors/fetch-by-metadata"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.metadataFetchVersion)
+        request.httpBody = jsonData
+
+        var responseModel: FetchedVectorListResponse?
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 {
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                }
+                let message = String(data: data, encoding: .utf8)
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+            }
+
+            responseModel = try JSONDecoder().decode(FetchedVectorListResponse.self, from: data)
+        }
+
+        return responseModel?.vectors ?? []
+    }
     
     /// Query the current index
     /// - Parameters:
@@ -682,10 +927,7 @@ class PineconeService {
         
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue("2024-07", forHTTPHeaderField: "Api-Version")
+    applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
         request.httpBody = jsonData
         
         // Use retry mechanism for query operations
@@ -802,7 +1044,90 @@ struct NamespaceStats: Codable {
 }
 
 struct UpsertResponse: Codable {
+    // Pinecone may return either camelCase or snake_case depending on API version
     let upsertedCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case upsertedCount
+        case upsertedCountSnake = "upserted_count"
+    }
+
+    init(upsertedCount: Int) {
+        self.upsertedCount = upsertedCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let camelCaseValue = try container.decodeIfPresent(Int.self, forKey: .upsertedCount) {
+            self.upsertedCount = camelCaseValue
+            return
+        }
+
+        if let snakeCaseValue = try container.decodeIfPresent(Int.self, forKey: .upsertedCountSnake) {
+            self.upsertedCount = snakeCaseValue
+            return
+        }
+
+        throw DecodingError.keyNotFound(
+            CodingKeys.upsertedCount,
+            DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "Missing upsertedCount field in Pinecone upsert response."
+            )
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(upsertedCount, forKey: .upsertedCount)
+    }
+}
+
+struct DeleteResponse: Codable {
+    let matchedCount: Int?
+    let deletedCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case matchedCount = "matched_count"
+        case deletedCount = "deleted_count"
+    }
+}
+
+struct UpdateResponse: Codable {
+    let upsertedCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case upsertedCount = "upserted_count"
+    }
+}
+
+struct FetchResponse: Codable {
+    let namespace: String?
+    let vectors: [String: FetchedVector]
+}
+
+struct FetchedVectorListResponse: Codable {
+    let vectors: [FetchedVector]
+}
+
+struct FetchedVector: Codable {
+    let id: String
+    let values: [Float]?
+    let sparseValues: SparseValues?
+    let metadata: [String: JSONValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case values
+        case sparseValues = "sparse_values"
+        case metadata
+    }
+}
+
+struct SparseValues: Codable {
+    let indices: [Int]
+    let values: [Float]
 }
 
 enum JSONValue: Codable {
@@ -886,6 +1211,14 @@ enum PineconeError: Error {
 
 extension PineconeService {
     
+    /// Adds common Pinecone headers including configurable API version.
+    private func applyStandardHeaders(to request: inout URLRequest, apiVersion: String) {
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.addValue(apiVersion, forHTTPHeaderField: "Api-Version")
+    }
+    
     /// Apply rate limiting to avoid overwhelming the API
     private func applyRateLimit() async throws {
         // If this is the first request, no need to wait
@@ -945,5 +1278,31 @@ extension PineconeService {
         
         // If we've exhausted our retries, throw the last error or a maxRetries error
         throw lastError ?? PineconeError.maxRetriesExceeded
+    }
+}
+
+extension PineconeError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidRequestData:
+            return "The Pinecone request payload was invalid or could not be encoded."
+        case .invalidResponse:
+            return "Received an unexpected response from the Pinecone service."
+        case let .requestFailed(statusCode, message):
+            if let message, !message.isEmpty {
+                return "Pinecone responded with status \(statusCode): \(message)"
+            }
+            return "Pinecone responded with status \(statusCode)."
+        case .noIndexSelected:
+            return "No Pinecone index is currently selected. Choose an index before running operations."
+        case .rateLimitExceeded:
+            return "Pinecone rate limit exceeded. Please retry after a short delay."
+        case let .retryableError(statusCode):
+            return "Pinecone temporary error (status \(statusCode)). The operation will be retried."
+        case .maxRetriesExceeded:
+            return "Pinecone operation failed after the maximum number of retries."
+        case .emptyResponse:
+            return "Pinecone returned an empty response."
+        }
     }
 }

@@ -3,6 +3,7 @@ import Combine
 import UIKit
 import SwiftUI
 import UniformTypeIdentifiers // Added import for UTType
+import CryptoKit
 
 /// View model for document management and processing
 /// Handles loading, selecting, and processing documents for vector embeddings
@@ -59,6 +60,15 @@ class DocumentsViewModel: ObservableObject {
     /// Current status message during processing
     @Published var currentProcessingStatus: String? = nil
 
+    /// Metadata describing the currently selected index (dimension, metric, etc.)
+    @Published var indexMetadata: IndexDescribeResponse? = nil
+
+    /// Latest index statistics including namespace counts
+    @Published var indexStats: IndexStatsResponse? = nil
+
+    /// Dimension of the currently selected Pinecone index
+    @Published var indexDimension: Int? = nil
+
     /// Flag indicating if index/namespace operations are in progress
     @Published var isLoadingIndexes = false // Added for index creation loading state
 
@@ -79,6 +89,17 @@ class DocumentsViewModel: ObservableObject {
     private let phaseWeightChunking: Float = 0.10
     private let phaseWeightEmbedding: Float = 0.50
     private let phaseWeightUploading: Float = 0.30
+
+    // Dashboard metrics representing the ingestion state
+    struct DocumentDashboardMetrics {
+        let totalDocuments: Int
+        let processed: Int
+        let pending: Int
+        let failed: Int
+        let totalChunks: Int
+        let totalVectors: Int
+        let averageProcessingSeconds: Double
+    }
     
     // MARK: - Initialization
     
@@ -95,50 +116,130 @@ class DocumentsViewModel: ObservableObject {
         self.embeddingService = embeddingService
         self.pineconeService = pineconeService
     }
+
+    // MARK: - Derived Metrics
+
+    /// Aggregate metrics that drive the Documents dashboard UI.
+    var dashboardMetrics: DocumentDashboardMetrics {
+        let totalDocuments = documents.count
+        let processed = documents.filter { $0.isProcessed }.count
+        let failed = documents.filter { $0.processingError != nil }.count
+        let pending = max(totalDocuments - processed - failed, 0)
+
+        let totalChunks = documents.reduce(0) { $0 + $1.chunkCount }
+        let totalVectors = documents.reduce(0) { partialResult, doc in
+            if let vectors = doc.processingStats?.vectorsUploaded, vectors > 0 {
+                return partialResult + vectors
+            }
+            return partialResult + doc.chunkCount
+        }
+
+        let durations = documents.compactMap { $0.processingStats?.totalProcessingTime }
+        let averageProcessingSeconds = durations.isEmpty
+            ? 0
+            : durations.reduce(0, +) / Double(durations.count)
+
+        return DocumentDashboardMetrics(
+            totalDocuments: totalDocuments,
+            processed: processed,
+            pending: pending,
+            failed: failed,
+            totalChunks: totalChunks,
+            totalVectors: totalVectors,
+            averageProcessingSeconds: averageProcessingSeconds
+        )
+    }
+
+    /// Number of vectors currently stored in the selected namespace.
+    var selectedNamespaceVectorCount: Int {
+        guard let stats = indexStats else { return 0 }
+        let namespaceKey = selectedNamespace ?? ""
+        return stats.namespaces[namespaceKey]?.vectorCount ?? 0
+    }
+
+    /// Total vectors across the index according to Pinecone stats.
+    var totalIndexVectorCount: Int {
+        indexStats?.totalVectorCount ?? 0
+    }
+
+    /// Indicates whether any document has failed during processing.
+    var hasDocumentFailures: Bool {
+        documents.contains { $0.processingError != nil }
+    }
+
+    /// Most recent processed document by end time.
+    var latestProcessedDocument: DocumentModel? {
+        documents
+            .compactMap { doc -> (DocumentModel, Date)? in
+                guard let endTime = doc.processingStats?.endTime else { return nil }
+                return (doc, endTime)
+            }
+            .max(by: { $0.1 < $1.1 })?.0
+    }
+
+    /// Documents that have been added but not processed yet.
+    var pendingDocuments: [DocumentModel] {
+        documents.filter { !$0.isProcessed && $0.processingError == nil }
+    }
     
     // MARK: - Document Management
     
     /// Add a document to the list
     /// - Parameter url: URL of the document to add
     func addDocument(at url: URL) {
-        // Check if document already exists
-        if documents.contains(where: { $0.filePath == url }) {
-            logger.log(level: .warning, message: "Document already exists", context: url.lastPathComponent)
-            return
-        }
-        
+        var hasSecurityScope = false
         do {
-            // Ensure URL is accessible and secure bookmarked if necessary
-            // Ensure URL is accessible and create a persistent security bookmark
-            if !url.startAccessingSecurityScopedResource() {
-                logger.log(level: .warning, message: "Failed to access security-scoped resource", context: url.lastPathComponent)
-                // Consider throwing an error or returning if access is critical here
+            hasSecurityScope = url.startAccessingSecurityScopedResource()
+
+            // Some providers return sandbox-friendly URLs that do not need security scope. Fall back to reachability if the scope call fails.
+            if !hasSecurityScope {
+                let reachable = (try? url.checkResourceIsReachable()) ?? FileManager.default.isReadableFile(atPath: url.path)
+                guard reachable else {
+                    logger.log(level: .warning, message: "Unable to read selected file", context: url.lastPathComponent)
+                    errorMessage = "Unable to access \(url.lastPathComponent). Check Files permissions and try again."
+                    return
+                }
             }
-            
-            // Create a security-scoped bookmark
-            let bookmarkData = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            
-            // Stop accessing the resource for now
-            url.stopAccessingSecurityScopedResource()
-            
+            defer {
+                if hasSecurityScope {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            // Create a scoped bookmark so we can reopen the document in future sessions.
             // Get file attributes (access might be needed again if path is used directly)
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
+            let documentId = makeDocumentIdentifier(for: url, fileSize: fileSize, attributes: attributes)
+
+            // Prevent duplicates using the stable identifier
+            if documents.contains(where: { $0.documentId == documentId }) {
+                logger.log(level: .warning, message: "Document already exists", context: url.lastPathComponent)
+                return
+            }
             
             // Check file size limitations
             let maxFileSize: Int64 = 100 * 1024 * 1024 // 100MB
             if fileSize > maxFileSize {
                 logger.log(level: .warning, message: "File exceeds size limit (100MB)", context: url.lastPathComponent)
-                errorMessage = "File \(url.lastPathComponent) is too large (max 100MB)"
+                let sizeMessage = ProcessingError.documentSizeTooLarge(size: fileSize, maxSize: maxFileSize).errorDescription ?? "File exceeds size limit"
+                errorMessage = "\(url.lastPathComponent): \(sizeMessage)"
                 return
             }
             
+            // Copy the file into the app's sandbox to guarantee ongoing read access.
+            let persistedURL = try persistDocumentCopy(from: url)
+
+            // Generate a bookmark against the sandbox copy for predictable reopen behaviour.
+            let bookmarkData = try persistedURL.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
+
             // Create document model with determined MIME type and bookmark
             let document = DocumentModel(
+                documentId: documentId,
                 fileName: url.lastPathComponent,
-                filePath: url, // Keep original URL for reference, but use bookmark for access
+                filePath: persistedURL,
                 securityBookmark: bookmarkData, // Store the bookmark
-                mimeType: determineMimeType(for: url),
+                mimeType: determineMimeType(for: persistedURL),
                 fileSize: fileSize,
                 dateAdded: Date()
             )
@@ -204,11 +305,106 @@ class DocumentsViewModel: ObservableObject {
             logger.log(level: .warning, message: "Cannot remove documents while processing")
             return
         }
-        
-        DispatchQueue.main.async {
-            self.documents.removeAll(where: { self.selectedDocuments.contains($0.id) })
-            self.selectedDocuments.removeAll()
-            self.logger.log(level: .info, message: "Selected documents removed")
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            let documentsToRemove = await MainActor.run { self.documents.filter { self.selectedDocuments.contains($0.id) } }
+            guard !documentsToRemove.isEmpty else {
+                self.logger.log(level: .info, message: "No documents selected for removal")
+                return
+            }
+
+            var removalErrors: [String] = []
+            var removedDocumentIDs = Set<UUID>()
+
+            let originalIndex = await MainActor.run { self.selectedIndex }
+            let defaultNamespace = await MainActor.run { self.selectedNamespace }
+            var activeIndex = originalIndex
+
+            for document in documentsToRemove {
+                var vectorsRemoved = !document.isProcessed
+                var fileRemoved = false
+
+                let targetIndex = document.lastIndexedIndexName ?? originalIndex
+                let targetNamespace = document.lastIndexedNamespace ?? defaultNamespace
+
+                if document.isProcessed {
+                    do {
+                        if let indexName = targetIndex {
+                            if activeIndex != indexName {
+                                try await pineconeService.setCurrentIndex(indexName)
+                                activeIndex = indexName
+                            }
+                            let response = try await pineconeService.deleteVectors(
+                                ids: nil,
+                                filter: ["doc_id": ["$eq": document.documentId]],
+                                namespace: targetNamespace
+                            )
+                            if let deleted = response.deletedCount {
+                                logger.log(level: .info, message: "Deleted \(deleted) vectors", context: document.fileName)
+                            }
+                            vectorsRemoved = true
+                        } else {
+                            vectorsRemoved = false
+                            removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
+                        }
+                    } catch {
+                        vectorsRemoved = false
+                        removalErrors.append("Failed to delete vectors for \(document.fileName): \(error.localizedDescription)")
+                    }
+                }
+
+                if vectorsRemoved {
+                    do {
+                        let path = document.filePath.path
+                        if FileManager.default.fileExists(atPath: path) {
+                            try FileManager.default.removeItem(at: document.filePath)
+                            fileRemoved = true
+                        } else {
+                            fileRemoved = true
+                        }
+                    } catch {
+                        fileRemoved = false
+                        removalErrors.append("Failed to remove local copy for \(document.fileName): \(error.localizedDescription)")
+                    }
+                }
+
+                if vectorsRemoved && fileRemoved {
+                    removedDocumentIDs.insert(document.id)
+                    logger.log(level: .info, message: "Document removed", context: document.fileName)
+                } else {
+                    logger.log(level: .warning, message: "Document removal incomplete", context: document.fileName)
+                }
+            }
+
+            if let originalIndex, activeIndex != originalIndex {
+                do {
+                    try await pineconeService.setCurrentIndex(originalIndex)
+                } catch {
+                    removalErrors.append("Failed to restore Pinecone index '\(originalIndex)': \(error.localizedDescription)")
+                }
+            }
+
+            let removedIDsSnapshot = removedDocumentIDs
+            let removalErrorsSnapshot = removalErrors
+
+            await MainActor.run {
+                if !removedIDsSnapshot.isEmpty {
+                    self.documents.removeAll { removedIDsSnapshot.contains($0.id) }
+                    self.selectedDocuments.subtract(removedIDsSnapshot)
+                }
+
+                if removalErrorsSnapshot.isEmpty {
+                    self.errorMessage = nil
+                } else {
+                    self.errorMessage = removalErrorsSnapshot.joined(separator: "\n")
+                }
+            }
+
+            if !removedDocumentIDs.isEmpty {
+                await self.refreshIndexInsights()
+            }
         }
     }
     
@@ -232,6 +428,11 @@ class DocumentsViewModel: ObservableObject {
             let indexes = try await pineconeService.listIndexes()
             await MainActor.run {
                 self.pineconeIndexes = indexes
+                if !indexes.contains(self.selectedIndex ?? "") {
+                    self.indexDimension = nil
+                    self.indexMetadata = nil
+                    self.indexStats = nil
+                }
                 self.errorMessage = nil
                 
                 // Auto-select first index if none selected
@@ -241,6 +442,9 @@ class DocumentsViewModel: ObservableObject {
                     Task {
                         await self.setIndex(indexes[0])
                     }
+                } else if indexes.isEmpty {
+                    self.selectedIndex = nil
+                    self.selectedNamespace = nil
                 }
             }
             logger.log(level: .info, message: "Loaded \(indexes.count) Pinecone indexes")
@@ -257,15 +461,23 @@ class DocumentsViewModel: ObservableObject {
     func setIndex(_ indexName: String) async {
         do {
             try await pineconeService.setCurrentIndex(indexName)
-            await loadNamespaces()
+            let indexDetails = try await pineconeService.describeIndex(name: indexName)
             await MainActor.run {
                 self.selectedIndex = indexName
+                self.indexDimension = indexDetails.dimension
+                self.indexMetadata = indexDetails
+                self.indexStats = nil
                 self.errorMessage = nil
             }
+            logger.log(level: .info, message: "Index dimension set", context: "\(indexName): \(indexDetails.dimension)")
+            await refreshIndexInsights()
             logger.log(level: .info, message: "Set current index to: \(indexName)")
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to set index: \(error.localizedDescription)"
+                self.indexDimension = nil
+                self.indexMetadata = nil
+                self.indexStats = nil
                 self.logger.log(level: .error, message: "Failed to set index", context: error.localizedDescription)
             }
         }
@@ -273,31 +485,48 @@ class DocumentsViewModel: ObservableObject {
     
     /// Load available namespaces for the current index
     func loadNamespaces() async {
+        await refreshIndexInsights()
+    }
+
+    /// Refresh namespace listings and index statistics for the current index.
+    func refreshIndexInsights() async {
         guard selectedIndex != nil else {
             await MainActor.run {
                 self.namespaces = []
                 self.selectedNamespace = nil
+                self.indexStats = nil
             }
             return
         }
-        
+
         do {
-            let namespaces = try await pineconeService.listNamespaces()
-            await MainActor.run {
-                self.namespaces = namespaces
-                self.errorMessage = nil
-                
-                // Preserve current selection if it's still valid
-                if self.selectedNamespace == nil || !namespaces.contains(self.selectedNamespace!) {
-                    self.selectedNamespace = namespaces.first
+            let stats = try await pineconeService.fetchIndexStats()
+            let namespaceNames = stats.namespaces.keys.sorted { lhs, rhs in
+                switch (lhs.isEmpty, rhs.isEmpty) {
+                case (true, false): return true
+                case (false, true): return false
+                default: return lhs.lowercased() < rhs.lowercased()
                 }
             }
-            logger.log(level: .info, message: "Loaded \(namespaces.count) namespaces")
+
+            await MainActor.run {
+                self.namespaces = namespaceNames
+                self.indexStats = stats
+                self.errorMessage = nil
+
+                if let current = self.selectedNamespace, namespaceNames.contains(current) {
+                    self.selectedNamespace = current
+                } else {
+                    self.selectedNamespace = namespaceNames.first
+                }
+            }
+
+            logger.log(level: .info, message: "Refreshed index stats", context: "namespaces=\(stats.namespaces.count), totalVectors=\(stats.totalVectorCount)")
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to load namespaces: \(error.localizedDescription)"
-                self.logger.log(level: .error, message: "Failed to load namespaces", context: error.localizedDescription)
+                self.errorMessage = "Failed to refresh index stats: \(error.localizedDescription)"
             }
+            logger.log(level: .error, message: "Failed to refresh index stats", context: error.localizedDescription)
         }
     }
     
@@ -313,16 +542,27 @@ class DocumentsViewModel: ObservableObject {
     /// Create a new namespace
     /// - Parameter name: Name of the new namespace
     func createNamespace(_ name: String) {
-        guard !name.isEmpty else { return }
-        guard !namespaces.contains(name) else {
-            logger.log(level: .warning, message: "Namespace already exists", context: name)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !namespaces.contains(trimmed) else {
+            logger.log(level: .warning, message: "Namespace already exists", context: trimmed)
             return
         }
-        
-        DispatchQueue.main.async {
-            self.selectedNamespace = name
-            self.namespaces.append(name)
-            self.logger.log(level: .info, message: "Namespace created", context: name)
+
+        Task {
+            do {
+                try await pineconeService.createNamespace(trimmed)
+                logger.log(level: .info, message: "Namespace created", context: trimmed)
+                await MainActor.run {
+                    self.selectedNamespace = trimmed
+                }
+                await refreshIndexInsights()
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to create namespace: \(error.localizedDescription)"
+                }
+                logger.log(level: .error, message: "Failed to create namespace", context: error.localizedDescription)
+            }
         }
     }
 
@@ -470,15 +710,27 @@ class DocumentsViewModel: ObservableObject {
             guard !chunks.isEmpty else {
                 throw ProcessingError.noChunksGenerated
             }
+
+            let namespaceSnapshot = await MainActor.run { self.selectedNamespace }
+            let indexSnapshot = await MainActor.run { self.selectedIndex }
+            let indexDimensionSnapshot = await MainActor.run { self.indexDimension }
+            try await purgeExistingVectors(for: document, namespace: namespaceSnapshot)
             
             // PHASE 3: Generate embeddings (Weight: phaseWeightEmbedding)
             await MainActor.run { self.currentProcessingStatus = "Generating embeddings (\(document.fileName))..." }
             let embeddingStart = Date() // Record start time for stats
-            let embeddings = try await embeddingService.generateEmbeddings(for: chunks) { batchIndex, totalBatches in
-                // Calculate progress within this phase based on batch completion
-                let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
-                let phaseProgress = self.phaseWeightEmbedding * batchProgress
-                await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+            let targetDimension = indexDimensionSnapshot ?? Configuration.embeddingDimension
+            logger.log(level: .info, message: "Generating embeddings with dimension \(targetDimension)", context: document.fileName)
+            let embeddings: [EmbeddingModel]
+            do {
+                embeddings = try await embeddingService.generateEmbeddings(for: chunks, dimension: targetDimension) { batchIndex, totalBatches in
+                    // Calculate progress within this phase based on batch completion
+                    let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
+                    let phaseProgress = self.phaseWeightEmbedding * batchProgress
+                    await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+                }
+            } catch {
+                throw ProcessingError.embeddingFailed(underlying: error)
             }
             let embeddingEnd = Date() // Record end time for stats
             // Update stats for this phase
@@ -496,11 +748,16 @@ class DocumentsViewModel: ObservableObject {
             await MainActor.run { self.currentProcessingStatus = "Uploading vectors (\(document.fileName))..." }
             let upsertStart = Date() // Record start time for stats
             let vectorsToUpsert = embeddingService.convertToPineconeVectors(from: embeddings)
-            let upsertResponse = try await pineconeService.upsertVectors(vectorsToUpsert, namespace: selectedNamespace) { batchIndex, totalBatches in
-                 // Calculate progress within this phase based on batch completion
-                let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
-                let phaseProgress = self.phaseWeightUploading * batchProgress
-                await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+            let upsertResponse: UpsertResponse
+            do {
+                upsertResponse = try await pineconeService.upsertVectors(vectorsToUpsert, namespace: namespaceSnapshot) { batchIndex, totalBatches in
+                     // Calculate progress within this phase based on batch completion
+                    let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
+                    let phaseProgress = self.phaseWeightUploading * batchProgress
+                    await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+                }
+            } catch {
+                throw ProcessingError.upsertFailed(underlying: error)
             }
             let upsertEnd = Date() // Record end time for stats
             // Update stats for this phase
@@ -514,10 +771,18 @@ class DocumentsViewModel: ObservableObject {
             processingStats.endTime = Date()
             
             // Update document status and stats
-            await updateDocumentStatus(document, isProcessed: true, chunkCount: chunks.count)
+            await updateDocumentStatus(
+                document,
+                isProcessed: true,
+                chunkCount: chunks.count,
+                namespace: namespaceSnapshot,
+                indexName: indexSnapshot,
+                shouldUpdateContext: true
+            )
             await updateDocumentStats(document, stats: processingStats)
             
             logger.log(level: .success, message: "Document processed successfully", context: document.fileName)
+            await refreshIndexInsights()
             
         } catch {
             // Mark progress as complete (even on failure) to avoid stalling average
@@ -540,6 +805,25 @@ class DocumentsViewModel: ObservableObject {
             logger.log(level: .error, message: "Failed to process document", context: "\(document.fileName): \(errorMessage)")
         }
     }
+
+    /// Removes any previously indexed vectors for the supplied document so re-processing produces a clean slate.
+    private func purgeExistingVectors(for document: DocumentModel, namespace: String?) async throws {
+        guard !document.documentId.isEmpty else { return }
+
+        do {
+            let response = try await pineconeService.deleteVectors(
+                ids: nil,
+                filter: ["doc_id": ["$eq": document.documentId]],
+                namespace: namespace
+            )
+            if let deleted = response.deletedCount {
+                logger.log(level: .info, message: "Removed \(deleted) stale vectors", context: document.fileName)
+            }
+        } catch {
+            logger.log(level: .error, message: "Failed to purge existing vectors", context: "\(document.fileName): \(error.localizedDescription)")
+            throw ProcessingError.cleanupFailed(underlying: error)
+        }
+    }
     
     /// Extract text from a document file
     /// - Parameters:
@@ -558,28 +842,59 @@ class DocumentsViewModel: ObservableObject {
         
         var isStale = false
         var resolvedURL: URL
+        var hasScope = false
         
         do {
-            // Resolve the bookmark to get a fresh URL. For iOS, resolve without .withSecurityScope
-            // and then explicitly start access.
-            resolvedURL = try URL(resolvingBookmarkData: bookmarkData, options: [], relativeTo: nil, bookmarkDataIsStale: &isStale)
-            
+            // Resolve the bookmark to regain access without prompting the user again.
+            var resolveOptions: URL.BookmarkResolutionOptions = [.withoutUI]
+            #if os(macOS)
+            resolveOptions.insert(.withSecurityScope)
+            #endif
+            resolvedURL = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: resolveOptions,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+
             if isStale {
-                logger.log(level: .warning, message: "Security bookmark is stale, access may fail", context: document.fileName)
-                // Consider attempting to create a new bookmark here if needed
+                logger.log(level: .warning, message: "Security bookmark is stale, attempting refresh", context: document.fileName)
+                do {
+                    var refreshedOptions: URL.BookmarkCreationOptions = [.minimalBookmark]
+                    #if os(macOS)
+                    refreshedOptions.insert(.withSecurityScope)
+                    refreshedOptions.insert(.securityScopeAllowOnlyReadAccess)
+                    #endif
+                    let refreshedBookmark = try resolvedURL.bookmarkData(
+                        options: refreshedOptions,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    await updateDocumentSecurityBookmark(document, bookmark: refreshedBookmark)
+                    logger.log(level: .info, message: "Security bookmark refreshed", context: document.fileName)
+                } catch {
+                    logger.log(level: .warning, message: "Failed to refresh security bookmark", context: "\(document.fileName): \(error.localizedDescription)")
+                }
             }
-            
-            if !resolvedURL.startAccessingSecurityScopedResource() {
-                logger.log(level: .error, message: "Failed to access security-scoped resource despite bookmark", context: document.fileName)
-                throw ProcessingError.securityAccessDenied
+
+            hasScope = resolvedURL.startAccessingSecurityScopedResource()
+            if !hasScope {
+                let reachable = ((try? resolvedURL.checkResourceIsReachable()) ?? false) || FileManager.default.isReadableFile(atPath: resolvedURL.path)
+                guard reachable else {
+                    logger.log(level: .error, message: "Failed to access security-scoped resource despite bookmark", context: document.fileName)
+                    throw ProcessingError.securityAccessDenied
+                }
             }
         } catch {
             logger.log(level: .error, message: "Failed to resolve security bookmark", context: "\(document.fileName): \(error.localizedDescription)")
             throw ProcessingError.securityAccessDenied
         }
-        
-        // Use the resolved URL instead of the stored filePath
-        defer { resolvedURL.stopAccessingSecurityScopedResource() }
+
+        defer {
+            if hasScope {
+                resolvedURL.stopAccessingSecurityScopedResource()
+            }
+        }
         
         // Call the file processor service with the resolved URL
         let (text, mimeType) = try await fileProcessorService.processFile(at: resolvedURL)
@@ -612,28 +927,29 @@ class DocumentsViewModel: ObservableObject {
     /// - Returns: Tuple with chunks and analytics
     // Removed async as the function body doesn't contain await
     private func chunkText(_ document: DocumentModel, text: String, mimeType: String, stats: inout DocumentProcessingStats) -> (chunks: [ChunkModel], analytics: ChunkAnalytics) {
-        // Removed await from autoreleasepool call
         return autoreleasepool {
             let chunkingStart = Date()
-            
-            // Create metadata
+            let processedAt = Date()
+            let isoFormatter = ISO8601DateFormatter()
+
             let metadata = [
                 "source": document.filePath.lastPathComponent,
                 "mimeType": mimeType,
                 "fileName": document.fileName,
                 "fileSize": String(document.fileSize),
-                "dateProcessed": ISO8601DateFormatter().string(from: Date())
+                "dateProcessed": isoFormatter.string(from: processedAt),
+                "documentId": document.documentId,
+                "sourcePath": document.filePath.path,
+                "ingestSessionId": document.id.uuidString
             ]
-            
-            // Perform text chunking
+
             let (chunks, analytics) = textProcessorService.chunkText(
                 text: text,
                 metadata: metadata,
                 mimeType: mimeType
             )
             let chunkingEnd = Date()
-            
-            // Update chunking stats
+
             stats.addPhase(
                 phase: .chunking,
                 start: chunkingStart,
@@ -643,16 +959,15 @@ class DocumentsViewModel: ObservableObject {
             stats.avgTokensPerChunk = analytics.avgTokensPerChunk
             stats.chunkSizes = analytics.chunkSizes
             stats.tokenDistribution = analytics.tokenDistribution
-            
+
             logger.log(level: .info, message: "Text chunked", context: "Document: \(document.fileName), Chunks: \(chunks.count)")
-            
-            // Update global stats
+
             Task { @MainActor in
                 self.processingStats?.totalDocuments += 1
                 self.processingStats?.totalChunks += chunks.count
                 self.processingStats?.totalTokens += analytics.totalTokens
             }
-            
+
             return (chunks, analytics)
         }
     }
@@ -728,14 +1043,35 @@ class DocumentsViewModel: ObservableObject {
     ///   - isProcessed: Whether processing was successful
     ///   - error: Optional error message
     ///   - chunkCount: Number of chunks generated
-    private func updateDocumentStatus(_ document: DocumentModel, isProcessed: Bool, error: String? = nil, chunkCount: Int = 0) async {
+    private func updateDocumentStatus(
+        _ document: DocumentModel,
+        isProcessed: Bool,
+        error: String? = nil,
+        chunkCount: Int = 0,
+        namespace: String? = nil,
+        indexName: String? = nil,
+        shouldUpdateContext: Bool = false
+    ) async {
         await MainActor.run {
             if let index = self.documents.firstIndex(where: { $0.id == document.id }) {
                 // Create a new copy of the document with updated status
                 var updatedDocument = self.documents[index]
                 updatedDocument.isProcessed = isProcessed
-                updatedDocument.processingError = error
                 updatedDocument.chunkCount = chunkCount
+
+                if isProcessed {
+                    updatedDocument.processingError = nil
+                } else {
+                    updatedDocument.processingError = error
+                }
+
+                if shouldUpdateContext {
+                    updatedDocument.lastIndexedNamespace = namespace
+                    updatedDocument.lastIndexedIndexName = indexName
+                    if isProcessed {
+                        updatedDocument.lastIndexedAt = Date()
+                    }
+                }
                 
                 // Replace the old document with the updated copy in the array
                 self.documents[index] = updatedDocument
@@ -768,6 +1104,15 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
+
+    /// Persist a refreshed security bookmark for a document so future runs have valid access.
+    private func updateDocumentSecurityBookmark(_ document: DocumentModel, bookmark: Data) async {
+        await MainActor.run {
+            if let index = self.documents.firstIndex(where: { $0.id == document.id }) {
+                self.documents[index].securityBookmark = bookmark
+            }
+        }
+    }
     
     // MARK: - Helper Methods
     
@@ -785,6 +1130,67 @@ class DocumentsViewModel: ObservableObject {
             .filter { selectedDocuments.contains($0.id) }
             .reduce(0) { $0 + $1.fileSize }
     }
+
+    /// Persist a user-selected document into the app's sandbox so later processing never depends on provider permissions.
+    private func persistDocumentCopy(from sourceURL: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        try fileManager.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+
+        let sanitizedName = sanitizeFilename(sourceURL.lastPathComponent)
+        let destinationURL = makeUniqueDestinationURL(basedOn: sanitizedName, within: documentsDirectory)
+
+        // Ensure we start from a clean slate if the temporary destination exists for some reason.
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        return destinationURL
+    }
+
+    /// Generate a unique destination URL inside the supplied directory to avoid name collisions.
+    private func makeUniqueDestinationURL(basedOn fileName: String, within directory: URL) -> URL {
+        let fileManager = FileManager.default
+        let baseName = (fileName as NSString).deletingPathExtension
+        let fileExtension = (fileName as NSString).pathExtension
+
+        var candidateURL = directory.appendingPathComponent(fileName)
+        var counter = 1
+
+        while fileManager.fileExists(atPath: candidateURL.path) {
+            let suffix = "-\(counter)"
+            let candidateName: String
+
+            if fileExtension.isEmpty {
+                candidateName = baseName + suffix
+            } else {
+                candidateName = baseName + suffix + "." + fileExtension
+            }
+
+            candidateURL = directory.appendingPathComponent(candidateName)
+            counter += 1
+        }
+
+        return candidateURL
+    }
+
+    /// Replace characters that are problematic for filesystem storage.
+    private func sanitizeFilename(_ name: String) -> String {
+        let illegalCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+        return name.components(separatedBy: illegalCharacters).joined(separator: "_")
+    }
+
+    /// Generates a stable SHA-256 backed identifier for the supplied document URL and size.
+    /// This keeps Pinecone vector IDs deterministic across re-processing runs.
+    private func makeDocumentIdentifier(for url: URL, fileSize: Int64, attributes: [FileAttributeKey: Any]) -> String {
+        let normalizedPath = url.standardizedFileURL.path.lowercased()
+        let creation = (attributes[.creationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let modification = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let fingerprint = "\(normalizedPath)::\(fileSize)::\(creation)::\(modification)"
+        let digest = SHA256.hash(data: Data(fingerprint.utf8))
+        return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
     
     // MARK: - Models
     
@@ -796,6 +1202,7 @@ class DocumentsViewModel: ObservableObject {
         case embeddingFailed(underlying: Error)
         case embeddingCountMismatch(expected: Int, got: Int)
         case upsertFailed(underlying: Error)
+        case cleanupFailed(underlying: Error)
         case noChunksGenerated
         case noEmbeddingsGenerated
         case invalidIndex
@@ -816,6 +1223,8 @@ class DocumentsViewModel: ObservableObject {
                 return "Embedding count mismatch: expected \(expected), got \(got)"
             case .upsertFailed(let error):
                 return "Failed to upsert vectors: \(error.localizedDescription)"
+            case .cleanupFailed(let error):
+                return "Failed to remove previously indexed vectors: \(error.localizedDescription)"
             case .noChunksGenerated:
                 return "No text chunks were generated"
             case .noEmbeddingsGenerated:

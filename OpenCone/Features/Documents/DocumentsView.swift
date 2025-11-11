@@ -1,44 +1,31 @@
-// Add imports for types used in this view
-import Foundation  // For URL, Date etc. if not implicitly imported by SwiftUI
+import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Assuming these types are in the main module target
-// import OpenConeCore // Or specific imports if needed
-
-/// View for document management and processing
-/// Allows users to select Pinecone indexes, manage namespaces, and process documents
+/// Redesigned document orchestration surface aligned with Pinecone playbooks.
 struct DocumentsView: View {
-    // MARK: - Properties
     @ObservedObject var viewModel: DocumentsViewModel
     @State private var showingDocumentPicker = false
     @State private var showingNamespaceDialog = false
     @State private var newNamespace = ""
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.theme) private var theme: OCTheme  // Explicitly type the theme
+    @Environment(\.theme) private var theme: OCTheme
 
-    // MARK: - View Body
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Configuration section for Pinecone settings
-                configurationSection
-
-                // Document list or empty state message
-                documentListSection
-
-                // Processing status indicator when documents are being processed
-                processingStatusSection
-
-                // Action buttons for document operations
-                actionButtonsSection
+            VStack(spacing: 28) {
+                heroSection
+                indexOverviewSection
+                pipelineSection
+                processingPanel
+                documentCatalogSection
+                operationsSection
+                referencesSection
             }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 28)
         }
         .background(theme.backgroundColor.ignoresSafeArea())
         .sheet(isPresented: $showingDocumentPicker) {
-            // Assuming DocumentPicker is defined elsewhere and imported
             DocumentPicker(viewModel: viewModel)
         }
         .alert("Create Namespace", isPresented: $showingNamespaceDialog) {
@@ -46,454 +33,1005 @@ struct DocumentsView: View {
         } message: {
             Text("Enter a name for the new namespace:")
         }
-        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) {  // Added alert for index creation
+        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) {
             createIndexDialogContent
         } message: {
             Text("Enter a name for the new index (lowercase, alphanumeric, hyphens):")
         }
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.documents.count)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoadingIndexes)  // Animate loading state changes
+        .animation(.spring(duration: 0.25), value: viewModel.isProcessing)
+        .animation(.spring(duration: 0.25), value: viewModel.documents.count)
+        .animation(.spring(duration: 0.25), value: viewModel.selectedDocuments)
     }
+}
 
-    // MARK: - UI Components
+private extension DocumentsView {
+    // MARK: - Hero
 
-    /// Configuration section for Pinecone index and namespace selection
-    private var configurationSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Pinecone Configuration")
-                .font(.headline)
-                .foregroundColor(theme.textPrimaryColor)
-                .padding(.top, 4)
+    var heroSection: some View {
+        let metrics = viewModel.dashboardMetrics
+        let namespaceVectors = formattedCount(viewModel.selectedNamespaceVectorCount)
+        let avgRuntime = formattedDuration(metrics.averageProcessingSeconds)
 
-            VStack(spacing: 12) {
-                // Index selector with refresh button
-                configCard {
-                    indexSelectorRow
-                }
-
-                // Namespace selector with add and refresh buttons
-                configCard {
-                    namespaceSelectorRow
-                }
-            }
-        }
-        .padding(.top, 8)
-    }
-
-    /// Card container for configuration items
-    private func configCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(theme.cardBackgroundColor)
-                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
-            )
-    }
-
-    /// Row for selecting Pinecone index
-    private var indexSelectorRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "server.rack")
-                .foregroundColor(theme.primaryColor)
-                .frame(width: 24)
-
-            Picker("Index:", selection: $viewModel.selectedIndex.toUnwrapped(defaultValue: "")) {
-                Text("Select Index").tag("")
-                ForEach(viewModel.pineconeIndexes, id: \.self) { index in
-                    Text(index).tag(index)
-                }
-            }
-            .foregroundColor(theme.textPrimaryColor)
-            .frame(maxWidth: .infinity)
-            .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
-                if let index = newValue, !index.isEmpty {
-                    Task {
-                        await viewModel.setIndex(index)
-                    }
-                }
-            }
-
-            HStack(spacing: 8) {  // Group index buttons
-                // Create index button
-                styledButton(
-                    icon: "plus", color: theme.primaryColor,
-                    action: {
-                        viewModel.showingCreateIndexDialog = true
-                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-
-                // Refresh indexes button
-                styledButton(
-                    icon: "arrow.clockwise", color: theme.primaryColor,
-                    action: {
-                        Task {
-                            await viewModel.loadIndexes()
-                        }
-                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-            }
-        }
-    }
-
-    /// Row for selecting or creating a namespace
-    private var namespaceSelectorRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "folder")
-                .foregroundColor(theme.primaryColor)
-                .frame(width: 24)
-
-            Picker(
-                "Namespace:", selection: $viewModel.selectedNamespace.toUnwrapped(defaultValue: "")
-            ) {
-                Text("Default namespace").tag("")
-                ForEach(viewModel.namespaces, id: \.self) { namespace in
-                    Text(namespace).tag(namespace)
-                }
-            }
-            .foregroundColor(theme.textPrimaryColor)
-            .frame(maxWidth: .infinity)
-            .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
-                viewModel.setNamespace(newValue)
-            }
-
-            HStack(spacing: 8) {
-                // Create namespace button
-                styledButton(
-                    icon: "plus", color: theme.primaryColor,
-                    action: {
-                        showingNamespaceDialog = true
-                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-
-                // Refresh namespaces button
-                styledButton(
-                    icon: "arrow.clockwise", color: theme.primaryColor,
-                    action: {
-                        Task {
-                            await viewModel.loadNamespaces()
-                        }
-                    }, isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes)
-            }
-        }
-    }
-
-    /// Section for displaying document list or empty state
-    private var documentListSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Documents")
-                .font(.headline)
-                .foregroundColor(theme.textPrimaryColor)
-
-            if viewModel.documents.isEmpty {
-                emptyDocumentsView
-            } else {
-                documentsListView
-            }
-        }
-    }
-
-    /// Empty state view when no documents are present
-    private var emptyDocumentsView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Image(systemName: "doc.badge.plus")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 60, height: 60)
-                .foregroundColor(theme.primaryColor.opacity(0.7))
-                .padding(24)
-                .background(
-                    Circle()
-                        .fill(theme.primaryColor.opacity(0.1))
-                )
-
-            VStack(spacing: 8) {
-                Text("No documents added yet")
-                    .font(.headline)
+        return VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Document Orchestration")
+                    .font(.system(.title, design: .rounded))
+                    .fontWeight(.semibold)
                     .foregroundColor(theme.textPrimaryColor)
 
-                Text("Tap the '+' button to add documents")
+                Text("Flow documents through extraction → embeddings → Pinecone in lockstep with the Architecture, DataModeling, and IndexingOverview guides.")
                     .font(.subheadline)
                     .foregroundColor(theme.textSecondaryColor)
-                    .multilineTextAlignment(.center)
+            }
+
+            LazyVGrid(columns: heroGridColumns, spacing: 14) {
+                metricTile(
+                    title: "Aligned",
+                    value: "\(metrics.processed)/\(metrics.totalDocuments)",
+                    caption: "Documents indexed",
+                    icon: "checkmark.seal.fill",
+                    accent: theme.successColor
+                )
+
+                metricTile(
+                    title: "Pending",
+                    value: formattedCount(metrics.pending),
+                    caption: "Awaiting embedding",
+                    icon: "hourglass",
+                    accent: theme.warningColor
+                )
+
+                metricTile(
+                    title: "Namespace vectors",
+                    value: namespaceVectors,
+                    caption: namespaceLabel,
+                    icon: "point.3.connected.trianglepath.dotted",
+                    accent: theme.accentColor
+                )
+
+                metricTile(
+                    title: "Avg runtime",
+                    value: avgRuntime,
+                    caption: "Per document processing",
+                    icon: "timer",
+                    accent: theme.infoColor
+                )
+            }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 28)
+                .fill(
+                    LinearGradient(
+                        colors: [theme.primaryColor.opacity(0.22), theme.secondaryColor.opacity(0.18)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28)
+                        .stroke(theme.primaryColor.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
+        )
+    }
+
+    var heroGridColumns: [GridItem] { [GridItem(.flexible()), GridItem(.flexible())] }
+
+    func metricTile(title: String, value: String, caption: String, icon: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(accent.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .foregroundColor(accent)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title.uppercased())
+                        .font(.caption2)
+                        .foregroundColor(theme.textSecondaryColor)
+                        .tracking(0.8)
+
+                    Text(value)
+                        .font(.title2.bold())
+                        .foregroundColor(theme.textPrimaryColor)
+                }
+            }
+
+            Text(caption)
+                .font(.caption)
+                .foregroundColor(theme.textSecondaryColor)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.white.opacity(0.18))
+                .blendMode(.plusLighter)
+        )
+    }
+
+    var namespaceLabel: String {
+        let namespace = viewModel.selectedNamespace ?? ""
+        return namespace.isEmpty ? "Default namespace" : namespace
+    }
+
+    // MARK: - Index Overview
+
+    var indexOverviewSection: some View {
+        sectionContainer(
+            title: "Index Alignment",
+            subtitle: "TargetIndex • ManageNamespace",
+            icon: "server.rack"
+        ) {
+            VStack(alignment: .leading, spacing: 18) {
+                indexPickerRow
+                namespacePickerRow
+
+                if let metadata = viewModel.indexMetadata {
+                    indexMetadataGrid(metadata)
+                } else {
+                    calloutCard(
+                        title: "Select an index",
+                        message: "Connect to a Pinecone deployment to pull dimension, metric, and namespace stats.",
+                        icon: "info.circle",
+                        color: theme.infoColor
+                    )
+                }
+
+                if let stats = viewModel.indexStats, !stats.namespaces.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Namespaces")
+                            .font(.subheadline.bold())
+                            .foregroundColor(theme.textPrimaryColor)
+
+                        LazyVStack(spacing: 12) {
+                            ForEach(viewModel.namespaces, id: \.self) { namespace in
+                                namespaceRow(
+                                    namespace,
+                                    vectorCount: stats.namespaces[namespace]?.vectorCount ?? 0
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    var indexPickerRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Active index", systemImage: "server.rack")
+                .font(.subheadline.bold())
+                .foregroundColor(theme.textPrimaryColor)
+
+            HStack(spacing: 12) {
+                Menu {
+                    if viewModel.pineconeIndexes.isEmpty {
+                        Text("No indexes found")
+                    } else {
+                        ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                            Button {
+                                Task { await viewModel.setIndex(index) }
+                            } label: {
+                                Label(index, systemImage: viewModel.selectedIndex == index ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                } label: {
+                    pickerLabel(
+                        title: viewModel.selectedIndex ?? "Select a Pinecone index",
+                        subtitle: "Hosts embeddings and namespaces",
+                        icon: "internaldrive"
+                    )
+                }
+                .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes)
+
+                iconCircleButton(systemName: "plus", isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes) {
+                    viewModel.showingCreateIndexDialog = true
+                }
+
+                iconCircleButton(systemName: "arrow.clockwise", isDisabled: viewModel.isProcessing || viewModel.isLoadingIndexes) {
+                    Task { await viewModel.loadIndexes() }
+                }
+            }
+        }
+    }
+
+    var namespacePickerRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Namespace", systemImage: "folder")
+                .font(.subheadline.bold())
+                .foregroundColor(theme.textPrimaryColor)
+
+            HStack(spacing: 12) {
+                Menu {
+                    if viewModel.namespaces.isEmpty {
+                        Button("Default") { viewModel.setNamespace("") }
+                    } else {
+                        ForEach(viewModel.namespaces, id: \.self) { namespace in
+                            Button {
+                                viewModel.setNamespace(namespace)
+                            } label: {
+                                Label(namespaceDisplayName(namespace), systemImage: currentNamespaceSymbol(namespace))
+                            }
+                        }
+                    }
+                } label: {
+                    pickerLabel(
+                        title: namespaceDisplayName(viewModel.selectedNamespace ?? ""),
+                        subtitle: "Logical group inside the index",
+                        icon: "rectangle.connected.to.line.below"
+                    )
+                }
+                .disabled(viewModel.isProcessing || viewModel.isLoadingIndexes)
+
+                iconCircleButton(systemName: "arrow.clockwise", isDisabled: viewModel.isProcessing) {
+                    Task { await viewModel.refreshIndexInsights() }
+                }
+
+                iconCircleButton(systemName: "plus", isDisabled: viewModel.isProcessing) {
+                    showingNamespaceDialog = true
+                }
+            }
+        }
+    }
+
+    func indexMetadataGrid(_ metadata: IndexDescribeResponse) -> some View {
+        let dimension = formattedCount(metadata.dimension)
+        let totalVectors = formattedCount(viewModel.totalIndexVectorCount)
+        let state = metadata.status.ready ? "Ready" : metadata.status.state
+
+        return LazyVGrid(columns: heroGridColumns, spacing: 14) {
+            infoChip(icon: "ruler", label: "Dimension", value: dimension)
+            infoChip(icon: "waveform", label: "Metric", value: metadata.metric.capitalized)
+            infoChip(icon: "antenna.radiowaves.left.and.right", label: "Status", value: state)
+            infoChip(icon: "square.stack.3d.up.fill", label: "Total vectors", value: totalVectors)
+        }
+    }
+
+    func namespaceRow(_ namespace: String, vectorCount: Int) -> some View {
+        let isSelected = (viewModel.selectedNamespace ?? "") == namespace
+
+        return Button {
+            viewModel.setNamespace(namespace)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(theme.primaryColor.opacity(0.12))
+                        .frame(width: 46, height: 46)
+                    Image(systemName: "shippingbox")
+                        .foregroundColor(theme.primaryColor)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(namespaceDisplayName(namespace))
+                        .font(.subheadline.bold())
+                        .foregroundColor(theme.textPrimaryColor)
+                    Text("Vectors: \(formattedCount(vectorCount))")
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(theme.successColor)
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(isSelected ? theme.successLight : theme.cardBackgroundColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(isSelected ? theme.successColor.opacity(0.4) : theme.cardBackgroundColor, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    func pickerLabel(title: String, subtitle: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(theme.primaryColor.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                Image(systemName: icon)
+                    .foregroundColor(theme.primaryColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundColor(theme.textPrimaryColor)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(theme.textSecondaryColor)
+                    .lineLimit(1)
             }
 
             Spacer()
+
+            Image(systemName: "chevron.down")
+                .foregroundColor(theme.textSecondaryColor)
         }
-        .frame(height: 240)
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(theme.cardBackgroundColor)
-                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            RoundedRectangle(cornerRadius: 18)
+                .fill(theme.backgroundColor)
         )
     }
 
-    /// List view for displaying documents
-    private var documentsListView: some View {
-        VStack(spacing: 12) {
-            ForEach(viewModel.documents) { document in
-                documentCard(for: document)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.toggleDocumentSelection(document.id)
-                    }
+    func currentNamespaceSymbol(_ namespace: String) -> String {
+        (viewModel.selectedNamespace ?? "") == namespace ? "checkmark" : "circle"
+    }
+
+    // MARK: - Pipeline Readiness
+
+    var pipelineSection: some View {
+        sectionContainer(
+            title: "Pipeline Readiness",
+            subtitle: "Architecture • IndexingOverview",
+            icon: "chart.bar.doc.horizontal"
+        ) {
+            LazyVGrid(columns: heroGridColumns, spacing: 16) {
+                ForEach(pipelineStages) { stage in
+                    stageCard(stage)
+                }
+            }
+
+            if viewModel.hasDocumentFailures {
+                calloutCard(
+                    title: "Investigate failures",
+                    message: "Some documents require attention before they can be aligned with Pinecone. Use Document Details to review the processing log and address extraction or embedding issues.",
+                    icon: "exclamationmark.triangle.fill",
+                    color: theme.errorColor
+                )
             }
         }
     }
 
-    /// Card view for a document
-    private func documentCard(for document: DocumentModel) -> some View {  // Ensure DocumentModel is imported/accessible
-        HStack {
-            // Main document info with selection capability
-            DocumentRow(  // Ensure DocumentRow is imported/accessible
-                document: document, isSelected: viewModel.selectedDocuments.contains(document.id)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)  // .infinity and .leading should be fine here
+    var pipelineStages: [PipelineStage] {
+        let metrics = viewModel.dashboardMetrics
+        let pendingText = metrics.pending == 0 ? "All documents staged" : "\(formattedCount(metrics.pending)) pending"
+        let processedText = "Processed \(formattedCount(metrics.processed)) • Failed \(formattedCount(metrics.failed))"
+        let stageOneAccent = metrics.pending == 0 && metrics.failed == 0 ? theme.successColor : theme.warningColor
 
-            // Details button for accessing document details
-            documentDetailsButton(for: document)
+        let chunksText = "Chunks: \(formattedCount(metrics.totalChunks))"
+        let vectorsText = "Vectors prepared: \(formattedCount(metrics.totalVectors))"
+        let stageTwoAccent = metrics.totalChunks > 0 ? theme.accentColor : theme.warningColor
+
+        let namespaceVectors = formattedCount(viewModel.selectedNamespaceVectorCount)
+        let indexVectors = formattedCount(viewModel.totalIndexVectorCount)
+        let stageThreeAccent = viewModel.selectedNamespaceVectorCount > 0 ? theme.successColor : theme.infoColor
+
+        let lastDoc = viewModel.latestProcessedDocument
+        let lastRun = formattedRelativeTime(lastDoc?.processingStats?.endTime)
+        let stageFourAccent = viewModel.hasDocumentFailures ? theme.errorColor : theme.accentColor
+
+        return [
+            PipelineStage(
+                title: "Source material",
+                headline: pendingText,
+                detail: processedText,
+                icon: "tray.full",
+                accent: stageOneAccent
+            ),
+            PipelineStage(
+                title: "Vector preparation",
+                headline: chunksText,
+                detail: "\(vectorsText) • Avg runtime: \(formattedDuration(metrics.averageProcessingSeconds))",
+                icon: "square.stack.3d.up",
+                accent: stageTwoAccent
+            ),
+            PipelineStage(
+                title: "Pinecone sync",
+                headline: "Namespace vectors: \(namespaceVectors)",
+                detail: "Index total: \(indexVectors)",
+                icon: "point.3.connected.trianglepath.dotted",
+                accent: stageThreeAccent
+            ),
+            PipelineStage(
+                title: "Quality signals",
+                headline: "Last run: \(lastRun)",
+                detail: viewModel.hasDocumentFailures ? "Failures detected" : "No outstanding errors",
+                icon: "waveform.path.ecg",
+                accent: stageFourAccent
+            )
+        ]
+    }
+
+    func stageCard(_ stage: PipelineStage) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(stage.accent.opacity(0.18))
+                        .frame(width: 46, height: 46)
+                    Image(systemName: stage.icon)
+                        .foregroundColor(stage.accent)
+                        .font(.system(size: 19, weight: .semibold))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(stage.title.uppercased())
+                        .font(.caption2)
+                        .foregroundColor(theme.textSecondaryColor)
+                        .tracking(0.7)
+
+                    Text(stage.headline)
+                        .font(.subheadline.bold())
+                        .foregroundColor(theme.textPrimaryColor)
+                        .lineLimit(1)
+                }
+            }
+
+            Text(stage.detail)
+                .font(.caption)
+                .foregroundColor(theme.textSecondaryColor)
         }
-        .padding(12)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 22)
                 .fill(theme.cardBackgroundColor)
-                .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            viewModel.selectedDocuments.contains(document.id)
-                                ? theme.primaryColor.opacity(0.5) : Color.clear,
-                            lineWidth: 2
-                        )
+                    RoundedRectangle(cornerRadius: 22)
+                        .stroke(stage.accent.opacity(0.28), lineWidth: 1)
                 )
         )
-        .contentShape(Rectangle())
     }
 
-    /// Button for navigating to document details
-    private func documentDetailsButton(for document: DocumentModel) -> some View {  // Ensure DocumentModel is imported/accessible
-        NavigationLink(destination: DocumentDetailsView(document: document)) {  // Ensure DocumentDetailsView is imported/accessible
-            Text("Details")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule()
-                        .fill(theme.primaryColor)
-                        .shadow(color: theme.primaryColor.opacity(0.3), radius: 3, x: 0, y: 2)
-                )
-        }
-        .buttonStyle(BorderlessButtonStyle())
+    struct PipelineStage: Identifiable {
+        let id = UUID()
+        let title: String
+        let headline: String
+        let detail: String
+        let icon: String
+        let accent: Color
     }
 
-    /// Section showing processing status and progress
-    private var processingStatusSection: some View {
+    // MARK: - Processing Panel
+
+    var processingPanel: some View {
         Group {
             if viewModel.isProcessing {
-                VStack(spacing: 16) {
-                    // Progress bar and percentage
-                    HStack {
-                        Text("Processing...")
-                            .font(.headline)
-                            .foregroundColor(theme.textPrimaryColor)
+                sectionContainer(
+                    title: "Live Processing",
+                    subtitle: "DataModeling • UpdateRecords",
+                    icon: "bolt.fill"
+                ) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            ProgressView(value: viewModel.processingProgress)
+                                .progressViewStyle(LinearProgressViewStyle(tint: theme.primaryColor))
+                                .scaleEffect(x: 1, y: 1.6, anchor: .center)
 
-                        Spacer()
+                            Text("\(Int(viewModel.processingProgress * 100))%")
+                                .font(.footnote.bold())
+                                .foregroundColor(theme.primaryColor)
+                        }
 
-                        Text("\(Int(viewModel.processingProgress * 100))%")
-                            .font(.subheadline.bold())
-                            .foregroundColor(theme.primaryColor)
-                    }
+                        if let status = viewModel.currentProcessingStatus {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
 
-                    // Progress bar for document processing
-                    ProgressView(value: viewModel.processingProgress)
-                        .progressViewStyle(LinearProgressViewStyle(tint: theme.primaryColor))
-                        .scaleEffect(x: 1, y: 1.5, anchor: .center)
-
-                    // Display current status message
-                    if let status = viewModel.currentProcessingStatus {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundColor(theme.textSecondaryColor)
-                            .padding(.top, 4)
-                    }
-
-                    // Processing statistics summary
-                    // Ensure DocumentsViewModel.ProcessingStats is accessible
-                    if let stats = viewModel.processingStats {
-                        processingStatsView(stats)
+                        if let stats = viewModel.processingStats {
+                            HStack(spacing: 12) {
+                                processingStatTile(value: formattedCount(stats.totalDocuments), label: "Docs")
+                                processingStatTile(value: formattedCount(stats.totalChunks), label: "Chunks")
+                                processingStatTile(value: formattedCount(stats.totalVectors), label: "Vectors")
+                            }
+                        }
                     }
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.cardBackgroundColor)
-                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 2)
-                )
             }
         }
     }
 
-    /// View for displaying processing statistics
-    // Ensure DocumentsViewModel.ProcessingStats is accessible
-    private func processingStatsView(_ stats: DocumentsViewModel.ProcessingStats) -> some View {
-        HStack(spacing: 20) {
-            statItem(title: "Documents", value: "\(stats.totalDocuments)", icon: "doc.fill")
-            statItem(title: "Chunks", value: "\(stats.totalChunks)", icon: "square.on.square")
-            statItem(
-                title: "Vectors", value: "\(stats.totalVectors)",
-                icon: "point.3.connected.trianglepath.dotted")
-        }
-        .padding(.top, 8)
-    }
-
-    /// Individual stat item
-    private func statItem(title: String, value: String, icon: String) -> some View {
+    func processingStatTile(value: String, label: String) -> some View {
         VStack(spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .foregroundColor(theme.primaryColor)
-
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(theme.textSecondaryColor)
-            }
-
             Text(value)
                 .font(.headline)
                 .foregroundColor(theme.textPrimaryColor)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(theme.textSecondaryColor)
         }
         .frame(maxWidth: .infinity)
-        .padding(8)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(theme.primaryColor.opacity(0.1))
+            RoundedRectangle(cornerRadius: 16)
+                .fill(theme.primaryColor.opacity(0.12))
         )
     }
 
-    /// Section containing action buttons for documents
-    private var actionButtonsSection: some View {
-        HStack(spacing: 16) {
-            // Add document button (moved from toolbar)
-            Button(action: {
-                showingDocumentPicker = true
-            }) {
-                HStack {
-                    Image(systemName: "plus")
-                    Text("Add File")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(
-                    viewModel.isProcessing
-                        ? AnyShapeStyle(theme.primaryColor.opacity(0.3))
-                        : AnyShapeStyle(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    theme.primaryColor, theme.primaryColor.opacity(0.8),
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+    // MARK: - Document Catalog
+
+    var documentCatalogSection: some View {
+        sectionContainer(
+            title: "Document Catalog",
+            subtitle: "DataModeling • DeleteRecords",
+            icon: "doc.on.doc"
+        ) {
+            if viewModel.documents.isEmpty {
+                calloutCard(
+                    title: "Bring your knowledge base",
+                    message: "Add PDFs, slide decks, spreadsheets, or notes to begin chunking and syncing with Pinecone.",
+                    icon: "doc.badge.plus",
+                    color: theme.accentColor
                 )
-                .foregroundColor(.white)
-                .cornerRadius(12)
-                .shadow(
-                    color: viewModel.isProcessing ? Color.clear : theme.primaryColor.opacity(0.3),
-                    radius: 5, x: 0, y: 3)
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(viewModel.documents) { document in
+                        documentCard(for: document)
+                    }
+                }
             }
-            .disabled(viewModel.isProcessing)
-            // Process button to start document processing
-            processButton
-            // Remove button to delete selected documents
-            removeButton
         }
-        .padding(.vertical, 8)
     }
 
-    /// Button for processing selected documents
-    private var processButton: some View {
-        Button(action: {
-            Task {
-                await viewModel.processSelectedDocuments()
+    func documentCard(for document: DocumentModel) -> some View {
+        let isSelected = viewModel.selectedDocuments.contains(document.id)
+        let vectors = document.processingStats?.vectorsUploaded ?? document.chunkCount
+        let processedAt = document.processingStats?.endTime
+        let lastRuntime = document.processingStats?.totalProcessingTime ?? 0
+
+        return Button {
+            viewModel.toggleDocumentSelection(document.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(document.viewIconColor.opacity(0.18))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: document.viewIconName)
+                            .foregroundColor(document.viewIconColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(document.fileName)
+                            .font(.headline)
+                            .foregroundColor(theme.textPrimaryColor)
+                            .lineLimit(1)
+
+                        Text("Added \(formattedRelativeTime(document.dateAdded))")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+
+                    Spacer()
+
+                    documentStatusBadge(for: document)
+                }
+
+                HStack(spacing: 8) {
+                    metadataTag(document.mimeType, systemImage: "doc.text")
+                    metadataTag(document.formattedFileSize, systemImage: "opticaldisc")
+                    metadataTag(document.documentId.prefix(8) + "…", systemImage: "number")
+                }
+
+                Divider().background(theme.cardBackgroundColor)
+
+                HStack(spacing: 12) {
+                    documentStatChip(value: formattedCount(document.chunkCount), label: "Chunks", icon: "square.on.square")
+                    documentStatChip(value: formattedCount(vectors), label: "Vectors", icon: "point.3.connected.trianglepath.dotted")
+                    documentStatChip(value: formattedDuration(lastRuntime), label: "Runtime", icon: "clock")
+                    documentStatChip(value: formattedRelativeTime(processedAt), label: "Indexed", icon: "calendar")
+                }
+
+                if let error = document.processingError {
+                    calloutCard(
+                        title: "Processing issue",
+                        message: error,
+                        icon: "exclamationmark.triangle.fill",
+                        color: theme.errorColor
+                    )
+                }
+
+                HStack {
+                    NavigationLink(destination: DocumentDetailsView(document: document)) {
+                        Label("Open telemetry", systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.primaryColor)
+
+                    Spacer()
+
+                    if isSelected {
+                        Label("Selected", systemImage: "checkmark.circle.fill")
+                            .font(.caption.bold())
+                            .foregroundColor(theme.successColor)
+                    } else {
+                        Text("Tap card to select for processing")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+                }
             }
-        }) {
-            HStack {
-                Image(systemName: "gear")
-                Text("Process")
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
-                    || viewModel.selectedIndex == nil
-                    ? AnyShapeStyle(theme.primaryColor.opacity(0.3))
-                    : AnyShapeStyle(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(theme.cardBackgroundColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(isSelected ? theme.primaryColor.opacity(0.35) : theme.cardBackgroundColor, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    func documentStatusBadge(for document: DocumentModel) -> some View {
+        if let _ = document.processingError {
+            badgeLabel(text: "Failed", color: theme.errorColor, background: theme.errorLight, icon: "exclamationmark.triangle.fill")
+        } else if document.isProcessed {
+            badgeLabel(text: "Processed", color: theme.successColor, background: theme.successLight, icon: "checkmark.circle.fill")
+        } else {
+            badgeLabel(text: "Pending", color: theme.warningColor, background: theme.warningColor.opacity(0.15), icon: "hourglass")
+        }
+    }
+
+    func badgeLabel(text: String, color: Color, background: Color, icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(text)
+                .font(.caption.bold())
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule().fill(background)
+        )
+    }
+
+    func metadataTag<T: StringProtocol>(_ text: T, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(String(text))
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule().fill(theme.primaryColor.opacity(0.12))
+        )
+        .foregroundColor(theme.textPrimaryColor)
+    }
+
+    func documentStatChip(value: String, label: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(label)
+            }
+            .font(.caption)
+            .foregroundColor(theme.textSecondaryColor)
+
+            Text(value)
+                .font(.subheadline.bold())
+                .foregroundColor(theme.textPrimaryColor)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Operations
+
+    var operationsSection: some View {
+        sectionContainer(
+            title: "Operations",
+            subtitle: "IndexingOverview • DeleteRecords",
+            icon: "slider.horizontal.3"
+        ) {
+            VStack(spacing: 16) {
+                HStack(spacing: 16) {
+                    primaryActionButton(
+                        title: "Add files",
+                        icon: "doc.badge.plus",
+                        isEnabled: !viewModel.isProcessing
+                    ) {
+                        showingDocumentPicker = true
+                    }
+
+                    primaryActionButton(
+                        title: "Process selection",
+                        icon: "sparkles",
+                        isEnabled: !viewModel.selectedDocuments.isEmpty && !viewModel.isProcessing && viewModel.selectedIndex != nil
+                    ) {
+                        Task { await viewModel.processSelectedDocuments() }
+                    }
+                }
+
+                HStack(spacing: 16) {
+                    secondaryActionButton(
+                        title: "Remove",
+                        icon: "trash",
+                        tint: theme.errorColor,
+                        isEnabled: !viewModel.selectedDocuments.isEmpty && !viewModel.isProcessing
+                    ) {
+                        withAnimation { viewModel.removeSelectedDocuments() }
+                    }
+
+                    secondaryActionButton(
+                        title: "Refresh stats",
+                        icon: "arrow.clockwise",
+                        tint: theme.primaryColor,
+                        isEnabled: !viewModel.isProcessing
+                    ) {
+                        Task { await viewModel.refreshIndexInsights() }
+                    }
+
+                    secondaryActionButton(
+                        title: "Reload indexes",
+                        icon: "cloud",
+                        tint: theme.infoColor,
+                        isEnabled: !viewModel.isProcessing
+                    ) {
+                        Task { await viewModel.loadIndexes() }
+                    }
+                }
+
+                calloutCard(
+                    title: "Pinecone tip",
+                    message: "Re-run ingestion in small batches after deleting stale vectors so namespace counts stay in sync (see DeleteRecords).",
+                    icon: "lightbulb.fill",
+                    color: theme.accentColor
+                )
+            }
+        }
+    }
+
+    func primaryActionButton(title: String, icon: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .foregroundColor(.white)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
                         LinearGradient(
-                            gradient: Gradient(colors: [
-                                theme.primaryColor, theme.primaryColor.opacity(0.8),
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
+                            colors: [theme.primaryColor, theme.primaryColor.opacity(0.75)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
                     )
             )
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .shadow(
-                color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
-                    ? Color.clear : theme.primaryColor.opacity(0.3),
-                radius: 5, x: 0, y: 3)
         }
-        .disabled(
-            viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
-                || viewModel.selectedIndex == nil)
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
+        .disabled(!isEnabled)
     }
 
-    /// Button for removing selected documents
-    private var removeButton: some View {
-        Button(action: {
-            withAnimation {
-                viewModel.removeSelectedDocuments()
-            }
-        }) {
+    func secondaryActionButton(title: String, icon: String, tint: Color, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack {
-                Image(systemName: "trash")
-                Text("Remove")
+                Image(systemName: icon)
+                Text(title)
             }
+            .font(.subheadline)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
+            .foregroundColor(tint)
             .background(
-                viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
-                    ? AnyShapeStyle(theme.errorColor.opacity(0.3))
-                    : AnyShapeStyle(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                theme.errorColor, theme.errorColor.opacity(0.8),
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(tint.opacity(0.6), lineWidth: 1.2)
             )
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .shadow(
-                color: viewModel.selectedDocuments.isEmpty || viewModel.isProcessing
-                    ? Color.clear : theme.errorColor.opacity(0.3),
-                radius: 5, x: 0, y: 3)
         }
-        .disabled(viewModel.selectedDocuments.isEmpty || viewModel.isProcessing)
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.35)
+        .disabled(!isEnabled)
     }
 
-    /// Content for the namespace creation dialog
-    private var namespaceDialogContent: some View {
+    // MARK: - Pinecone References
+
+    var referencesSection: some View {
+        sectionContainer(
+            title: "Pinecone Playbooks",
+            subtitle: "Architecture • DataModeling • TargetIndex",
+            icon: "book.closed"
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(docReferences) { reference in
+                    HStack(alignment: .top, spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(theme.primaryColor.opacity(0.1))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: reference.symbol)
+                                .foregroundColor(theme.primaryColor)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(reference.title)
+                                .font(.subheadline.bold())
+                                .foregroundColor(theme.textPrimaryColor)
+                            Text(reference.summary)
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
+                        Spacer()
+                    }
+                }
+
+                Text("Review these guides inside PineconeDocs to keep ingestion decisions aligned with platform best practices.")
+                    .font(.caption)
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+        }
+    }
+
+    struct DocReference: Identifiable {
+        let id = UUID()
+        let title: String
+        let summary: String
+        let symbol: String
+    }
+
+    var docReferences: [DocReference] {
+        [
+            DocReference(
+                title: "Architecture",
+                summary: "Frame how ingestion, retrieval, and generation interact across services.",
+                symbol: "building.columns"
+            ),
+            DocReference(
+                title: "Data Modeling",
+                summary: "Design metadata, chunking, and vector IDs that remain stable across updates.",
+                symbol: "tablecells"
+            ),
+            DocReference(
+                title: "Target Index",
+                summary: "Validate dimensions, metrics, and namespace hygiene before shipping to production.",
+                symbol: "target"
+            )
+        ]
+    }
+
+    // MARK: - Shared Helpers
+
+    func sectionContainer<Content: View>(title: String, subtitle: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .foregroundColor(theme.primaryColor)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(theme.textPrimaryColor)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+                Spacer()
+            }
+
+            content()
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(theme.cardBackgroundColor)
+                .shadow(color: Color.black.opacity(0.08), radius: 14, x: 0, y: 8)
+        )
+    }
+
+    func calloutCard(title: String, message: String, icon: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.system(size: 18, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.bold())
+                    .foregroundColor(theme.textPrimaryColor)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(color.opacity(0.12))
+        )
+    }
+
+    func infoChip(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(theme.primaryColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label.uppercased())
+                    .font(.caption2)
+                    .foregroundColor(theme.textSecondaryColor)
+                    .tracking(0.7)
+                Text(value)
+                    .font(.subheadline.bold())
+                    .foregroundColor(theme.textPrimaryColor)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(theme.backgroundColor)
+        )
+    }
+
+    func iconCircleButton(systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .foregroundColor(theme.primaryColor)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle().fill(theme.primaryColor.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.35 : 1)
+    }
+
+    func namespaceDisplayName(_ namespace: String) -> String {
+        namespace.isEmpty ? "default" : namespace
+    }
+
+    func formattedCount(_ value: Int) -> String {
+        value.formatted(.number.grouping(.automatic))
+    }
+
+    func formattedDuration(_ seconds: Double) -> String {
+        guard seconds > 0 else { return "—" }
+        if seconds < 1 {
+            return String(format: "%.2fs", seconds)
+        } else if seconds < 60 {
+            return String(format: "%.1fs", seconds)
+        } else {
+            let minutes = seconds / 60
+            return String(format: "%.1f min", minutes)
+        }
+    }
+
+    func formattedRelativeTime(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        return DocumentsView.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    // MARK: - Dialog Content
+
+    var namespaceDialogContent: some View {
         Group {
             TextField("Namespace Name", text: $newNamespace)
-                .textInputAutocapitalization(.never)  // Correct modifier for autocapitalization
+                .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
 
             Button("Cancel", role: .cancel) {
@@ -501,50 +1039,33 @@ struct DocumentsView: View {
             }
 
             Button("Create") {
-                if !newNamespace.isEmpty {
-                    viewModel.createNamespace(newNamespace)
-                    newNamespace = ""
-                }
+                guard !newNamespace.isEmpty else { return }
+                viewModel.createNamespace(newNamespace)
+                newNamespace = ""
             }
         }
     }
 
-    /// Content for the create index dialog
-    private var createIndexDialogContent: some View {
+    var createIndexDialogContent: some View {
         Group {
             TextField("Index Name", text: $viewModel.newIndexName)
-                .textInputAutocapitalization(.never)  // Correct modifier for autocapitalization
+                .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
-                .onSubmit {  // Allow submitting with Enter key
+                .onSubmit {
                     if !viewModel.newIndexName.isEmpty {
                         Task { await viewModel.createIndex() }
                     }
                 }
 
             Button("Cancel", role: .cancel) {
-                viewModel.newIndexName = ""  // Clear field on cancel
+                viewModel.newIndexName = ""
             }
 
             Button("Create") {
                 Task { await viewModel.createIndex() }
             }
-            // Disable Create button if name is empty or if loading
             .disabled(viewModel.newIndexName.isEmpty || viewModel.isLoadingIndexes)
         }
     }
-}
-
-/// Utility function to create a styled button with an icon and action
-private func styledButton(
-    icon: String, color: Color, action: @escaping () -> Void, isDisabled: Bool
-) -> some View {
-    Button(action: action) {
-        Image(systemName: icon)
-            .foregroundColor(color)
-            .padding(8)
-            .background(Circle().fill(color.opacity(0.1)))
-    }
-    .buttonStyle(PlainButtonStyle())
-    .disabled(isDisabled)
 }
 

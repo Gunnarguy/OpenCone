@@ -5,6 +5,8 @@ import SwiftUI
 /// Represents a document in the RAG system
 struct DocumentModel: Identifiable, Hashable {
     var id = UUID()
+    /// Stable identifier derived from document content or path; used for Pinecone metadata.
+    var documentId: String = UUID().uuidString
     var fileName: String
     var filePath: URL
     var securityBookmark: Data? // Add this property
@@ -15,6 +17,9 @@ struct DocumentModel: Identifiable, Hashable {
     var processingError: String? = nil
     var chunkCount: Int = 0
     var processingStats: DocumentProcessingStats? = nil
+    var lastIndexedNamespace: String? = nil
+    var lastIndexedIndexName: String? = nil
+    var lastIndexedAt: Date? = nil
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -57,6 +62,11 @@ struct ChunkMetadata: Codable {
     var dateProcessed: Date
     var position: ChunkPosition?
     var additionalMetadata: [String: String]?
+
+    /// Convenience accessor for the parent document identifier when available.
+    var documentId: String? {
+        additionalMetadata?["documentId"]
+    }
     
     init(source: String, chunkIndex: Int, totalChunks: Int, mimeType: String,
          dateProcessed: Date = Date(), position: ChunkPosition? = nil, additionalMetadata: [String: String]? = nil) {

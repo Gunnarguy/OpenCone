@@ -22,6 +22,26 @@ struct Configuration {
     static let pineconeProjectId = ProcessInfo.processInfo.environment["PINECONE_PROJECT_ID"] ?? ""
     /// Default Pinecone environment/region to use.
     static let pineconeEnvironment = "us-east-1"
+    /// Control plane API version (configurable via secure store)
+    static var pineconeControlPlaneVersion: String {
+        let version = SecureSettingsStore.shared.getPineconeControlPlaneVersion()
+        return version.isEmpty ? "2024-07" : version
+    }
+    /// Data plane API version
+    static var pineconeDataPlaneVersion: String {
+        let version = SecureSettingsStore.shared.getPineconeDataPlaneVersion()
+        return version.isEmpty ? "2024-07" : version
+    }
+    /// Namespace management API version (preview)
+    static var pineconeNamespaceVersion: String {
+        let version = SecureSettingsStore.shared.getPineconeNamespaceVersion()
+        return version.isEmpty ? "2025-04" : version
+    }
+    /// Metadata fetch API version (preview)
+    static var pineconeMetadataFetchVersion: String {
+        let version = SecureSettingsStore.shared.getPineconeMetadataFetchVersion()
+        return version.isEmpty ? "2025-10" : version
+    }
     
     // MARK: - Document Processing Settings
     

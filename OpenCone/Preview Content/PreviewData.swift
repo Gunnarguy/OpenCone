@@ -241,6 +241,10 @@ import SwiftUI
             viewModel.selectedIndex = "dev-index"
             viewModel.namespaces = ["project-a", "general"]
             viewModel.selectedNamespace = "project-a"
+            viewModel.metadataFilters = [
+                "doc_id": .stringEquals("Project Proposal.pdf"),
+                "chunk_index": .numberEquals(5)
+            ]
 
             return viewModel
         }

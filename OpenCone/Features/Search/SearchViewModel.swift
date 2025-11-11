@@ -55,6 +55,122 @@ enum SearchError: LocalizedError {
     }
 }
 
+// MARK: - Pinecone Metadata Filter Representation
+
+enum PineconeMetadataFilter: Equatable {
+    case stringEquals(String)
+    case numberEquals(Double)
+    case boolEquals(Bool)
+    case inList([String])
+    case numberRange(min: Double?, max: Double?)
+    case stringContains(String)
+
+    /// Human readable representation used when logging active filters.
+    var displayValue: String {
+        switch self {
+        case .stringEquals(let value):
+            return "\"\(value)\""
+        case .numberEquals(let value):
+            return String(value)
+        case .boolEquals(let value):
+            return value ? "true" : "false"
+        case .inList(let values):
+            return "[" + values.joined(separator: ", ") + "]"
+        case .numberRange(let min, let max):
+            switch (min, max) {
+            case let (min?, max?):
+                return "between \(min) and \(max)"
+            case let (min?, nil):
+                return "≥ \(min)"
+            case let (nil, max?):
+                return "≤ \(max)"
+            default:
+                return "any"
+            }
+        case .stringContains(let fragment):
+            return "contains \"\(fragment)\""
+        }
+    }
+
+    /// Serialized predicate that matches Pinecone filter JSON structure.
+    func serializedPredicate() -> [String: Any] {
+        switch self {
+        case .stringEquals(let value):
+            return ["$eq": value]
+        case .numberEquals(let value):
+            return ["$eq": value]
+        case .boolEquals(let value):
+            return ["$eq": value]
+        case .inList(let values):
+            return ["$in": values]
+        case .numberRange(let min, let max):
+            var predicate: [String: Any] = [:]
+            if let min { predicate["$gte"] = min }
+            if let max { predicate["$lte"] = max }
+            return predicate
+        case .stringContains(let fragment):
+            return ["$contains": fragment]
+        }
+    }
+
+    /// Attempt to parse a user-supplied string into a metadata filter.
+    static func parse(from raw: String) -> PineconeMetadataFilter? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let lower = trimmed.lowercased()
+        if lower == "true" { return .boolEquals(true) }
+        if lower == "false" { return .boolEquals(false) }
+
+        if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+            let inner = trimmed.dropFirst().dropLast()
+            let components = inner
+                .split(separator: ",")
+                .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                .filter { !$0.isEmpty }
+            if !components.isEmpty {
+                return .inList(components)
+            }
+        }
+
+        if trimmed.contains("..") {
+            let rangeParts = trimmed.components(separatedBy: "..")
+            if rangeParts.count == 2,
+               let min = Double(rangeParts[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+               let max = Double(rangeParts[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return .numberRange(min: min, max: max)
+            }
+        }
+
+        if trimmed.hasPrefix(">=") {
+            let valueString = trimmed.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = Double(valueString) {
+                return .numberRange(min: value, max: nil)
+            }
+        }
+
+        if trimmed.hasPrefix("<=") {
+            let valueString = trimmed.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = Double(valueString) {
+                return .numberRange(min: nil, max: value)
+            }
+        }
+
+        if trimmed.hasPrefix("*") && trimmed.hasSuffix("*") && trimmed.count >= 3 {
+            let inner = trimmed.dropFirst().dropLast()
+            if !inner.isEmpty {
+                return .stringContains(String(inner))
+            }
+        }
+
+        if let number = Double(trimmed) {
+            return .numberEquals(number)
+        }
+
+        return .stringEquals(trimmed)
+    }
+}
+
 // MARK: - Search View Model
 
 /// View model for the search functionality
@@ -114,6 +230,10 @@ class SearchViewModel: ObservableObject {
     @Published var conversationId: String? = UserDefaults.standard.string(forKey: "openai.conversationId")
     @Published var highlightedResultID: UUID? = nil
     @Published var expandedResultIDs: Set<UUID> = []
+    @Published var metadataFilters: [String: PineconeMetadataFilter] = [:]
+    @Published var newFilterField: String = ""
+    @Published var newFilterValue: String = ""
+    @Published var filterParseError: String? = nil
 
     // Visual state properties
     @Published var searchResultsOpacity: Double = 0.0
@@ -165,14 +285,42 @@ class SearchViewModel: ObservableObject {
     func loadIndexes() async {
         do {
             let indexes = try await pineconeService.listIndexes()
-            await MainActor.run {
+
+            let indexToSelect: String? = await MainActor.run {
                 self.pineconeIndexes = indexes
-                if let saved = self.defaults.string(forKey: self.lastIndexKey), indexes.contains(saved) {
-                    self.selectedIndex = saved
-                    Task { await self.setIndex(saved) }
-                } else if !indexes.isEmpty && self.selectedIndex == nil {
-                    self.selectedIndex = indexes[0]
+                self.errorMessage = nil
+
+                guard !indexes.isEmpty else {
+                    self.selectedIndex = nil
+                    self.namespaces = []
+                    self.selectedNamespace = nil
+                    self.indexDimension = nil
+                    return nil
                 }
+
+                if let saved = self.defaults.string(forKey: self.lastIndexKey), indexes.contains(saved) {
+                    if self.selectedIndex != saved {
+                        self.selectedIndex = saved
+                    }
+                    return saved
+                }
+
+                if let currentSelection = self.selectedIndex, indexes.contains(currentSelection) {
+                    return currentSelection
+                }
+
+                if let staleSelection = self.selectedIndex, !indexes.contains(staleSelection) {
+                    self.indexDimension = nil
+                    self.selectedNamespace = nil
+                }
+
+                let fallback = indexes.first
+                self.selectedIndex = fallback
+                return fallback
+            }
+
+            if let indexToSelect {
+                await setIndex(indexToSelect)
             }
         } catch {
             await handleError(SearchError.indexLoadingFailed(error))
@@ -238,6 +386,74 @@ class SearchViewModel: ObservableObject {
         if let ns = namespace, let idx = self.selectedIndex {
             defaults.set(ns, forKey: nsKey(idx))
         }
+    }
+
+    /// Update or clear a metadata filter applied to Pinecone queries
+    func setMetadataFilter(field: String, value: String?) {
+        if let value, !value.isEmpty {
+            metadataFilters[field] = .stringEquals(value)
+        } else {
+            metadataFilters.removeValue(forKey: field)
+        }
+        filterParseError = nil
+    }
+
+    /// Update or clear a metadata filter with a custom condition
+    func setMetadataFilter(field: String, filter: PineconeMetadataFilter?) {
+        if let filter {
+            metadataFilters[field] = filter
+        } else {
+            metadataFilters.removeValue(forKey: field)
+        }
+        filterParseError = nil
+    }
+
+    /// Remove a metadata filter by its field key.
+    func removeMetadataFilter(field: String) {
+        metadataFilters.removeValue(forKey: field)
+        filterParseError = nil
+    }
+
+    /// Clear all active metadata filters.
+    func clearMetadataFilters() {
+        metadataFilters.removeAll()
+        filterParseError = nil
+    }
+
+    /// Commit a new metadata filter using the current input fields.
+    func commitNewMetadataFilter() {
+        let field = newFilterField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawValue = newFilterValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !field.isEmpty else {
+            filterParseError = "Filter field is required."
+            return
+        }
+
+        guard !rawValue.isEmpty else {
+            filterParseError = "Provide a value for the filter."
+            return
+        }
+
+        guard let parsed = PineconeMetadataFilter.parse(from: rawValue) else {
+            filterParseError = "Unable to interpret filter value."
+            return
+        }
+
+        metadataFilters[field] = parsed
+        newFilterField = ""
+        newFilterValue = ""
+        filterParseError = nil
+    }
+
+    /// Sorted representation of active metadata filters for presentation.
+    var sortedMetadataFilters: [(String, PineconeMetadataFilter)] {
+        metadataFilters.sorted { $0.key < $1.key }
+    }
+
+    /// Clear any parser error to reset validation state.
+    func clearFilterError() {
+        filterParseError = nil
     }
 
     /// Toggle selection of a search result
@@ -318,10 +534,12 @@ class SearchViewModel: ObservableObject {
             let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: searchQuery, dimension: indexDimension)
 
             // Search Pinecone
+            let filterPayload = buildMetadataFilterPayload()
             let queryResults = try await pineconeService.query(
                 vector: queryEmbedding,
                 topK: Constants.topKResults,
-                namespace: selectedNamespace
+                namespace: selectedNamespace,
+                filter: filterPayload
             )
 
             // Map results to search result models (metadata may contain non-string values)
@@ -368,6 +586,14 @@ class SearchViewModel: ObservableObject {
                     metadata: metaStrings
                 )
             }
+
+            let avgScore = results.isEmpty ? Float(0) : results.map { $0.score }.reduce(0, +) / Float(results.count)
+            let filterDescription = metadataFilters.isEmpty ? "none" : metadataFilters.map { "\($0.key)=\($0.value.displayValue)" }.joined(separator: ", ")
+            logger.log(
+                level: .info,
+                message: "Pinecone query returned \(results.count) matches (avg score \(String(format: "%.3f", Double(avgScore))))",
+                context: "filters: \(filterDescription)"
+            )
 
             // Progress update for visuals
             await MainActor.run {
@@ -849,6 +1075,26 @@ class SearchViewModel: ObservableObject {
             hist.removeLast()
         }
         return hist
+    }
+
+    private func buildMetadataFilterPayload() -> [String: Any]? {
+        guard let serialized = serializeMetadataFilters() else { return nil }
+        if serialized.count == 1, let entry = serialized.first {
+            return [entry.key: entry.value]
+        }
+        let clauses = serialized.map { [ $0.key: $0.value ] }
+        return ["$and": clauses]
+    }
+
+    private func serializeMetadataFilters() -> [String: [String: Any]]? {
+        guard !metadataFilters.isEmpty else { return nil }
+        var serialized: [String: [String: Any]] = [:]
+        for (field, filter) in metadataFilters {
+            let predicate = filter.serializedPredicate()
+            guard !predicate.isEmpty else { continue }
+            serialized[field] = predicate
+        }
+        return serialized.isEmpty ? nil : serialized
     }
 
     /// Resets the search-related state variables, typically before a new search.
