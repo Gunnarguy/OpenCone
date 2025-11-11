@@ -209,8 +209,14 @@ class SearchViewModel: ObservableObject {
     private let logger = Logger.shared
     private var themeManager = ThemeManager.shared
     private let defaults = UserDefaults.standard
-    private let lastIndexKey = "oc.lastIndex"
-    private func nsKey(_ index: String) -> String { "oc.lastNamespace.\(index)" }
+    private let preferences = PineconePreferenceResolver()
+    private let metadataPresetKey = SettingsStorageKeys.searchMetadataPresets
+    private let topKKey = SettingsStorageKeys.searchTopK
+    private var configuredTopK: Int {
+        let stored = defaults.integer(forKey: topKKey)
+        if stored > 0 { return stored }
+        return Constants.topKResults
+    }
 
     // Published properties for UI binding
     @Published var searchQuery = ""
@@ -258,6 +264,42 @@ class SearchViewModel: ObservableObject {
                 self?.currentTheme = theme
             }
             .store(in: &cancellables)
+
+        loadDefaultMetadataFilters()
+    }
+
+    private func loadDefaultMetadataFilters() {
+        guard let data = defaults.data(forKey: metadataPresetKey) else {
+            metadataFilters = [:]
+            filterParseError = nil
+            return
+        }
+
+        do {
+            let presets = try JSONDecoder().decode([SettingsMetadataPreset].self, from: data)
+            var resolved: [String: PineconeMetadataFilter] = [:]
+
+            for preset in presets {
+                let trimmed = preset.trimmed()
+                guard trimmed.isValid else { continue }
+                if let parsed = PineconeMetadataFilter.parse(from: trimmed.rawValue) {
+                    resolved[trimmed.field] = parsed
+                } else {
+                    logger.log(
+                        level: .warning,
+                        message: "Skipping metadata preset with unparseable value",
+                        context: "field=\(trimmed.field)"
+                    )
+                }
+            }
+
+            metadataFilters = resolved
+            filterParseError = nil
+        } catch {
+            metadataFilters = [:]
+            filterParseError = nil
+            logger.log(level: .warning, message: "Failed to decode metadata presets", context: error.localizedDescription)
+        }
     }
 
     /// Get color for a search result based on score
@@ -285,8 +327,7 @@ class SearchViewModel: ObservableObject {
     func loadIndexes() async {
         do {
             let indexes = try await pineconeService.listIndexes()
-
-            let indexToSelect: String? = await MainActor.run {
+            let selection = await MainActor.run { () -> (index: String?, needsDescribe: Bool) in
                 self.pineconeIndexes = indexes
                 self.errorMessage = nil
 
@@ -295,32 +336,31 @@ class SearchViewModel: ObservableObject {
                     self.namespaces = []
                     self.selectedNamespace = nil
                     self.indexDimension = nil
-                    return nil
+                    return (nil, false)
                 }
 
-                if let saved = self.defaults.string(forKey: self.lastIndexKey), indexes.contains(saved) {
-                    if self.selectedIndex != saved {
-                        self.selectedIndex = saved
-                    }
-                    return saved
-                }
+                let previousIndex = self.selectedIndex
+                let resolvedIndex = self.preferences.resolveIndex(
+                    availableIndexes: indexes,
+                    currentSelection: previousIndex
+                )
 
-                if let currentSelection = self.selectedIndex, indexes.contains(currentSelection) {
-                    return currentSelection
-                }
+                self.selectedIndex = resolvedIndex
 
-                if let staleSelection = self.selectedIndex, !indexes.contains(staleSelection) {
+                if previousIndex != resolvedIndex {
                     self.indexDimension = nil
-                    self.selectedNamespace = nil
                 }
 
-                let fallback = indexes.first
-                self.selectedIndex = fallback
-                return fallback
+                let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
+                return (resolvedIndex, needsDescribe)
             }
 
-            if let indexToSelect {
-                await setIndex(indexToSelect)
+            if let indexName = selection.index {
+                if selection.needsDescribe {
+                    await setIndex(indexName)
+                } else {
+                    await loadNamespaces()
+                }
             }
         } catch {
             await handleError(SearchError.indexLoadingFailed(error))
@@ -334,20 +374,25 @@ class SearchViewModel: ObservableObject {
             // Set current index first to get the host
             try await pineconeService.setCurrentIndex(indexName)
 
+            await MainActor.run {
+                self.selectedIndex = indexName
+                self.selectedNamespace = nil
+                self.namespaces = []
+                self.indexDimension = nil
+            }
+
             // Now describe the index to get its dimension
             let indexDetails = try await pineconeService.describeIndex(name: indexName)
 
             await MainActor.run {
-                self.selectedIndex = indexName
                 self.indexDimension = indexDetails.dimension
                 self.logger.log(level: .info, message: "Index '\(indexName)' selected with dimension \(indexDetails.dimension)")
             }
 
+            preferences.recordLastIndex(indexName)
+
             // Load namespaces for the new index
             await loadNamespaces()
-
-            // Persist last chosen index
-            defaults.set(indexName, forKey: lastIndexKey)
         } catch {
             await handleError(SearchError.indexSetFailed(error))
         }
@@ -365,14 +410,24 @@ class SearchViewModel: ObservableObject {
 
         do {
             let namespaces = try await pineconeService.listNamespaces()
-            await MainActor.run {
+            let persistence = await MainActor.run { () -> (String?, String?) in
                 self.namespaces = namespaces
-                if let idx = self.selectedIndex,
-                   let savedNS = self.defaults.string(forKey: self.nsKey(idx)),
-                   namespaces.contains(savedNS) {
-                    self.selectedNamespace = savedNS
-                } else if self.selectedNamespace == nil || !(self.selectedNamespace.map { namespaces.contains($0) } ?? false) {
-                    self.selectedNamespace = namespaces.first
+
+                let resolvedNamespace = self.preferences.resolveNamespace(
+                    availableNamespaces: namespaces,
+                    index: self.selectedIndex,
+                    currentSelection: self.selectedNamespace
+                )
+
+                self.selectedNamespace = resolvedNamespace
+                return (self.selectedIndex, resolvedNamespace)
+            }
+
+            if let index = persistence.0 {
+                if let namespace = persistence.1 {
+                    preferences.recordNamespace(namespace, for: index)
+                } else {
+                    preferences.clearNamespace(for: index)
                 }
             }
         } catch {
@@ -381,10 +436,17 @@ class SearchViewModel: ObservableObject {
     }
 
     /// Set the current namespace
+    @MainActor
     func setNamespace(_ namespace: String?) {
-        self.selectedNamespace = namespace
-        if let ns = namespace, let idx = self.selectedIndex {
-            defaults.set(ns, forKey: nsKey(idx))
+        let trimmed = namespace.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        selectedNamespace = trimmed
+
+        guard let index = selectedIndex else { return }
+
+        if let trimmed {
+            preferences.recordNamespace(trimmed, for: index)
+        } else {
+            preferences.clearNamespace(for: index)
         }
     }
 
@@ -537,7 +599,7 @@ class SearchViewModel: ObservableObject {
             let filterPayload = buildMetadataFilterPayload()
             let queryResults = try await pineconeService.query(
                 vector: queryEmbedding,
-                topK: Constants.topKResults,
+                topK: configuredTopK,
                 namespace: selectedNamespace,
                 filter: filterPayload
             )

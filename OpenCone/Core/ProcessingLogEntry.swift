@@ -47,5 +47,15 @@ struct ProcessingLogEntry: Identifiable {
         var color: Color {
             return self.color(for: nil)
         }
+
+        var severityRank: Int {
+            switch self {
+            case .debug: return 0
+            case .info: return 1
+            case .success: return 2
+            case .warning: return 3
+            case .error: return 4
+            }
+        }
     }
 }

@@ -24,6 +24,8 @@ class DocumentsViewModel: ObservableObject {
     
     /// Shared logger instance
     private let logger = Logger.shared
+    /// Shared resolver for index/namespace preferences
+    private let preferences = PineconePreferenceResolver()
     
     // MARK: - Published Properties
     
@@ -349,6 +351,9 @@ class DocumentsViewModel: ObservableObject {
                             vectorsRemoved = false
                             removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
                         }
+                    } catch PineconeError.namespaceNotFound {
+                        vectorsRemoved = true
+                        logger.log(level: .warning, message: "Namespace not found during deletion; treating as already removed", context: document.fileName)
                     } catch {
                         vectorsRemoved = false
                         removalErrors.append("Failed to delete vectors for \(document.fileName): \(error.localizedDescription)")
@@ -424,29 +429,52 @@ class DocumentsViewModel: ObservableObject {
     
     /// Load available Pinecone indexes
     func loadIndexes() async {
+        await MainActor.run { self.isLoadingIndexes = true }
+        defer { Task { @MainActor in self.isLoadingIndexes = false } }
+
         do {
             let indexes = try await pineconeService.listIndexes()
-            await MainActor.run {
+
+            let selection = await MainActor.run { () -> (index: String?, needsDescribe: Bool) in
                 self.pineconeIndexes = indexes
-                if !indexes.contains(self.selectedIndex ?? "") {
+                self.errorMessage = nil
+
+                guard !indexes.isEmpty else {
+                    self.selectedIndex = nil
+                    self.selectedNamespace = nil
+                    self.indexDimension = nil
+                    self.indexMetadata = nil
+                    self.indexStats = nil
+                    self.namespaces = []
+                    return (nil, false)
+                }
+
+                let previousIndex = self.selectedIndex
+                let resolvedIndex = self.preferences.resolveIndex(
+                    availableIndexes: indexes,
+                    currentSelection: previousIndex
+                )
+
+                self.selectedIndex = resolvedIndex
+
+                if previousIndex != resolvedIndex {
                     self.indexDimension = nil
                     self.indexMetadata = nil
                     self.indexStats = nil
                 }
-                self.errorMessage = nil
-                
-                // Auto-select first index if none selected
-                if !indexes.isEmpty && self.selectedIndex == nil {
-                    self.selectedIndex = indexes[0]
-                    // Auto-load namespaces for the selected index
-                    Task {
-                        await self.setIndex(indexes[0])
-                    }
-                } else if indexes.isEmpty {
-                    self.selectedIndex = nil
-                    self.selectedNamespace = nil
+
+                let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
+                return (resolvedIndex, needsDescribe)
+            }
+
+            if let indexName = selection.index {
+                if selection.needsDescribe {
+                    await setIndex(indexName)
+                } else {
+                    await refreshIndexInsights()
                 }
             }
+
             logger.log(level: .info, message: "Loaded \(indexes.count) Pinecone indexes")
         } catch {
             await MainActor.run {
@@ -461,14 +489,21 @@ class DocumentsViewModel: ObservableObject {
     func setIndex(_ indexName: String) async {
         do {
             try await pineconeService.setCurrentIndex(indexName)
-            let indexDetails = try await pineconeService.describeIndex(name: indexName)
             await MainActor.run {
                 self.selectedIndex = indexName
-                self.indexDimension = indexDetails.dimension
-                self.indexMetadata = indexDetails
+                self.selectedNamespace = nil
+                self.namespaces = []
+                self.indexDimension = nil
+                self.indexMetadata = nil
                 self.indexStats = nil
                 self.errorMessage = nil
             }
+            let indexDetails = try await pineconeService.describeIndex(name: indexName)
+            await MainActor.run {
+                self.indexDimension = indexDetails.dimension
+                self.indexMetadata = indexDetails
+            }
+            preferences.recordLastIndex(indexName)
             logger.log(level: .info, message: "Index dimension set", context: "\(indexName): \(indexDetails.dimension)")
             await refreshIndexInsights()
             logger.log(level: .info, message: "Set current index to: \(indexName)")
@@ -509,15 +544,26 @@ class DocumentsViewModel: ObservableObject {
                 }
             }
 
-            await MainActor.run {
+            let persistenceContext = await MainActor.run { () -> (index: String?, namespace: String?) in
                 self.namespaces = namespaceNames
                 self.indexStats = stats
                 self.errorMessage = nil
 
-                if let current = self.selectedNamespace, namespaceNames.contains(current) {
-                    self.selectedNamespace = current
+                let resolvedNamespace = self.preferences.resolveNamespace(
+                    availableNamespaces: namespaceNames,
+                    index: self.selectedIndex,
+                    currentSelection: self.selectedNamespace
+                )
+
+                self.selectedNamespace = resolvedNamespace
+                return (self.selectedIndex, resolvedNamespace)
+            }
+
+            if let index = persistenceContext.index {
+                if let namespace = persistenceContext.namespace {
+                    preferences.recordNamespace(namespace, for: index)
                 } else {
-                    self.selectedNamespace = namespaceNames.first
+                    preferences.clearNamespace(for: index)
                 }
             }
 
@@ -532,10 +578,20 @@ class DocumentsViewModel: ObservableObject {
     
     /// Set the current namespace
     /// - Parameter namespace: Namespace to set
+    @MainActor
     func setNamespace(_ namespace: String?) {
-        DispatchQueue.main.async {
-            self.selectedNamespace = namespace
-            self.logger.log(level: .info, message: "Set namespace to: \(namespace ?? "default")")
+        let trimmed = namespace.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let displayName = (trimmed?.isEmpty ?? true) ? "default" : (trimmed ?? "")
+
+        selectedNamespace = trimmed
+        logger.log(level: .info, message: "Set namespace to: \(displayName)")
+
+        guard let index = selectedIndex else { return }
+
+        if let trimmed {
+            preferences.recordNamespace(trimmed, for: index)
+        } else {
+            preferences.clearNamespace(for: index)
         }
     }
     
@@ -819,6 +875,13 @@ class DocumentsViewModel: ObservableObject {
             if let deleted = response.deletedCount {
                 logger.log(level: .info, message: "Removed \(deleted) stale vectors", context: document.fileName)
             }
+        } catch PineconeError.namespaceNotFound {
+            logger.log(
+                level: .warning,
+                message: "Namespace \(namespace ?? "<default>") missing while purging vectors",
+                context: "Namespace not found"
+            )
+            return
         } catch {
             logger.log(level: .error, message: "Failed to purge existing vectors", context: "\(document.fileName): \(error.localizedDescription)")
             throw ProcessingError.cleanupFailed(underlying: error)

@@ -749,6 +749,11 @@ class PineconeService {
             }
 
             if httpResponse.statusCode != 200 {
+                if httpResponse.statusCode == 404 {
+                    let message = String(data: data, encoding: .utf8) ?? "Namespace not found"
+                    throw PineconeError.namespaceNotFound(namespace ?? "")
+                }
+
                 if self.shouldRetry(statusCode: httpResponse.statusCode) {
                     throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
                 }
@@ -1200,6 +1205,7 @@ enum PineconeError: Error {
     case invalidRequestData
     case invalidResponse
     case requestFailed(statusCode: Int, message: String?)
+    case namespaceNotFound(String)
     case noIndexSelected
     case rateLimitExceeded
     case retryableError(statusCode: Int)
@@ -1293,6 +1299,8 @@ extension PineconeError: LocalizedError {
                 return "Pinecone responded with status \(statusCode): \(message)"
             }
             return "Pinecone responded with status \(statusCode)."
+        case .namespaceNotFound(let namespace):
+            return "Pinecone namespace '\(namespace)' was not found."
         case .noIndexSelected:
             return "No Pinecone index is currently selected. Choose an index before running operations."
         case .rateLimitExceeded:

@@ -9,6 +9,8 @@ import Security
 
 /// View model for app settings
 class SettingsViewModel: ObservableObject {
+    private let defaults = UserDefaults.standard
+
     // API Keys
     @Published var openAIAPIKey: String = ""
     @Published var pineconeAPIKey: String = ""
@@ -28,12 +30,25 @@ class SettingsViewModel: ObservableObject {
     @Published var reasoningEffort: String = "medium" // low|medium|high
     @Published var conversationMode: String = "server" // "server" (Responses-managed) | "client" (bounded history)
 
+    // Search defaults
+    @Published var defaultTopK: Int = 10
+    @Published var enforcePreferredIndex: Bool = false
+    @Published var preferredIndexName: String = ""
+    @Published var preferredNamespace: String = ""
+    @Published var metadataPresets: [SettingsMetadataPreset] = []
+    @Published var newPresetField: String = ""
+    @Published var newPresetValue: String = ""
+    @Published var metadataPresetError: String? = nil
+
     // UI preferences
     @Published var showAnswerPanelBelowChat: Bool = (UserDefaults.standard.object(forKey: "ui.showAnswerPanelBelowChat") as? Bool) ?? true {
         didSet {
             UserDefaults.standard.set(self.showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
         }
     }
+
+    // Logging preferences
+    @Published var logMinimumLevel: ProcessingLogEntry.LogLevel = .info
 
     /// Derived: whether the selected completion model is reasoning-capable
     var isReasoning: Bool { Configuration.isReasoningModel(completionModel) }
@@ -62,6 +77,7 @@ class SettingsViewModel: ObservableObject {
 
     let availableReasoningEffortOptions = ["low", "medium", "high"]
     let availableConversationModes = ["server", "client"]
+    let availableLogLevels = ProcessingLogEntry.LogLevel.allCases
 
     private let logger = Logger.shared
     private var cancellables = Set<AnyCancellable>()
@@ -154,8 +170,24 @@ class SettingsViewModel: ObservableObject {
             conversationMode = "server"
         }
 
+        // Search defaults
+        let storedTopK = defaults.integer(forKey: SettingsStorageKeys.searchTopK)
+        defaultTopK = storedTopK > 0 ? storedTopK : 10
+        enforcePreferredIndex = defaults.bool(forKey: SettingsStorageKeys.searchEnforcePreferredIndex)
+        preferredIndexName = defaults.string(forKey: SettingsStorageKeys.searchPreferredIndex) ?? ""
+        preferredNamespace = defaults.string(forKey: SettingsStorageKeys.searchPreferredNamespace) ?? ""
+        loadMetadataPresets()
+
+        // Logging level
+        if let storedLevel = defaults.string(forKey: SettingsStorageKeys.logMinimumLevel),
+           let level = ProcessingLogEntry.LogLevel(rawValue: storedLevel) {
+            logMinimumLevel = level
+        } else {
+            logMinimumLevel = .info
+        }
+
         // UI preferences
-    showAnswerPanelBelowChat = (UserDefaults.standard.object(forKey: "ui.showAnswerPanelBelowChat") as? Bool) ?? true
+        showAnswerPanelBelowChat = (UserDefaults.standard.object(forKey: "ui.showAnswerPanelBelowChat") as? Bool) ?? true
     }
 
     /// Save all settings
@@ -176,6 +208,27 @@ class SettingsViewModel: ObservableObject {
         // UI preferences
         UserDefaults.standard.set(showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
 
+        // Search defaults
+        defaultTopK = max(1, min(defaultTopK, 100))
+        defaults.set(defaultTopK, forKey: SettingsStorageKeys.searchTopK)
+        defaults.set(enforcePreferredIndex, forKey: SettingsStorageKeys.searchEnforcePreferredIndex)
+        let trimmedIndex = preferredIndexName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedIndex.isEmpty {
+            defaults.removeObject(forKey: SettingsStorageKeys.searchPreferredIndex)
+        } else {
+            defaults.set(trimmedIndex, forKey: SettingsStorageKeys.searchPreferredIndex)
+        }
+        let trimmedNamespace = preferredNamespace.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedNamespace.isEmpty {
+            defaults.removeObject(forKey: SettingsStorageKeys.searchPreferredNamespace)
+        } else {
+            defaults.set(trimmedNamespace, forKey: SettingsStorageKeys.searchPreferredNamespace)
+        }
+        persistMetadataPresets()
+
+        // Logging
+        defaults.set(logMinimumLevel.rawValue, forKey: SettingsStorageKeys.logMinimumLevel)
+
         // Persist Pinecone location prefs
         store.setPineconeCloud(pineconeCloud)
         store.setPineconeRegion(pineconeRegion)
@@ -193,7 +246,14 @@ class SettingsViewModel: ObservableObject {
         topP = 0.95
         reasoningEffort = "medium"
         conversationMode = "server"
-    showAnswerPanelBelowChat = true
+        defaultTopK = 10
+        enforcePreferredIndex = false
+        preferredIndexName = ""
+        preferredNamespace = ""
+        metadataPresets = []
+        metadataPresetError = nil
+        showAnswerPanelBelowChat = true
+        logMinimumLevel = .info
 
         logger.log(level: .info, message: "Settings reset to defaults")
     }
@@ -274,8 +334,81 @@ class SettingsViewModel: ObservableObject {
             return false
         }
 
+        if defaultTopK <= 0 {
+            errorMessage = "Default Top K must be greater than zero"
+            return false
+        }
+
+        if metadataPresets.contains(where: { !$0.trimmed().isValid }) {
+            errorMessage = "Metadata presets require both a field and value"
+            return false
+        }
+
         // Clear any previous error messages if validation passes
         errorMessage = nil
         return true
+    }
+
+    // MARK: - Metadata Presets
+
+    func addMetadataPreset() {
+        let field = newPresetField.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = newPresetValue.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !field.isEmpty else {
+            metadataPresetError = "Preset field is required"
+            return
+        }
+
+        guard !value.isEmpty else {
+            metadataPresetError = "Preset value is required"
+            return
+        }
+
+        guard PineconeMetadataFilter.parse(from: value) != nil else {
+            metadataPresetError = "Unable to interpret preset value"
+            return
+        }
+
+        metadataPresets.append(SettingsMetadataPreset(field: field, rawValue: value))
+        newPresetField = ""
+        newPresetValue = ""
+        metadataPresetError = nil
+    }
+
+    func removeMetadataPreset(_ preset: SettingsMetadataPreset) {
+        metadataPresets.removeAll { $0.id == preset.id }
+        metadataPresetError = nil
+    }
+
+    private func loadMetadataPresets() {
+        guard let data = defaults.data(forKey: SettingsStorageKeys.searchMetadataPresets) else {
+            metadataPresets = []
+            return
+        }
+
+        do {
+            metadataPresets = try JSONDecoder().decode([SettingsMetadataPreset].self, from: data)
+        } catch {
+            metadataPresets = []
+            logger.log(level: .warning, message: "Failed to decode metadata presets", context: error.localizedDescription)
+        }
+    }
+
+    private func persistMetadataPresets() {
+        let trimmed = metadataPresets.map { $0.trimmed() }.filter { $0.isValid }
+        metadataPresets = trimmed
+
+        guard !trimmed.isEmpty else {
+            defaults.removeObject(forKey: SettingsStorageKeys.searchMetadataPresets)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(trimmed)
+            defaults.set(data, forKey: SettingsStorageKeys.searchMetadataPresets)
+        } catch {
+            logger.log(level: .error, message: "Failed to persist metadata presets", context: error.localizedDescription)
+        }
     }
 }

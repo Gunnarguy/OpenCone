@@ -37,6 +37,13 @@ struct SettingsView: View {
                     modelSelectionContent
                 }
 
+                settingSection(
+                    title: "Search Defaults",
+                    systemImage: "magnifyingglass"
+                ) {
+                    searchDefaultsContent
+                }
+
                 // Theme settings section
                 settingSection(
                     title: "Appearance",
@@ -56,6 +63,13 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(themeManager.currentTheme.textSecondaryColor)
                     }
+                }
+
+                settingSection(
+                    title: "Logging",
+                    systemImage: "waveform.path.ecg"
+                ) {
+                    loggingContent
                 }
 
                 // Actions section
@@ -419,6 +433,165 @@ struct SettingsView: View {
         }
     }
 
+    private var searchDefaultsContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Default Result Count")
+                    .font(.subheadline.bold())
+                Stepper(value: $viewModel.defaultTopK, in: 1...50) {
+                    HStack {
+                        Text("Top K matches")
+                        Spacer()
+                        Text("\(viewModel.defaultTopK)")
+                            .font(.caption.bold())
+                            .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                    }
+                }
+
+                Text("Controls how many Pinecone matches the app requests before ranking and summarizing results.")
+                    .font(.caption)
+                    .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            }
+
+            Divider()
+
+            Toggle("Always switch to preferred index", isOn: $viewModel.enforcePreferredIndex)
+                .toggleStyle(SwitchToggleStyle(tint: themeManager.currentTheme.primaryColor))
+
+            VStack(alignment: .leading, spacing: 8) {
+                textFieldContainer(
+                    title: "Preferred Index",
+                    placeholder: "index-name",
+                    text: $viewModel.preferredIndexName
+                )
+
+                textFieldContainer(
+                    title: "Preferred Namespace",
+                    placeholder: "namespace (optional)",
+                    text: $viewModel.preferredNamespace
+                )
+            }
+
+            Text("If the preferred index or namespace exists, Search will select it automatically when indexes refresh. Leave blank to keep the last selection.")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Metadata Filter Presets")
+                    .font(.subheadline.bold())
+
+                if viewModel.metadataPresets.isEmpty {
+                    Text("Add presets to pre-populate the metadata filter tray each time Search loads.")
+                        .font(.caption)
+                        .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(Array(viewModel.metadataPresets.enumerated()), id: \.element.id) { index, preset in
+                            metadataPresetRow(index: index, preset: preset)
+                        }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    minimalTextField("Field", text: $viewModel.newPresetField)
+                        .onChange(of: viewModel.newPresetField) { _old, _new in
+                            viewModel.metadataPresetError = nil
+                        }
+
+                    minimalTextField("Value or rule", text: $viewModel.newPresetValue)
+                        .onChange(of: viewModel.newPresetValue) { _old, _new in
+                            viewModel.metadataPresetError = nil
+                        }
+
+                    OCButton(
+                        title: "Add",
+                        icon: "plus",
+                        size: .small,
+                        fullWidth: false,
+                        action: viewModel.addMetadataPreset
+                    )
+                    .disabled(
+                        viewModel.newPresetField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        viewModel.newPresetValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+
+                if let error = viewModel.metadataPresetError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(themeManager.currentTheme.errorColor)
+                }
+            }
+        }
+    }
+
+    private func metadataPresetRow(index: Int, preset: SettingsMetadataPreset) -> some View {
+        HStack(spacing: 8) {
+            minimalTextField(
+                "Field",
+                text: Binding(
+                    get: { viewModel.metadataPresets[index].field },
+                    set: { newValue in
+                        viewModel.metadataPresets[index].field = newValue
+                        viewModel.metadataPresetError = nil
+                    }
+                )
+            )
+
+            minimalTextField(
+                "Value",
+                text: Binding(
+                    get: { viewModel.metadataPresets[index].rawValue },
+                    set: { newValue in
+                        viewModel.metadataPresets[index].rawValue = newValue
+                        viewModel.metadataPresetError = nil
+                    }
+                )
+            )
+
+            Button {
+                viewModel.removeMetadataPreset(preset)
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundColor(themeManager.currentTheme.errorColor)
+                    .padding(10)
+                    .background(
+                        Circle()
+                            .fill(themeManager.currentTheme.errorColor.opacity(0.12))
+                    )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("Remove metadata preset")
+        }
+    }
+
+    private func minimalTextField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                    .fill(themeManager.currentTheme.backgroundColor)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: OCDesignSystem.Sizing.cornerRadiusSmall)
+                    .stroke(themeManager.currentTheme.textSecondaryColor.opacity(0.25), lineWidth: 1)
+            )
+    }
+
+    private func textFieldContainer(title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            minimalTextField(placeholder, text: text)
+        }
+    }
+
     // Appearance content
     private var appearanceContent: some View {
         VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
@@ -451,6 +624,27 @@ struct SettingsView: View {
                 destination: DesignSystemDemoView()
                     // No accessory needed, default EmptyView will be used
             )
+        }
+    }
+
+    private var loggingContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Minimum Log Level")
+                    .font(.subheadline.bold())
+
+                Picker("Minimum Log Level", selection: $viewModel.logMinimumLevel) {
+                    ForEach(viewModel.availableLogLevels, id: \.self) { level in
+                        Text(level.rawValue.capitalized)
+                            .tag(level)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+            }
+
+            Text("Messages below this level are discarded before they reach the Logs tab.")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
         }
     }
 

@@ -23,6 +23,9 @@ class Logger: ObservableObject {
     ///   - message: The main content of the log message.
     ///   - context: Optional additional information related to the log entry.
     func log(level: ProcessingLogEntry.LogLevel, message: String, context: String? = nil) {
+        let minimumLevel = currentMinimumLevel()
+        guard level.severityRank >= minimumLevel.severityRank else { return }
+
         let entry = ProcessingLogEntry(level: level, message: message, context: context)
         
         // Update the published array on the main thread as it affects the UI.
@@ -40,6 +43,14 @@ class Logger: ObservableObject {
         let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
         let contextInfo = context.map { " [\($0)]" } ?? "" // Use map for cleaner optional handling.
         print("[\(timestamp)] [\(level.rawValue)]\(contextInfo): \(message)")
+    }
+
+    private func currentMinimumLevel() -> ProcessingLogEntry.LogLevel {
+        if let raw = UserDefaults.standard.string(forKey: SettingsStorageKeys.logMinimumLevel),
+           let level = ProcessingLogEntry.LogLevel(rawValue: raw) {
+            return level
+        }
+        return .info
     }
     
     /// Clears all log entries from the `logEntries` array.

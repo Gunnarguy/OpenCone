@@ -6,8 +6,19 @@
 	objectVersion = 71;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		B0A6A0092E35D10000F5C5AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B084F3FD2D9CCC1800DE1D68 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B084F4042D9CCC1800DE1D68;
+			remoteInfo = OpenCone;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B084F4052D9CCC1800DE1D68 /* OpenCone.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenCone.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0A6A0012E35D10000F5C5AA /* OpenConeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenConeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -25,10 +36,18 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B084F4072D9CCC1800DE1D68 /* OpenCone */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (B03124352DCEB56000AECBBF /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = OpenCone; sourceTree = "<group>"; };
+		B0A6A00B2E35D10000F5C5AA /* OpenConeTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = OpenConeTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B084F4022D9CCC1800DE1D68 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0A6A0022E35D10000F5C5AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -42,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				B084F4072D9CCC1800DE1D68 /* OpenCone */,
+				B0A6A00B2E35D10000F5C5AA /* OpenConeTests */,
 				B084F4062D9CCC1800DE1D68 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -50,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				B084F4052D9CCC1800DE1D68 /* OpenCone.app */,
+				B0A6A0012E35D10000F5C5AA /* OpenConeTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +100,29 @@
 			productReference = B084F4052D9CCC1800DE1D68 /* OpenCone.app */;
 			productType = "com.apple.product-type.application";
 		};
+		B0A6A0052E35D10000F5C5AA /* OpenConeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B0A6A0062E35D10000F5C5AA /* Build configuration list for PBXNativeTarget "OpenConeTests" */;
+			buildPhases = (
+				B0A6A0032E35D10000F5C5AA /* Sources */,
+				B0A6A0022E35D10000F5C5AA /* Frameworks */,
+				B0A6A0042E35D10000F5C5AA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B0A6A00A2E35D10000F5C5AA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B0A6A00B2E35D10000F5C5AA /* OpenConeTests */,
+			);
+			name = OpenConeTests;
+			packageProductDependencies = (
+			);
+			productName = OpenConeTests;
+			productReference = B0A6A0012E35D10000F5C5AA /* OpenConeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -90,6 +134,9 @@
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					B084F4042D9CCC1800DE1D68 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					B0A6A0052E35D10000F5C5AA = {
 						CreatedOnToolsVersion = 16.2;
 					};
 				};
@@ -109,12 +156,20 @@
 			projectRoot = "";
 			targets = (
 				B084F4042D9CCC1800DE1D68 /* OpenCone */,
+				B0A6A0052E35D10000F5C5AA /* OpenConeTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B084F4032D9CCC1800DE1D68 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0A6A0042E35D10000F5C5AA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -131,7 +186,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B0A6A0032E35D10000F5C5AA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B0A6A00A2E35D10000F5C5AA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B084F4042D9CCC1800DE1D68 /* OpenCone */;
+			targetProxy = B0A6A0092E35D10000F5C5AA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B084F4112D9CCC1900DE1D68 /* Debug */ = {
@@ -337,6 +407,50 @@
 			};
 			name = Release;
 		};
+		B0A6A0072E35D10000F5C5AA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = Z3E334EXZD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = AI.FascinAIting.OpenConeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCone.app/OpenCone";
+			};
+			name = Debug;
+		};
+		B0A6A0082E35D10000F5C5AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = Z3E334EXZD;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = AI.FascinAIting.OpenConeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCone.app/OpenCone";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -354,6 +468,15 @@
 			buildConfigurations = (
 				B084F4142D9CCC1900DE1D68 /* Debug */,
 				B084F4152D9CCC1900DE1D68 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B0A6A0062E35D10000F5C5AA /* Build configuration list for PBXNativeTarget "OpenConeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B0A6A0072E35D10000F5C5AA /* Debug */,
+				B0A6A0082E35D10000F5C5AA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
