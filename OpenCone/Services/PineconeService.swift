@@ -750,7 +750,6 @@ class PineconeService {
 
             if httpResponse.statusCode != 200 {
                 if httpResponse.statusCode == 404 {
-                    let message = String(data: data, encoding: .utf8) ?? "Namespace not found"
                     throw PineconeError.namespaceNotFound(namespace ?? "")
                 }
 

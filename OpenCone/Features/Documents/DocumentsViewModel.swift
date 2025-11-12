@@ -3,7 +3,6 @@ import Combine
 import UIKit
 import SwiftUI
 import UniformTypeIdentifiers // Added import for UTType
-import CryptoKit
 
 /// View model for document management and processing
 /// Handles loading, selecting, and processing documents for vector embeddings
@@ -26,6 +25,8 @@ class DocumentsViewModel: ObservableObject {
     private let logger = Logger.shared
     /// Shared resolver for index/namespace preferences
     private let preferences = PineconePreferenceResolver()
+    /// UserDefaults key for tracking bookmark consent acknowledgement
+    private let securityConsentKey = "SecurityScopedBookmarkConsentAcknowledged"
     
     // MARK: - Published Properties
     
@@ -79,12 +80,18 @@ class DocumentsViewModel: ObservableObject {
 
     /// Holds the name for the new index being created
     @Published var newIndexName = "" // Added for index creation dialog
+
+    /// Indicates whether the user must acknowledge the security-scoped bookmark consent copy
+    @Published var needsSecurityConsent: Bool
     
     /// Tracks the granular progress (0.0 to 1.0) for each document being processed concurrently
     @Published private var documentProgress: [UUID: Float] = [:]
     
     /// Cancellables for managing Combine subscriptions
     private var cancellables = Set<AnyCancellable>()
+
+    /// Maximum allowed document size for ingestion.
+    private let maxDocumentSize: Int64
     
     // MARK: - Constants for Progress Calculation
     private let phaseWeightExtraction: Float = 0.10
@@ -112,11 +119,23 @@ class DocumentsViewModel: ObservableObject {
     ///   - embeddingService: Service for generating embeddings
     ///   - pineconeService: Service for Pinecone vector database operations
     init(fileProcessorService: FileProcessorService, textProcessorService: TextProcessorService,
-         embeddingService: EmbeddingService, pineconeService: PineconeService) {
+         embeddingService: EmbeddingService,
+         pineconeService: PineconeService,
+         maxDocumentSize: Int64 = 100 * 1024 * 1024) {
         self.fileProcessorService = fileProcessorService
         self.textProcessorService = textProcessorService
         self.embeddingService = embeddingService
         self.pineconeService = pineconeService
+        self.needsSecurityConsent = !UserDefaults.standard.bool(forKey: securityConsentKey)
+        self.maxDocumentSize = maxDocumentSize
+    }
+
+    /// Persist the user acknowledgement for the security-scoped bookmark consent banner.
+    func acknowledgeSecurityConsent() {
+        UserDefaults.standard.set(true, forKey: securityConsentKey)
+        DispatchQueue.main.async { [weak self] in
+            self?.needsSecurityConsent = false
+        }
     }
 
     // MARK: - Derived Metrics
@@ -212,7 +231,14 @@ class DocumentsViewModel: ObservableObject {
             // Get file attributes (access might be needed again if path is used directly)
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let fileSize = attributes[.size] as? Int64 ?? 0
-            let documentId = makeDocumentIdentifier(for: url, fileSize: fileSize, attributes: attributes)
+            let creationDate = attributes[.creationDate] as? Date
+            let modificationDate = attributes[.modificationDate] as? Date
+            let documentId = DocumentIdentifierBuilder.makeIdentifier(
+                url: url,
+                fileSize: fileSize,
+                creationDate: creationDate,
+                modificationDate: modificationDate
+            )
 
             // Prevent duplicates using the stable identifier
             if documents.contains(where: { $0.documentId == documentId }) {
@@ -221,10 +247,10 @@ class DocumentsViewModel: ObservableObject {
             }
             
             // Check file size limitations
-            let maxFileSize: Int64 = 100 * 1024 * 1024 // 100MB
-            if fileSize > maxFileSize {
-                logger.log(level: .warning, message: "File exceeds size limit (100MB)", context: url.lastPathComponent)
-                let sizeMessage = ProcessingError.documentSizeTooLarge(size: fileSize, maxSize: maxFileSize).errorDescription ?? "File exceeds size limit"
+            if fileSize > maxDocumentSize {
+                let maxSizeString = ByteCountFormatter.string(fromByteCount: maxDocumentSize, countStyle: .file)
+                logger.log(level: .warning, message: "File exceeds size limit (\(maxSizeString))", context: url.lastPathComponent)
+                let sizeMessage = ProcessingError.documentSizeTooLarge(size: fileSize, maxSize: maxDocumentSize).errorDescription ?? "File exceeds size limit"
                 errorMessage = "\(url.lastPathComponent): \(sizeMessage)"
                 return
             }
@@ -1200,8 +1226,11 @@ class DocumentsViewModel: ObservableObject {
         let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
         try fileManager.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
 
-        let sanitizedName = sanitizeFilename(sourceURL.lastPathComponent)
-        let destinationURL = makeUniqueDestinationURL(basedOn: sanitizedName, within: documentsDirectory)
+        let sanitizedName = DocumentFileUtilities.sanitizeFilename(sourceURL.lastPathComponent)
+        let destinationURL = DocumentFileUtilities.makeUniqueDestinationURL(
+            basedOn: sanitizedName,
+            within: documentsDirectory
+        )
 
         // Ensure we start from a clean slate if the temporary destination exists for some reason.
         if fileManager.fileExists(atPath: destinationURL.path) {
@@ -1212,49 +1241,6 @@ class DocumentsViewModel: ObservableObject {
         return destinationURL
     }
 
-    /// Generate a unique destination URL inside the supplied directory to avoid name collisions.
-    private func makeUniqueDestinationURL(basedOn fileName: String, within directory: URL) -> URL {
-        let fileManager = FileManager.default
-        let baseName = (fileName as NSString).deletingPathExtension
-        let fileExtension = (fileName as NSString).pathExtension
-
-        var candidateURL = directory.appendingPathComponent(fileName)
-        var counter = 1
-
-        while fileManager.fileExists(atPath: candidateURL.path) {
-            let suffix = "-\(counter)"
-            let candidateName: String
-
-            if fileExtension.isEmpty {
-                candidateName = baseName + suffix
-            } else {
-                candidateName = baseName + suffix + "." + fileExtension
-            }
-
-            candidateURL = directory.appendingPathComponent(candidateName)
-            counter += 1
-        }
-
-        return candidateURL
-    }
-
-    /// Replace characters that are problematic for filesystem storage.
-    private func sanitizeFilename(_ name: String) -> String {
-        let illegalCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
-        return name.components(separatedBy: illegalCharacters).joined(separator: "_")
-    }
-
-    /// Generates a stable SHA-256 backed identifier for the supplied document URL and size.
-    /// This keeps Pinecone vector IDs deterministic across re-processing runs.
-    private func makeDocumentIdentifier(for url: URL, fileSize: Int64, attributes: [FileAttributeKey: Any]) -> String {
-        let normalizedPath = url.standardizedFileURL.path.lowercased()
-        let creation = (attributes[.creationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let modification = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        let fingerprint = "\(normalizedPath)::\(fileSize)::\(creation)::\(modification)"
-        let digest = SHA256.hash(data: Data(fingerprint.utf8))
-        return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
-    }
-    
     // MARK: - Models
     
     /// Custom errors for document processing

@@ -13,6 +13,9 @@ struct DocumentsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 28) {
+                if viewModel.needsSecurityConsent {
+                    securityConsentBanner
+                }
                 heroSection
                 indexOverviewSection
                 pipelineSection
@@ -113,6 +116,45 @@ private extension DocumentsView {
                         .stroke(theme.primaryColor.opacity(0.18), lineWidth: 1)
                 )
                 .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 12)
+        )
+    }
+
+    var securityConsentBanner: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "lock.doc")
+                    .foregroundColor(theme.warningColor)
+                    .font(.system(size: 20, weight: .semibold))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Before you add files")
+                        .font(.headline)
+                        .foregroundColor(theme.textPrimaryColor)
+                    Text("OpenCone keeps a sandbox copy of every imported file and may send derived text to OpenAI and Pinecone using the keys you provide. You can revoke access at any time from Settings -> Advanced.")
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+            }
+
+            Button {
+                viewModel.acknowledgeSecurityConsent()
+            } label: {
+                Text("I understand")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(theme.warningColor)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22)
+                .fill(theme.warningColor.opacity(0.12))
         )
     }
 
@@ -745,7 +787,7 @@ private extension DocumentsView {
                     primaryActionButton(
                         title: "Add files",
                         icon: "doc.badge.plus",
-                        isEnabled: !viewModel.isProcessing
+                        isEnabled: !viewModel.isProcessing && !viewModel.needsSecurityConsent
                     ) {
                         showingDocumentPicker = true
                     }

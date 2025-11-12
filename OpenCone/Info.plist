@@ -7,13 +7,13 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Access needed for photo uploads and media selection for File uploads.</string>
+	<string>Allow OpenCone to import reference documents from your photo library so they can be indexed for search.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Access needed for File uploads.</string>
+	<string>Allow OpenCone to copy files from your Documents folder for secure, on-device indexing.</string>
 	<key>NSFileProviderPresenceUsageDescription</key>
-	<string>Access needed to integrate Files from system storage and cloud providers.</string>
+	<string>Allow OpenCone to open files stored in iCloud Drive or third-party providers for indexing.</string>
 	<key>NSFileProviderDomainUsageDescription</key>
-	<string>Access needed to integrate Files with iCloud and other cloud services.</string>
+	<string>Allow OpenCone to read files you pick from cloud storage providers so they can be analyzed for search.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
