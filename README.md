@@ -15,6 +15,7 @@ On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, asyn
 - [Key Modules](#key-modules)
 - [Design System](#design-system)
 - [Developer Workflow](#developer-workflow)
+- [Privacy & Compliance](#privacy--compliance)
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
 - [Manual QA Guide](#manual-qa-guide)
@@ -163,6 +164,20 @@ OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
 - **Logging** - Always log significant events via `Logger.shared.log(level:message:context:)`. The Logs tab is the canonical place to debug ingestion/search behaviour.
 - **Index insights** - After upserting or deleting vectors, call `refreshIndexInsights()` to update the namespace list and index stats used by both Documents and Search tabs.
 - **Background safety** - Long-running work should execute inside `Task {}`. Use `await MainActor.run {}` before mutating published state to avoid cross-actor violations.
+- **Release guard** - Release builds fatal-error if `OPENAI_API_KEY`, `PINECONE_API_KEY`, or `PINECONE_PROJECT_ID` are injected via scheme overrides; clear those environment variables before archiving for TestFlight/App Store.
+- **Icon generation** - Maintain `AppIcon.appiconset` by running `scripts/generate_app_icons.sh` (derives all required sizes from the 1024px marketing source).
+- **Screenshot capture** - Use `scripts/capture_screenshots.sh` for guided simulator captures (prompts you to stage each screen then saves a PNG into the provided directory).
+
+---
+
+## Privacy & Compliance
+
+- **Canonical docs** - `PRIVACY.md` explains on-device vs cloud processing; `AppReviewNotes.md` provides the reviewer walkthrough and credential hints.
+- **Secret handling** - `SECURITY.md` outlines Keychain storage, the Release fatal guard, and the `preflight_check.sh`/`secret_scan.py` workflow.
+- **Data & Privacy controls** - Settings now exposes a "Reset Stored Keys & Preferences" action that clears Keychain secrets, conversation history, and bookmark consent so testers can revoke access without deleting the app.
+- **Preflight script** - Run `scripts/preflight_check.sh` before TestFlight upload; it executes `secret_scan.py`, validates Info.plist usage descriptions, confirms privacy docs include a timestamp, and runs `xcodebuild test` on the default `platform=iOS Simulator,name=iPhone 17`. Override the simulator with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or skip tests temporarily with `SKIP_TESTS=1`.
+- **CI guardrail** - GitHub Actions workflow `.github/workflows/preflight.yml` runs the same preflight script on macOS runners (sets `OPEN_CONE_TEST_DESTINATION` to `iPhone 15`). Keep the script fast and deterministic so PRs stay green.
+- **Consent copy** - The Documents tab surfaces a security-scoped bookmark banner until acknowledged; the same language links back to `PRIVACY.md` from Settings for quick reference.
 
 ---
 
@@ -220,12 +235,13 @@ Run this sequence after significant changes:
 6. **Metadata filters** - Add a preset in Settings (e.g., `doc_id = MyDoc.pdf`), then search to confirm requests include the filter.
 7. **Namespace cleanup** - Delete the processed document and verify Pinecone vectors are removed and Logs report success.
 8. **Theme switch** - Toggle themes and ensure all tabs adhere to the design system colors.
+9. **Consent & reset** - Visit Settings → Data & Privacy, follow the Privacy Overview link, and trigger the reset control to confirm credentials are cleared and the welcome flow returns on relaunch.
 
 ---
 
 ## Testing
 
-- **Unit tests** - Execute from Xcode (**Command+U**) or via `xcodebuild test`. Current coverage focuses on metadata preset persistence (`OpenConeTests/SearchViewModelMetadataPersistenceTests`). Add new tests alongside changes to `SettingsViewModel` or filter parsing.
+- **Unit tests** - Execute from Xcode (**Command+U**) or via `xcodebuild test`. Current coverage focuses on metadata preset persistence (`OpenConeTests/SearchViewModelMetadataPersistenceTests`). Add new tests alongside changes to `SettingsViewModel` or filter parsing; the preflight script invokes the same command to guard submissions.
 - **Integration tests** - Not yet automated; rely on the Manual QA Guide until more UI tests are introduced.
 
 ---

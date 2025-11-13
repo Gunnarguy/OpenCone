@@ -543,7 +543,7 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Load available namespaces for the current index
     func loadNamespaces() async {
         await refreshIndexInsights()
@@ -551,7 +551,9 @@ class DocumentsViewModel: ObservableObject {
 
     /// Refresh namespace listings and index statistics for the current index.
     func refreshIndexInsights() async {
-        guard selectedIndex != nil else {
+        let currentState = await MainActor.run { (index: self.selectedIndex, namespace: self.selectedNamespace) }
+
+        guard let activeIndex = currentState.index else {
             await MainActor.run {
                 self.namespaces = []
                 self.selectedNamespace = nil
@@ -561,44 +563,91 @@ class DocumentsViewModel: ObservableObject {
         }
 
         do {
-            let stats = try await pineconeService.fetchIndexStats()
-            let namespaceNames = stats.namespaces.keys.sorted { lhs, rhs in
-                switch (lhs.isEmpty, rhs.isEmpty) {
-                case (true, false): return true
-                case (false, true): return false
-                default: return lhs.lowercased() < rhs.lowercased()
-                }
+            let inventory = try await pineconeService.fetchNamespaceInventory()
+            var namespaceCandidates = inventory.namespaceNames
+
+            // Always expose the default namespace option even if Pinecone omits it.
+            if !namespaceCandidates.contains("") {
+                namespaceCandidates.append("")
             }
 
-            let persistenceContext = await MainActor.run { () -> (index: String?, namespace: String?) in
-                self.namespaces = namespaceNames
+            // Preserve user-preferred and most recent selections while the control plane converges.
+            if let stored = preferences.storedNamespace(for: activeIndex), !stored.isEmpty,
+               !namespaceCandidates.contains(stored) {
+                namespaceCandidates.append(stored)
+            }
+
+            if let preferred = preferences.preferredNamespace(), !preferred.isEmpty,
+               !namespaceCandidates.contains(preferred) {
+                namespaceCandidates.append(preferred)
+            }
+
+            if let selected = currentState.namespace, !selected.isEmpty,
+               !namespaceCandidates.contains(selected) {
+                namespaceCandidates.append(selected)
+            }
+
+            let visibleNamespaces = normalizeNamespaces(namespaceCandidates)
+            let stats = inventory.stats
+
+            let persistenceContext = await MainActor.run { () -> (index: String, namespace: String?) in
+                self.namespaces = visibleNamespaces
                 self.indexStats = stats
                 self.errorMessage = nil
 
                 let resolvedNamespace = self.preferences.resolveNamespace(
-                    availableNamespaces: namespaceNames,
-                    index: self.selectedIndex,
-                    currentSelection: self.selectedNamespace
+                    availableNamespaces: visibleNamespaces,
+                    index: activeIndex,
+                    currentSelection: currentState.namespace
                 )
 
                 self.selectedNamespace = resolvedNamespace
-                return (self.selectedIndex, resolvedNamespace)
+                return (activeIndex, resolvedNamespace)
             }
 
-            if let index = persistenceContext.index {
-                if let namespace = persistenceContext.namespace {
-                    preferences.recordNamespace(namespace, for: index)
-                } else {
-                    preferences.clearNamespace(for: index)
-                }
+            if let namespace = persistenceContext.namespace {
+                preferences.recordNamespace(namespace, for: persistenceContext.index)
+            } else {
+                preferences.clearNamespace(for: persistenceContext.index)
             }
 
-            logger.log(level: .info, message: "Refreshed index stats", context: "namespaces=\(stats.namespaces.count), totalVectors=\(stats.totalVectorCount)")
+            let fallbackNames = Set(visibleNamespaces).subtracting(inventory.namespaceNames)
+            let fallbackSummaryList = fallbackNames.filter { !$0.isEmpty }.sorted()
+            let fallbackSummary = fallbackSummaryList.isEmpty ? "none" : fallbackSummaryList.joined(separator: ",")
+
+            logger.log(
+                level: .info,
+                message: "Refreshed index stats",
+                context: "visibleNamespaces=\(visibleNamespaces.count), statsNamespaces=\(stats.namespaces.count), totalVectors=\(stats.totalVectorCount), fallbackNamespaces=\(fallbackSummary)"
+            )
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to refresh index stats: \(error.localizedDescription)"
             }
             logger.log(level: .error, message: "Failed to refresh index stats", context: error.localizedDescription)
+        }
+    }
+
+    /// Deduplicates and sorts namespaces so the default entry remains first.
+    private func normalizeNamespaces(_ namespaces: [String]) -> [String] {
+        var deduped: [String] = []
+        var seen = Set<String>()
+
+        for name in namespaces {
+            if seen.insert(name).inserted {
+                deduped.append(name)
+            }
+        }
+
+        return deduped.sorted { lhs, rhs in
+            switch (lhs.isEmpty, rhs.isEmpty) {
+            case (true, false):
+                return true
+            case (false, true):
+                return false
+            default:
+                return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
         }
     }
     
@@ -626,8 +675,22 @@ class DocumentsViewModel: ObservableObject {
     func createNamespace(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        // Pinecone namespace rules: lowercase letters, numbers, hyphen, underscore (1-64 chars, cannot start/end with symbol)
+        let namespacePattern = "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$"
+        guard trimmed.range(of: namespacePattern, options: .regularExpression) != nil else {
+            logger.log(level: .warning, message: "Invalid namespace format", context: trimmed)
+            Task { @MainActor in self.errorMessage = "Namespaces must start with a letter or number and can include lowercase letters, digits, hyphens, or underscores." }
+            return
+        }
+
         guard !namespaces.contains(trimmed) else {
             logger.log(level: .warning, message: "Namespace already exists", context: trimmed)
+            Task { @MainActor in
+                self.selectedNamespace = trimmed
+                self.errorMessage = nil
+                if let index = self.selectedIndex { self.preferences.recordNamespace(trimmed, for: index) }
+            }
             return
         }
 
@@ -636,14 +699,48 @@ class DocumentsViewModel: ObservableObject {
                 try await pineconeService.createNamespace(trimmed)
                 logger.log(level: .info, message: "Namespace created", context: trimmed)
                 await MainActor.run {
+                    self.errorMessage = nil
                     self.selectedNamespace = trimmed
+                    if let index = self.selectedIndex { self.preferences.recordNamespace(trimmed, for: index) }
+                    if !self.namespaces.contains(trimmed) {
+                        self.namespaces.append(trimmed)
+                        self.namespaces = self.normalizeNamespaces(self.namespaces)
+                    }
                 }
                 await refreshIndexInsights()
             } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to create namespace: \(error.localizedDescription)"
+                if case PineconeError.requestFailed(let status, let message) = error,
+                   status == 409 || (message?.localizedCaseInsensitiveContains("already exists") ?? false) {
+                    logger.log(level: .info, message: "Namespace already existed", context: trimmed)
+                    await MainActor.run {
+                        self.errorMessage = nil
+                        self.selectedNamespace = trimmed
+                        if let index = self.selectedIndex { self.preferences.recordNamespace(trimmed, for: index) }
+                        if !self.namespaces.contains(trimmed) {
+                            self.namespaces.append(trimmed)
+                            self.namespaces = self.normalizeNamespaces(self.namespaces)
+                        }
+                    }
+                    await refreshIndexInsights()
+                } else {
+                    let fallbackMessage: String
+                    if let pineconeError = error as? PineconeError,
+                       case let .requestFailed(_, message) = pineconeError,
+                       let message,
+                       !message.isEmpty {
+                        fallbackMessage = message
+                    } else {
+                        fallbackMessage = error.localizedDescription
+                    }
+
+                    logger.log(level: .error, message: "Failed to create namespace", context: fallbackMessage)
+
+                    await MainActor.run {
+                        self.selectedNamespace = trimmed
+                        if let index = self.selectedIndex { self.preferences.recordNamespace(trimmed, for: index) }
+                        self.errorMessage = "Failed to create namespace: \(fallbackMessage)"
+                    }
                 }
-                logger.log(level: .error, message: "Failed to create namespace", context: error.localizedDescription)
             }
         }
     }

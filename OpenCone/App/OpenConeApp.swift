@@ -109,6 +109,7 @@ struct OpenConeApp: App {
     /// Transitions the app state to `.main` on success or `.welcome` if keys are missing.
     private func initializeServices() {
         logger.log(level: .info, message: "Attempting to initialize services...")
+        enforceNoBundledSecrets()
         // Ensure all required API keys and the Project ID are present before proceeding
         guard validateAPIKeys() else {
             // If keys are missing, redirect to the welcome screen for setup
@@ -225,6 +226,17 @@ struct OpenConeApp: App {
             // Load indexes for the search view
             await searchVM.loadIndexes()
         }
+    }
+
+    /// Ensures Release builds are not running with compile-time or scheme-supplied API keys.
+    private func enforceNoBundledSecrets() {
+        #if !DEBUG
+        if !Configuration.openAIAPIKey.isEmpty ||
+            !Configuration.pineconeAPIKey.isEmpty ||
+            !Configuration.pineconeProjectId.isEmpty {
+            fatalError("OpenCone Release builds must not include default API keys. Clear scheme environment overrides before archiving.")
+        }
+        #endif
     }
 
     #if canImport(UIKit)

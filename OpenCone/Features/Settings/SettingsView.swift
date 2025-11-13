@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var isShowingResetAlert = false
     @State private var isSaved = false
     @State private var animateSaveIcon = false
+    @State private var showSecureResetDialog = false
 
     var body: some View {
         // Use a ScrollView with VStack instead of Form for more customizable appearance
@@ -72,6 +73,13 @@ struct SettingsView: View {
                     loggingContent
                 }
 
+                settingSection(
+                    title: "Data & Privacy",
+                    systemImage: "lock.shield"
+                ) {
+                    dataPrivacyContent
+                }
+
                 // Actions section
                 actionsSection
 
@@ -109,6 +117,18 @@ struct SettingsView: View {
                 message: Text(error.message),
                 dismissButton: .default(Text("OK"))
             )
+        }
+        .confirmationDialog(
+            "Reset stored keys?",
+            isPresented: $showSecureResetDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) {
+                viewModel.resetSecureState()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This removes API keys, Pinecone preferences, conversation history, and bookmark consent so you can start fresh.")
         }
     }
 
@@ -645,6 +665,36 @@ struct SettingsView: View {
             Text("Messages below this level are discarded before they reach the Logs tab.")
                 .font(.caption)
                 .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+        }
+    }
+
+    private var dataPrivacyContent: some View {
+        VStack(alignment: .leading, spacing: OCDesignSystem.Spacing.medium) {
+            Text("OpenCone stores sandbox copies of imported documents and only uploads derived text to the providers you configure. Use the controls below to review the data flow or revoke access.")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+
+            if let privacyURL = URL(string: "https://github.com/Gunnarguy/OpenCone/blob/main/PRIVACY.md") {
+                Link("Read the detailed Privacy Overview", destination: privacyURL)
+                    .font(.subheadline.bold())
+            }
+
+            Text("Resetting clears API keys, conversation history, bookmark consent, and index preferences. You'll return to the welcome flow on the next launch.")
+                .font(.caption)
+                .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+
+            OCButton(
+                title: "Reset Stored Keys & Preferences",
+                icon: "trash",
+                style: .destructive,
+                action: { showSecureResetDialog = true }
+            )
+
+            if let feedback = viewModel.secureResetStatus {
+                Text(feedback)
+                    .font(.caption)
+                    .foregroundColor(themeManager.currentTheme.textSecondaryColor)
+            }
         }
     }
 

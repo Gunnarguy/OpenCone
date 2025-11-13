@@ -94,7 +94,7 @@ final class SecureSettingsStore {
     }
 
     func getPineconeNamespaceVersion() -> String {
-        return UserDefaults.standard.string(forKey: Key.pineconeNamespaceVersion) ?? "2025-04"
+        return UserDefaults.standard.string(forKey: Key.pineconeNamespaceVersion) ?? "2025-10"
     }
 
     func setPineconeNamespaceVersion(_ version: String) {
@@ -107,6 +107,27 @@ final class SecureSettingsStore {
 
     func setPineconeMetadataFetchVersion(_ version: String) {
         UserDefaults.standard.set(version, forKey: Key.pineconeMetadataFetchVersion)
+    }
+
+    /// Removes all secrets from the Keychain and clears persisted Pinecone configuration preferences.
+    /// Intended for "Reset App" style flows so users can revoke access to stored credentials without
+    /// uninstalling the application.
+    func clearSecretsAndPreferences() {
+        deleteKeychainValue(forKey: Key.openAIKey)
+        deleteKeychainValue(forKey: Key.pineconeKey)
+        deleteKeychainValue(forKey: Key.pineconeProjectId)
+
+        let defaults = UserDefaults.standard
+        let nonSecretKeys = [
+            Key.pineconeCloud,
+            Key.pineconeRegion,
+            Key.pineconeControlPlaneVersion,
+            Key.pineconeDataPlaneVersion,
+            Key.pineconeNamespaceVersion,
+            Key.pineconeMetadataFetchVersion,
+        ]
+
+        nonSecretKeys.forEach { defaults.removeObject(forKey: $0) }
     }
 
     // MARK: - Migration from legacy UserDefaults keys

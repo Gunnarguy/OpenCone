@@ -225,7 +225,7 @@ private extension DocumentsView {
                     )
                 }
 
-                if let stats = viewModel.indexStats, !stats.namespaces.isEmpty {
+                if let stats = viewModel.indexStats, !viewModel.namespaces.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Namespaces")
                             .font(.subheadline.bold())

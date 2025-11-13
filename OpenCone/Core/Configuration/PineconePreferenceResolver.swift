@@ -82,16 +82,16 @@ struct PineconePreferenceResolver {
             return preferred
         }
 
+        if let current, availableNamespaces.contains(current) {
+            return current
+        }
+
         if let stored, availableNamespaces.contains(stored) {
             return stored
         }
 
         if let preferred, availableNamespaces.contains(preferred) {
             return preferred
-        }
-
-        if let current, availableNamespaces.contains(current) {
-            return current
         }
 
         return availableNamespaces.first
@@ -101,6 +101,17 @@ struct PineconePreferenceResolver {
     func recordLastIndex(_ index: String) {
         guard let normalized = normalizedIndex(index) else { return }
         defaults.set(normalized, forKey: lastIndexKey)
+    }
+
+    /// Returns the preferred namespace specified in Settings, if any.
+    func preferredNamespace() -> String? {
+        normalizedNamespace(defaults.string(forKey: preferredNamespaceKey))
+    }
+
+    /// Returns the namespace that was last persisted for the supplied index.
+    func storedNamespace(for index: String?) -> String? {
+        guard let normalizedIndex = normalizedIndex(index) else { return nil }
+        return normalizedNamespace(defaults.string(forKey: namespaceStorageKey(for: normalizedIndex)))
     }
 
     /// Persists the most recently used namespace for the supplied index.

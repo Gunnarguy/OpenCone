@@ -59,6 +59,11 @@ class PineconeService {
         }
         return false
     }
+
+    struct NamespaceInventory {
+        let stats: IndexStatsResponse
+        let namespaceNames: [String]
+    }
     
     init(apiKey: String, projectId: String, configuration: PineconeServiceConfiguration = .default) {
         self.apiKey = apiKey
@@ -551,7 +556,18 @@ class PineconeService {
         }
 
         let endpoint = "https://\(indexHost)/namespaces"
-        let body = ["namespace": namespace]
+        let body: [String: Any] = [
+            "name": namespace,
+            "schema": [
+                "fields": [
+                    "doc_id": ["filterable": true],
+                    "file_name": ["filterable": true],
+                    "mime_type": ["filterable": true],
+                    "ingest_session_id": ["filterable": true],
+                    "date_processed": ["filterable": true]
+                ]
+            ]
+        ]
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             throw PineconeError.invalidRequestData
         }
@@ -563,7 +579,7 @@ class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -572,11 +588,91 @@ class PineconeService {
                 if self.shouldRetry(statusCode: httpResponse.statusCode) {
                     throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
                 }
-                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: "Failed to create namespace")
+
+                let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
+                let message = errorResponse?.message ?? String(data: data, encoding: .utf8)
+                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
             }
         }
 
         logger.log(level: .info, message: "Namespace created", context: namespace)
+    }
+
+    private func listNamespacesDetailed() async throws -> [NamespaceListResponse.NamespaceEntry] {
+        guard let indexHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+
+        var collected: [NamespaceListResponse.NamespaceEntry] = []
+        var paginationToken: String?
+
+        repeat {
+            var components = URLComponents(string: "https://\(indexHost)/namespaces")!
+            if let paginationToken {
+                components.queryItems = [URLQueryItem(name: "pagination_token", value: paginationToken)]
+            }
+
+            var request = URLRequest(url: components.url!)
+            request.httpMethod = "GET"
+            applyStandardHeaders(to: &request, apiVersion: apiConfiguration.namespaceVersion)
+
+            var responseModel: NamespaceListResponse?
+
+            try await withRetries(maxRetries: maxRetries) {
+                try await self.applyRateLimit()
+                let (data, response) = try await session.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw PineconeError.invalidResponse
+                }
+
+                if httpResponse.statusCode != 200 {
+                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                    }
+
+                    let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
+                    let message = errorResponse?.message ?? String(data: data, encoding: .utf8)
+                    throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+                }
+
+                responseModel = try JSONDecoder().decode(NamespaceListResponse.self, from: data)
+            }
+
+            if let responseModel {
+                collected.append(contentsOf: responseModel.namespaces)
+                paginationToken = responseModel.pagination?.next
+            } else {
+                paginationToken = nil
+            }
+        } while paginationToken != nil && !(paginationToken ?? "").isEmpty
+
+        return collected
+    }
+
+    func fetchNamespaceInventory() async throws -> NamespaceInventory {
+        async let statsTask = describeIndexStats()
+        async let detailedTask = listNamespacesDetailed()
+
+        let stats = try await statsTask
+        let detailed = (try? await detailedTask) ?? []
+
+        var nameSet = Set<String>()
+        detailed.forEach { nameSet.insert($0.name) }
+        stats.namespaces.keys.forEach { nameSet.insert($0) }
+
+        if nameSet.isEmpty {
+            nameSet.insert("")
+        }
+
+        let sortedNames = nameSet.sorted { lhs, rhs in
+            switch (lhs.isEmpty, rhs.isEmpty) {
+            case (true, false): return true
+            case (false, true): return false
+            default: return lhs.lowercased() < rhs.lowercased()
+            }
+        }
+
+        return NamespaceInventory(stats: stats, namespaceNames: sortedNames)
     }
 
     /// Delete a namespace for the current index (preview API)
@@ -1043,6 +1139,25 @@ struct IndexStatsResponse: Codable {
     }
 }
 
+struct NamespaceListResponse: Codable {
+    struct NamespaceEntry: Codable {
+        let name: String
+        let recordCount: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case recordCount = "record_count"
+        }
+    }
+
+    let namespaces: [NamespaceEntry]
+    let pagination: Pagination?
+
+    struct Pagination: Codable {
+        let next: String?
+    }
+}
+
 struct NamespaceStats: Codable {
     let vectorCount: Int
 }
@@ -1218,10 +1333,12 @@ extension PineconeService {
     
     /// Adds common Pinecone headers including configurable API version.
     private func applyStandardHeaders(to request: inout URLRequest, apiVersion: String) {
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey, forHTTPHeaderField: "Api-Key")
-        request.addValue(projectId, forHTTPHeaderField: "X-Project-Id")
-        request.addValue(apiVersion, forHTTPHeaderField: "Api-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(apiKey, forHTTPHeaderField: "Api-Key")
+        request.setValue(projectId, forHTTPHeaderField: "X-Project-Id")
+        request.setValue(apiVersion, forHTTPHeaderField: "X-Pinecone-API-Version")
+        request.setValue(apiVersion, forHTTPHeaderField: "Api-Version")
     }
     
     /// Apply rate limiting to avoid overwhelming the API

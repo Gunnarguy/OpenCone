@@ -35,7 +35,7 @@ struct Configuration {
     /// Namespace management API version (preview)
     static var pineconeNamespaceVersion: String {
         let version = SecureSettingsStore.shared.getPineconeNamespaceVersion()
-        return version.isEmpty ? "2025-04" : version
+        return version.isEmpty ? "2025-10" : version
     }
     /// Metadata fetch API version (preview)
     static var pineconeMetadataFetchVersion: String {

@@ -1,6 +1,6 @@
 # OpenCone App Store Readiness Plan
 
-_Last updated: 2025-11-11_
+**Last updated:** 2025-11-12 (automated tests wired into preflight)
 
 ## Objective
 
@@ -44,23 +44,23 @@ Bring OpenCone from its current development state to TestFlight and App Store su
 
 ### 1. Secrets & Guardrails
 
-- [ ] Add Release build assertion requiring user-supplied keys (no defaults).
-- [ ] Commit `scripts/secret_scan.py` (exit code 1 on match).
-- [ ] Commit `scripts/preflight_check.sh` (runs secret scan + plist key check).
-- [ ] Document process in `SECURITY.md` (key storage, CI policy).
+- [x] Add Release build assertion requiring user-supplied keys (no defaults).
+- [x] Commit `scripts/secret_scan.py` (exit code 1 on match).
+- [x] Commit `scripts/preflight_check.sh` (runs secret scan + plist key check).
+- [x] Document process in `SECURITY.md` (key storage, CI policy).
 
 ### 2. Privacy & Reviewer Assets
 
-- [ ] Insert usage strings (`NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, etc.).
-- [ ] Author `PRIVACY.md` (on-device vs cloud flow, retention).
-- [ ] Author `AppReviewNotes.md` (step-by-step reviewer guide).
-- [ ] Add security-scoped bookmark consent message + revoke instructions in Settings.
+- [x] Insert usage strings (`NSPhotoLibraryUsageDescription`, `NSDocumentsFolderUsageDescription`, etc.).
+- [x] Author `PRIVACY.md` (on-device vs cloud flow, retention).
+- [x] Author `AppReviewNotes.md` (step-by-step reviewer guide).
+- [x] Add security-scoped bookmark consent message + revoke instructions in Settings.
 
 ### 3. Operational Prep
 
-- [ ] Capture 4 simulator screenshots (onboarding, import, processing, RAG answer).
-- [ ] Verify app icon (1024px) and marketing assets.
-- [ ] Run `preflight_check.sh` locally and in CI.
+- [ ] Capture 4 simulator screenshots (onboarding, import, processing, RAG answer). Use the documented shot list (`cline_docs/appStoreScreenshots.md`) and optional helper script (`scripts/capture_screenshots.sh`).
+- [x] Verify app icon (1024px) and marketing assets (`scripts/generate_app_icons.sh` now derives the full iOS set from the 1024px source and updates `AppIcon.appiconset`).
+- [x] Run `preflight_check.sh` locally (now includes automated unit tests) and in CI (`.github/workflows/preflight.yml`).
 - [ ] Produce Xcode archive, upload to TestFlight, paste reviewer notes.
 - [ ] Invite 3 internal testers and document feedback.
 
@@ -88,12 +88,13 @@ Bring OpenCone from its current development state to TestFlight and App Store su
 - Document the API key requirements prominently in Settings (already user-supplied, reiterate in `PRIVACY.md`).
 - For TestFlight notes, include sample dummy keys or instructions to obtain review-only keys.
 
-## Next Actions (as of 2025-11-11)
+## Next Actions (as of 2025-11-12)
 
-1. Add privacy usage descriptions to `Info.plist` and open a PR.
-2. Create `PRIVACY.md` & `AppReviewNotes.md` referencing `FileProcessorService`, `EmbeddingService`, and `PineconeService`.
-3. Implement security-scoped bookmark consent banner/modal.
-4. Draft secret/preflight scripts and wire them into repository tooling.
+1. Capture and catalogue App Store screenshots (record simulator + device sizes).
+2. Audit `Assets.xcassets` against App Store icon requirements; export 1024px marketing icon proof.
+3. Integrate `scripts/preflight_check.sh` into CI and document the expected `xcodebuild test` destination override.
+4. Produce an archive/TestFlight build using reviewer notes + release notes from `AppReviewNotes.md`.
+5. Schedule the 3-person ingestion→search QA pass and capture sign-off in this doc.
 
 ---
 

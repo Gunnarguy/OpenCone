@@ -57,6 +57,7 @@ class SettingsViewModel: ObservableObject {
 
     // Error messaging
     @Published var errorMessage: String? = nil
+    @Published var secureResetStatus: String? = nil
 
     // Available model options
     let availableEmbeddingModels = [
@@ -233,6 +234,7 @@ class SettingsViewModel: ObservableObject {
         store.setPineconeCloud(pineconeCloud)
         store.setPineconeRegion(pineconeRegion)
 
+        secureResetStatus = nil
         logger.log(level: .info, message: "SettingsViewModel: Settings saved to UserDefaults.")
     }
 
@@ -254,8 +256,28 @@ class SettingsViewModel: ObservableObject {
         metadataPresetError = nil
         showAnswerPanelBelowChat = true
         logMinimumLevel = .info
+        secureResetStatus = nil
 
         logger.log(level: .info, message: "Settings reset to defaults")
+    }
+
+    /// Clears stored secrets plus onboarding markers so a user can revoke access in Settings.
+    func resetSecureState() {
+        logger.log(level: .info, message: "Resetting stored credentials and preferences at user request.")
+
+        store.clearSecretsAndPreferences()
+        clearPersistedSettings()
+        resetToDefaults()
+
+        openAIAPIKey = ""
+        pineconeAPIKey = ""
+        pineconeProjectId = ""
+        pineconeCloud = store.getPineconeCloud()
+        pineconeRegion = store.getPineconeRegion()
+
+        openAIStatus = .unknown
+        pineconeStatus = .unknown
+        secureResetStatus = "Stored keys removed. Force-quit and relaunch OpenCone before adding new credentials."
     }
 
     // MARK: - Live validation
@@ -410,5 +432,38 @@ class SettingsViewModel: ObservableObject {
         } catch {
             logger.log(level: .error, message: "Failed to persist metadata presets", context: error.localizedDescription)
         }
+    }
+
+    private func clearPersistedSettings() {
+        let keysToClear: [String] = [
+            "defaultChunkSize",
+            "defaultChunkOverlap",
+            "embeddingModel",
+            "completionModel",
+            "openai.temperature",
+            "openai.topP",
+            "openai.reasoningEffort",
+            "openai.conversationMode",
+            "openai.conversationId",
+            "ui.showAnswerPanelBelowChat",
+            SettingsStorageKeys.searchTopK,
+            SettingsStorageKeys.searchEnforcePreferredIndex,
+            SettingsStorageKeys.searchPreferredIndex,
+            SettingsStorageKeys.searchPreferredNamespace,
+            SettingsStorageKeys.searchMetadataPresets,
+            SettingsStorageKeys.logMinimumLevel,
+            "oc.lastIndex",
+            "hasLaunchedBefore",
+            "SecurityScopedBookmarkConsentAcknowledged",
+            "themeId",
+            "isDarkMode"
+        ]
+
+        keysToClear.forEach { defaults.removeObject(forKey: $0) }
+
+        let namespacePrefix = "oc.lastNamespace."
+        defaults.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(namespacePrefix) }
+            .forEach { defaults.removeObject(forKey: $0) }
     }
 }

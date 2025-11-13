@@ -1,6 +1,6 @@
 # OpenCone Privacy Overview
 
-_Last updated: 2025-11-11_
+**Last updated:** 2025-11-12
 
 OpenCone is a retrieval-augmented generation (RAG) client that lets you search your own documents using OpenAI completions and Pinecone vector search. This document describes the data flows involved so you can answer the App Store privacy questionnaire and inform reviewers and end users.
 
@@ -40,6 +40,7 @@ OpenCone is a retrieval-augmented generation (RAG) client that lets you search y
 
 - The first time you import a file, OpenCone explains that it creates a sandbox copy and may upload derived text to your configured services.
 - Settings provide a link back to this document and instructions for revoking storage provider access.
+- Settings → Data & Privacy includes a "Reset Stored Keys & Preferences" button that clears Keychain secrets, conversation history, and bookmark consent so you can start fresh without deleting the app.
 
 ## Contact
 
