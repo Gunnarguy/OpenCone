@@ -329,8 +329,8 @@ struct APIKeyEntryView: View {
                         .font(.headline)
                         .padding(.top, 8)
 
-                    // Text field for Pinecone Project ID.
-                    TextField(
+                    // Secure field for Pinecone Project ID so it isn't exposed during setup.
+                    SecureField(
                         "e.g., 1234abcd-ef56-7890-gh12-345678ijklmn",
                         text: $settingsViewModel.pineconeProjectId
                     )

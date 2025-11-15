@@ -56,10 +56,11 @@ struct ChatBubble: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundColor(theme.textSecondaryColor)
 
-                                ForEach(citations.prefix(5), id: \.self) { src in
+                                // Enumerate to guarantee stable IDs even when duplicate file names repeat
+                                ForEach(Array(citations.prefix(5).enumerated()), id: \.offset) { _, src in
                                     Button(action: { onCitationTap?(src) }) {
                                         HStack(spacing: 4) {
-                                            Text("• \(fileName(from: src))")
+                                            Text("• \\(fileName(from: src))")
                                                 .font(.caption)
                                                 .foregroundColor(theme.primaryColor)
                                                 .lineLimit(1)

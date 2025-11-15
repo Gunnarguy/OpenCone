@@ -8,11 +8,19 @@ import UIKit
 struct SearchView: View {
     @ObservedObject var viewModel: SearchViewModel  // The view model managing search state and logic
     @Environment(\.theme) private var theme  // Access the current theme
+    var onRequestDocumentsTab: (() -> Void)? = nil  // Callback to jump to the Documents tab
 
     var body: some View {
         VStack(spacing: 8) {
-            // Configuration section (index/namespace)
-            QuickSwitcherView(viewModel: viewModel)
+            // Show empty state if no indexes exist
+            if viewModel.pineconeIndexes.isEmpty {
+                NoIndexEmptyState(onShowDocuments: onRequestDocumentsTab ?? {})
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 24)
+            } else {
+                // Configuration section (index/namespace)
+                QuickSwitcherView(viewModel: viewModel)
+            }
 
             // Metadata filter controls
             MetadataFilterEditor(viewModel: viewModel)
@@ -1302,6 +1310,57 @@ private struct NamespaceListSheet: View {
                 }
             }
         }
+    }
+}
+
+private struct NoIndexEmptyState: View {
+    @Environment(\.theme) private var theme
+    let onShowDocuments: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 60, weight: .light))
+                .foregroundColor(theme.textSecondaryColor)
+            
+            VStack(spacing: 8) {
+                Text("No Pinecone Index Found")
+                    .font(.title3.bold())
+                    .foregroundColor(theme.textPrimaryColor)
+                
+                Text(
+                    "Create a Pinecone index + namespace from the Documents tab to start searching your knowledge base.")
+                    .font(.subheadline)
+                    .foregroundColor(theme.textSecondaryColor)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Open the Documents tab and tap \"Add Documents\" to ingest your first file.",
+                      systemImage: "1.circle")
+                    .font(.footnote)
+                    .foregroundColor(theme.textSecondaryColor)
+                Label("During ingest, pick an index + namespace (or let the app create them).",
+                      systemImage: "2.circle")
+                    .font(.footnote)
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+
+            OCButton(
+                title: "Go to Documents",
+                icon: "doc.text.magnifyingglass",
+                style: .primary,
+                action: onShowDocuments
+            )
+            .frame(maxWidth: 260)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(theme.cardBackgroundColor)
+                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+        )
     }
 }
 

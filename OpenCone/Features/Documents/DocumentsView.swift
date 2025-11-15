@@ -216,27 +216,70 @@ private extension DocumentsView {
 
                 if let metadata = viewModel.indexMetadata {
                     indexMetadataGrid(metadata)
+                } else if viewModel.pineconeIndexes.isEmpty {
+                    // No indexes exist - prompt to create one
+                    calloutCard(
+                        title: "No indexes found",
+                        message: "Create your first Pinecone index to start ingesting documents. Indexes store your vector embeddings and enable semantic search.",
+                        icon: "exclamationmark.triangle",
+                        color: theme.warningColor
+                    )
+                    OCButton(
+                        title: "Create Index",
+                        icon: "plus.circle.fill",
+                        style: .primary
+                    ) {
+                        viewModel.showingCreateIndexDialog = true
+                    }
+                    .disabled(viewModel.isLoadingIndexes)
                 } else {
+                    // Indexes exist but none selected
                     calloutCard(
                         title: "Select an index",
-                        message: "Connect to a Pinecone deployment to pull dimension, metric, and namespace stats.",
+                        message: "Choose a Pinecone index from the picker above to view its configuration and start processing documents.",
                         icon: "info.circle",
                         color: theme.infoColor
                     )
                 }
 
-                if let stats = viewModel.indexStats, !viewModel.namespaces.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Namespaces")
-                            .font(.subheadline.bold())
-                            .foregroundColor(theme.textPrimaryColor)
+                if let stats = viewModel.indexStats {
+                    if viewModel.namespaces.isEmpty {
+                        // Index exists but no namespaces - prompt to create one
+                        calloutCard(
+                            title: "No namespaces found",
+                            message: "Create your first namespace to organize vectors within this index. Start with 'default' or create a custom namespace.",
+                            icon: "exclamationmark.triangle",
+                            color: theme.warningColor
+                        )
+                        HStack(spacing: 12) {
+                            OCButton(
+                                title: "Create Namespace",
+                                icon: "plus.circle.fill",
+                                style: .primary
+                            ) {
+                                showingNamespaceDialog = true
+                            }
+                            OCButton(
+                                title: "Use Default",
+                                icon: "checkmark.circle",
+                                style: .outline
+                            ) {
+                                viewModel.createNamespace("")
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Namespaces")
+                                .font(.subheadline.bold())
+                                .foregroundColor(theme.textPrimaryColor)
 
-                        LazyVStack(spacing: 12) {
-                            ForEach(viewModel.namespaces, id: \.self) { namespace in
-                                namespaceRow(
-                                    namespace,
-                                    vectorCount: stats.namespaces[namespace]?.vectorCount ?? 0
-                                )
+                            LazyVStack(spacing: 12) {
+                                ForEach(viewModel.namespaces, id: \.self) { namespace in
+                                    namespaceRow(
+                                        namespace,
+                                        vectorCount: stats.namespaces[namespace]?.vectorCount ?? 0
+                                    )
+                                }
                             }
                         }
                     }

@@ -25,7 +25,10 @@ struct MainView: View {
         TabView(selection: $selectedTab) {
             // MARK: Search Tab
             NavigationView {
-                SearchView(viewModel: searchViewModel)
+                SearchView(
+                    viewModel: searchViewModel,
+                    onRequestDocumentsTab: { selectedTab = 1 }
+                )
                     .navigationTitle("Document Search")
             }
             .tabItem {
@@ -66,6 +69,12 @@ struct MainView: View {
         .onAppear(perform: loadInitialData)
         .alert(isPresented: errorAlertBinding) {
             errorAlert
+        }
+        .onChange(of: selectedTab) { _, newValue in
+            guard newValue == 0 else { return }
+            Task {
+                await searchViewModel.loadIndexes()
+            }
         }
     }
 
