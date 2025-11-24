@@ -1,54 +1,49 @@
 # Copilot Instructions for OpenCone
 
-## Architecture & flow
+## Architecture map
 
-- `OpenConeApp` wires shared `FileProcessorService`, `TextProcessorService`, `EmbeddingService`, `OpenAIService`, and `PineconeService` into `DocumentsViewModel` / `SearchViewModel`, advancing `AppState` (`loading`→`welcome`→`main`) once credentials pass validation.
-- `MainView` exposes Search, Documents, Logs, and Settings tabs; extend functionality inside these surfaces or the Welcome flow instead of spawning new windows/scenes.
-- `ProcessingViewModel` listens to `Logger.shared` and feeds the Logs tab—tap into the same logger for pipeline diagnostics.
+- `OpenConeApp` boots shared services (`FileProcessorService`, `TextProcessorService`, `EmbeddingService`, `OpenAIService`, `PineconeService`) and routes `AppState` from `loading → welcome → main` once credentials validate.
+- `MainView` hosts four tabs (Search, Documents, Logs, Settings); enhance features inside these tabs or the Welcome flow—never spawn new windows/scenes.
+- View models are the only surface talking to services; keep SwiftUI views declarative and hop back to the main actor (`await MainActor.run`) before mutating `@Published` state.
+- `ProcessingViewModel` mirrors `Logger.shared` output for the Logs tab; reuse that logger for any pipeline or network diagnostics.
 
-## Document ingestion & storage
+## Document ingestion
 
-- `DocumentsViewModel` orchestrates copy → extraction → chunking → embedding → Pinecone upsert; reuse its async helpers so progress (`documentProgress`, `ProcessingStats`) and dashboard metrics stay accurate, and emit stage updates through `Logger.shared` so `ProcessingViewModel` reflects them.
-- Persist files with `persistDocumentCopy` and minimal bookmarks; always wrap file work in `startAccessingSecurityScopedResource()` / `defer stopAccessing`.
-- `DocumentIdentifierBuilder.makeIdentifier` blocks duplicates and enforces the 100 MB limit; update phase weights if you add ingestion stages.
-- After deletes or resets, call the view-model helpers that wrap `pineconeService.deleteVectors` and then refresh stats so namespace counts stay current.
+- `DocumentsViewModel` handles copy → extraction → chunking → embedding → Pinecone upsert; extend these stages through its helpers so `documentProgress`, `ProcessingStats`, and dashboard metrics stay accurate.
+- Always wrap file URLs in `startAccessingSecurityScopedResource()` / `defer stopAccessing` and persist through `persistDocumentCopy`; `DocumentIdentifierBuilder.makeIdentifier` enforces duplicate + 100 MB limits.
+- Chunk metadata lives in `TextProcessorService`; adjust phase weights if you insert new ingestion steps so the UI progress bar remains truthful.
+- Emit stage updates through `Logger.shared` so `ProcessingViewModel` and the Logs tab reflect user-visible progress.
 
 ## Search & conversation
 
-- `SearchViewModel.performSearch()` embeds the query, issues Pinecone top‑k (default via `UserDefaults` key `searchTopK`), then streams completions through `OpenAIService.streamCompletion`; always tear down `currentStreamTask` on tab change to avoid orphaned SSE streams.
-- Metadata filters round-trip through `SettingsMetadataPreset`; validate them with `PineconeMetadataFilter.parse` before hitting Pinecone.
-- `SettingsViewModel.conversationMode` toggles local transcripts versus server-managed `conversationId`; keep both modes functional during changes.
-- Keep retrieved chunk metadata aligned with UI cards (`SearchResultView`) so highlighted context stays trustworthy.
+- `SearchViewModel.performSearch()` embeds queries, calls Pinecone top‑k (`UserDefaults` key `searchTopK`), and streams completions via `OpenAIService.streamCompletion`; cancel `currentStreamTask` when leaving the tab to prevent orphaned SSE streams.
+- Metadata filters originate from `SettingsMetadataPreset`; always validate with `PineconeMetadataFilter.parse` before sending to Pinecone.
+- `PineconePreferenceResolver` records last index/namespace—call `refreshIndexInsights()` after ingest/delete so both Documents and Search stay in sync.
+- `SettingsViewModel.conversationMode` switches between local transcripts and server-managed `conversationId`; keep both flows working when modifying chat logic.
 
-## Services & infrastructure
+## Services & cross-cutting
 
-- `PineconeService` handles retries (`withRetries`), rate limiting, host caching, and a circuit breaker (`isCircuitOpen`); prefer these helpers over manual networking and call `setCurrentIndex` before namespace operations.
-- `OpenAIService` owns both embedding and streaming completion payloads; reuse its SSE parser so token counts and streaming UI stay consistent.
-- `FileProcessorService` performs MIME detection + OCR, `TextProcessorService` prepares chunk metadata, and `EmbeddingService` batches requests to match the index dimension—keep them aligned when swapping models.
-- Run background work inside `Task` blocks, hop to the main actor with `await MainActor.run {}` for UI changes, and log through `Logger.shared` instead of `print`.
+- `PineconeService` provides retries (`withRetries`), host caching, `setCurrentIndex`, and a circuit breaker (`isCircuitOpen`); favor these helpers over raw `URLSession`.
+- `OpenAIService` owns embedding + streaming payloads; reuse its SSE parser so streaming UI and token counts remain consistent.
+- `FileProcessorService` (MIME detection + OCR), `TextProcessorService` (chunking + tokens), and `EmbeddingService` (batched requests sized to the Pinecone index dimension) must stay aligned when swapping models.
+- Always log through `Logger.shared` instead of `print`; the Logs tab is the canonical debugger and feeds `ProcessingView`.
 
-## Settings, security & preferences
+## Settings, security & design system
 
-- `SettingsViewModel` persists keys via `SecureSettingsStore` and validates them with `CredentialValidator`; environment variables (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_PROJECT_ID`) seed the same flow.
-- `PineconePreferenceResolver` remembers the last index/namespace—record overrides with `recordLastIndex`/`recordLastNamespace`, and call `refreshIndexInsights()` after writes/deletes so both Documents and Search stay in sync.
-- Respect the security-consent banner (`needsSecurityConsent` / `acknowledgeSecurityConsent`) and expose reset paths through Settings when touching stored secrets.
-- `Configuration` surfaces scheme-provided secrets; release builds fatal-error if those values are non-empty, so clear overrides before archive automation.
-
-## UI & design system
-
-- Lean on `Core/DesignSystem` components (`OCButton`, `OCCard`, `OCBadge`, typography modifiers) and theme access via `@Environment(\.theme)`; `ThemeManager.shared` drives live updates.
-- Keep new views SwiftUI-friendly with `ObservableObject` view models and structured logs so the Logs tab reflects user actions; `ProcessingView` reads from `ProcessingViewModel` and expects log metadata to be populated.
-- Follow existing navigation patterns (NavigationView + toolbar buttons) instead of introducing custom shells, and layer in `Preview Content/PreviewData.swift` when adding SwiftUI previews for complex views.
+- Secrets persist via `SecureSettingsStore`, but you can seed them with environment variables (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_PROJECT_ID`) in the Xcode Run scheme; `CredentialValidator` handles debounced validation.
+- Respect the security-consent banner (`needsSecurityConsent` / `acknowledgeSecurityConsent`) whenever you touch bookmarks or stored files.
+- Release builds fatal-error if scheme-provided secrets leak (`Configuration` guard); clear overrides before archiving.
+- Use `Core/DesignSystem` components (`OCButton`, `OCCard`, `OCBadge`) and `@Environment(\.theme)` accessors; `ThemeManager.shared` is the single source of truth for light/dark palettes.
 
 ## Developer workflow & QA
 
-- Build/run via Xcode 16; provide API keys through the scheme or the Welcome flow, and always re-run onboarding after clearing secrets.
-- After ingesting/deleting content or mutating embeddings, call `refreshIndexInsights()` and verify namespace counts in Documents/Search dashboards.
-- Manual QA remains essential: ingest PDF + OCR image, validate duplicate guards, run a streaming search, toggle themes, and exercise metadata filters.
-- Maintain supporting assets with `scripts/generate_app_icons.sh`; capture marketing shots with `scripts/capture_screenshots.sh`, and lean on `scripts/preflight_check.sh` for release gating.
+- Build with Xcode 16+ targeting iOS 17 / macOS 14 Catalyst; onboarding requires valid OpenAI + Pinecone keys before exposing `MainView`.
+- After Pinecone writes/deletes, invoke the view-model helpers that call `pineconeService.deleteVectors` and `refreshIndexInsights()` to keep namespace counts correct.
+- Preferred diagnostics flow: ingest a PDF, run an OCR image, verify duplicate rejection, execute a streaming search, toggle themes, and inspect the Logs tab for each stage.
+- Asset + marketing upkeep lives in `scripts/generate_app_icons.sh` and `scripts/capture_screenshots.sh`; keep them in sync with product changes.
 
-## Testing & release
+## Testing & automation
 
-- Automated coverage currently lives in `OpenConeTests/SearchViewModelMetadataPersistenceTests`; add cases there when touching presets or defaults.
-- Run `scripts/preflight_check.sh` before shipping—it invokes `secret_scan.py`, validates privacy copy, and executes `xcodebuild test` (override simulator with `OPEN_CONE_TEST_DESTINATION`).
-- Release builds fatal-error if keys ship bundled (`Configuration` guard in `OpenConeApp`); clear scheme overrides before archiving or automation deploys.
+- Automated coverage currently lives in `OpenConeTests/SearchViewModelMetadataPersistenceTests`; extend this target when touching settings or metadata persistence.
+- Run `scripts/preflight_check.sh` before PRs/releases—it runs `secret_scan.py`, checks Info.plist usage strings, verifies privacy docs contain “Last updated”, and executes `xcodebuild test -scheme OpenCone` (override via `OPEN_CONE_TEST_DESTINATION`, skip with `SKIP_TESTS=1`).
+- CI/release builds will fail fast if keys ship bundled or if preflight fails; mirror that behavior locally to avoid surprises.

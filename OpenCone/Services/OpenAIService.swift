@@ -323,12 +323,12 @@ class OpenAIService {
                 if line.hasPrefix("event:") {
                     currentEvent = line.replacingOccurrences(of: "event:", with: "").trimmingCharacters(in: .whitespaces)
                     eventCount += 1
-                    if eventCount <= 10 {
+                    if eventCount <= 15 || currentEvent?.contains("reasoning") == true || currentEvent?.contains("text") == true {
                         logger.log(level: .info, message: "SSE event: \(currentEvent ?? "nil")")
                     }
                 } else if line.hasPrefix("data:") {
                     let payload = line.replacingOccurrences(of: "data:", with: "").trimmingCharacters(in: .whitespaces)
-                    if eventCount <= 10 {
+                    if eventCount <= 15 || currentEvent?.contains("reasoning") == true || currentEvent?.contains("text") == true {
                         logger.log(level: .info, message: "SSE data for event '\(currentEvent ?? "nil")': \(payload.prefix(200))")
                     }
                     // Handle completion (also try to capture conversation id from payload)

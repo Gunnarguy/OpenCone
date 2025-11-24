@@ -30,6 +30,7 @@ class PineconeService {
     private let region: String
     private var indexHostCache: [String: (host: String, ts: Date)] = [:]
     private let hostCacheTTL: TimeInterval = 300 // 5 minutes
+    private let cacheQueue = DispatchQueue(label: "com.opencone.pinecone.cache")
     
     // Network session management
     private let session: URLSession
@@ -161,9 +162,16 @@ class PineconeService {
     /// - Returns: Host URL
     private func getIndexHost(for indexName: String) async throws {
         // Serve from cache if fresh
-        if let cached = indexHostCache[indexName], Date().timeIntervalSince(cached.ts) < hostCacheTTL {
-            self.indexHost = cached.host
-            logger.log(level: .info, message: "Using cached host for index '\(indexName)': \(cached.host)")
+        let cachedHost = cacheQueue.sync { () -> String? in
+            if let cached = indexHostCache[indexName], Date().timeIntervalSince(cached.ts) < hostCacheTTL {
+                return cached.host
+            }
+            return nil
+        }
+        
+        if let host = cachedHost {
+            self.indexHost = host
+            logger.log(level: .info, message: "Using cached host for index '\(indexName)': \(host)")
             return
         }
 
@@ -204,8 +212,10 @@ class PineconeService {
                 
                 let indexInfo = try JSONDecoder().decode(IndexDescribeResponse.self, from: data)
                 self.indexHost = indexInfo.host
-                // Cache the host with timestamp
-                indexHostCache[indexName] = (host: indexInfo.host, ts: Date())
+                // Cache the host with timestamp (thread-safe)
+                cacheQueue.sync {
+                    indexHostCache[indexName] = (host: indexInfo.host, ts: Date())
+                }
                 logger.log(level: .info, message: "Index host set to: \(indexInfo.host)")
             } catch {
                 // Log the error and rethrow for retry mechanism to handle

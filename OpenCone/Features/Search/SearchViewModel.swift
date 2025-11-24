@@ -199,7 +199,7 @@ class SearchViewModel: ObservableObject {
             (0.0, "Low Relevance"),
         ]
 
-        static let watchdogDelayNanoseconds: UInt64 = 12_000_000_000
+        static let watchdogDelayNanoseconds: UInt64 = 30_000_000_000
     }
 
     // MARK: - Dependencies

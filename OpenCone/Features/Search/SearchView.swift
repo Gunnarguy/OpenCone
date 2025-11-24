@@ -9,98 +9,413 @@ struct SearchView: View {
     @ObservedObject var viewModel: SearchViewModel  // The view model managing search state and logic
     @Environment(\.theme) private var theme  // Access the current theme
     var onRequestDocumentsTab: (() -> Void)? = nil  // Callback to jump to the Documents tab
+    @State private var activeDetailSegment: ConversationDetailSegment = .conversation
+    @State private var showMetadataSheet = false
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Show empty state if no indexes exist
+        Group {
             if viewModel.pineconeIndexes.isEmpty {
-                NoIndexEmptyState(onShowDocuments: onRequestDocumentsTab ?? {})
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 24)
-            } else {
-                // Configuration section (index/namespace)
-                QuickSwitcherView(viewModel: viewModel)
-            }
-
-            // Metadata filter controls
-            MetadataFilterEditor(viewModel: viewModel)
-
-            // Thread controls
-            HStack {
-                Spacer()
-                OCButton(
-                    title: "New Topic",
-                    icon: "bubble.left.and.bubble.right",
-                    style: .outline,
-                    action: { viewModel.newTopic() }
-                )
-                .disabled(viewModel.isSearching)
-            }
-            .padding(.horizontal, 16)
-
-            // Chat messages list
-            ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        if viewModel.messages.isEmpty && !viewModel.isSearching {
-                            InitialStateView()
-                                .padding(.top, 16)
-                        } else {
-                            ForEach(viewModel.messages) { message in
-                                ChatBubble(
-                                    message: message,
-                                    onCitationTap: { source in
-                                        viewModel.focusResult(for: source)
-                                    }
-                                )
-                                    .id(message.id)
+                    NoIndexEmptyState(onShowDocuments: onRequestDocumentsTab ?? {})
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 24)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            QuickSwitcherView(viewModel: viewModel)
+
+                            if !viewModel.metadataFilters.isEmpty || viewModel.selectedResults.count > 0 {
+                                CompactContextBar(viewModel: viewModel)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.top, 8)
+
+                            ConversationSurface(
+                                viewModel: viewModel,
+                                activeSegment: $activeDetailSegment
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.top, 12)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                    }
+
+                    HStack(spacing: 12) {
+                        if !viewModel.metadataFilters.isEmpty || viewModel.messages.isEmpty {
+                            Button {
+                                showMetadataSheet = true
+                            } label: {
+                                Image(systemName: viewModel.metadataFilters.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(viewModel.metadataFilters.isEmpty ? theme.textSecondaryColor : theme.primaryColor)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+
+                        ChatInputBar(
+                            text: Binding(
+                                get: { viewModel.searchQuery },
+                                set: { viewModel.searchQuery = $0 }
+                            ),
+                            isSending: viewModel.isSearching,
+                            onSend: {
+                                Task { await viewModel.performSearch() }
+                            },
+                            onStop: {
+                                viewModel.cancelActiveSearch()
+                            }
+                        )
+                        .disabled(viewModel.selectedIndex == nil)
+
+                        if viewModel.messages.count > 1 {
+                            Button {
+                                viewModel.newTopic()
+                            } label: {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(theme.primaryColor)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(viewModel.isSearching)
                         }
                     }
-                }
-                .onChange(of: viewModel.messages.count) { _, _ in
-                    if let lastId = viewModel.messages.last?.id {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(theme.cardBackgroundColor)
                 }
             }
-
-            // Sources panel - show when we have search results
-            if !viewModel.searchResults.isEmpty {
-                SourcesTabView(viewModel: viewModel)
-                    .frame(maxHeight: 280)
-                    .transition(.opacity)
-            }
-
-            // Input bar
-            ChatInputBar(
-                text: Binding(
-                    get: { viewModel.searchQuery },
-                    set: { viewModel.searchQuery = $0 }
-                ),
-                isSending: viewModel.isSearching,
-                onSend: {
-                    Task { await viewModel.performSearch() }
-                },
-                onStop: {
-                    viewModel.cancelActiveSearch()
-                }
-            )
-            .disabled(viewModel.selectedIndex == nil)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
         }
         .background(theme.backgroundColor.ignoresSafeArea())
+        .sheet(isPresented: $showMetadataSheet) {
+            MetadataFilterSheet(viewModel: viewModel)
+        }
         .overlay(alignment: .top) {
             if let error = viewModel.errorMessage, !error.isEmpty {
                 ErrorBanner(message: error)
                     .padding(.top, 8)
             }
         }
+    }
+}
+
+// MARK: - Compact Context Bar
+
+struct CompactContextBar: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
+                    HStack(spacing: 4) {
+                        Text(field)
+                            .font(.caption2.bold())
+                        Text(filter.displayValue)
+                            .font(.caption2)
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(
+                        Capsule()
+                            .fill(theme.primaryLight)
+                    )
+                    .foregroundColor(theme.primaryColor)
+                }
+
+                if viewModel.selectedResults.count > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 10))
+                        Text("\(viewModel.selectedResults.count) selected")
+                            .font(.caption2.bold())
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(
+                        Capsule()
+                            .fill(theme.primaryLight)
+                    )
+                    .foregroundColor(theme.primaryColor)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+}
+
+// MARK: - Search Surface Components
+
+enum ConversationDetailSegment: String, CaseIterable, Identifiable {
+    case conversation = "Chat"
+    case sources = "Sources"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .conversation: return "ellipsis.bubble"
+        case .sources: return "doc.on.doc"
+        }
+    }
+}
+
+struct SearchUtilityBar: View {
+    @ObservedObject var viewModel: SearchViewModel
+    var onRequestDocumentsTab: (() -> Void)?
+    @Environment(\.theme) private var theme
+
+    private var contextTitle: String {
+        if let index = viewModel.selectedIndex {
+            let namespace = viewModel.selectedNamespace ?? "Default"
+            return "Using \(index)"
+                + (namespace.isEmpty ? "" : " • \(namespace)")
+        }
+        return "Select an index to start"
+    }
+
+    private var contextSubtitle: String {
+        if viewModel.isSearching {
+            return "Streaming answer from Pinecone"
+        } else if viewModel.messages.isEmpty {
+            return "Ask anything about your ingested documents"
+        } else {
+            return "Tap sources below to narrow context"
+        }
+    }
+
+    var body: some View {
+        OCCard(padding: 16, cornerRadius: 18) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(contextTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(theme.textPrimaryColor)
+
+                    Text(contextSubtitle)
+                        .font(.footnote)
+                        .foregroundColor(theme.textSecondaryColor)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 12)
+
+                if let docsAction = onRequestDocumentsTab {
+                    IconAccessoryButton(
+                        systemIcon: "rectangle.stack.badge.plus",
+                        tint: theme.primaryColor,
+                        action: docsAction
+                    )
+                    .accessibilityLabel("Manage documents")
+                }
+
+                OCButton(
+                    title: "New Topic",
+                    icon: "sparkles",
+                    style: .outline,
+                    size: .small,
+                    fullWidth: false,
+                    action: viewModel.newTopic
+                )
+                .disabled(viewModel.isSearching)
+            }
+        }
+    }
+}
+
+struct ConversationSurface: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Binding var activeSegment: ConversationDetailSegment
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        OCCard(padding: 0, cornerRadius: 22) {
+            VStack(spacing: 0) {
+                ConversationSegmentControl(
+                    activeSegment: $activeSegment,
+                    sourcesDisabled: viewModel.searchResults.isEmpty
+                )
+                .padding(12)
+
+                Divider()
+                    .background(theme.cardBackgroundColor)
+
+                Group {
+                    switch activeSegment {
+                    case .conversation:
+                        ChatTimelineView(viewModel: viewModel)
+                    case .sources:
+                        SourcesSurfaceView(viewModel: viewModel)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(theme.backgroundColor)
+            }
+        }
+        .onChange(of: viewModel.searchResults.count) { _, newValue in
+            if newValue == 0 && activeSegment == .sources {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    activeSegment = .conversation
+                }
+            }
+        }
+    }
+}
+
+private struct ConversationSegmentControl: View {
+    @Binding var activeSegment: ConversationDetailSegment
+    let sourcesDisabled: Bool
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(ConversationDetailSegment.allCases) { segment in
+                let isDisabled = segment == .sources && sourcesDisabled
+                Button {
+                    guard !isDisabled else { return }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        activeSegment = segment
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: segment.icon)
+                        Text(segment.rawValue)
+                            .fontWeight(.semibold)
+                    }
+                    .font(.footnote)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(activeSegment == segment ? theme.primaryLight : theme.cardBackgroundColor)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(activeSegment == segment ? theme.primaryColor : theme.cardBackgroundColor, lineWidth: 1)
+                    )
+                    .foregroundColor(
+                        isDisabled ? theme.textSecondaryColor.opacity(0.6)
+                            : (activeSegment == segment ? theme.primaryColor : theme.textSecondaryColor)
+                    )
+                    .opacity(isDisabled ? 0.5 : 1)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(isDisabled)
+            }
+        }
+    }
+}
+
+struct ChatTimelineView: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if viewModel.messages.isEmpty {
+                        if viewModel.isSearching {
+                            SearchLoadingView()
+                                .padding(.vertical, 32)
+                        } else {
+                            InitialStateView()
+                                .padding(.vertical, 24)
+                        }
+                    } else {
+                        ForEach(viewModel.messages) { message in
+                            ChatBubble(
+                                message: message,
+                                onCitationTap: { source in
+                                    viewModel.focusResult(for: source)
+                                }
+                            )
+                            .id(message.id)
+                        }
+                        .padding(.horizontal, 8)
+
+                        if viewModel.isSearching {
+                            TypingIndicatorView()
+                                .padding(.horizontal, 8)
+                        }
+                    }
+                }
+                .padding(.vertical, 18)
+            }
+            .background(Color.clear)
+            .onChange(of: viewModel.messages.count) { _, _ in
+                if let lastId = viewModel.messages.last?.id {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(lastId, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SourcesSurfaceView: View {
+    @ObservedObject var viewModel: SearchViewModel
+
+    var body: some View {
+        if viewModel.searchResults.isEmpty {
+            if viewModel.isSearching {
+                SearchLoadingView()
+                    .padding(.vertical, 24)
+            } else {
+                NoResultsView()
+                    .padding(.vertical, 24)
+            }
+        } else {
+            SourcesTabView(viewModel: viewModel)
+                .padding(.top, 8)
+        }
+    }
+}
+
+private struct IconAccessoryButton: View {
+    let systemIcon: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemIcon)
+                .font(.system(size: 16, weight: .semibold))
+                .padding(10)
+                .background(
+                    Circle()
+                        .fill(tint.opacity(0.15))
+                )
+                .foregroundColor(tint)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+struct TypingIndicatorView: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .tint(theme.primaryColor)
+
+            Text("Generating follow-up…")
+                .font(.caption)
+                .foregroundColor(theme.textSecondaryColor)
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.cardBackgroundColor)
+        )
     }
 }
 
@@ -664,7 +979,7 @@ struct SourcesTabView: View {
                 }
             }
         }
-        .background(theme.backgroundColor)
+        .background(Color.clear)
         .onAppear {
             // Extract unique source types for filters
             let extensions = Set(
@@ -938,110 +1253,337 @@ struct ResultContentView: View {
     }
 }
 
+// MARK: - Metadata Filter Sheet
+
+struct MetadataFilterSheet: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                if let warning = viewModel.filterParseError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(theme.errorColor)
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundColor(theme.errorColor)
+                    }
+                    .padding(12)
+                    .background(theme.errorLight)
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+
+                Form {
+                    Section {
+                        TextField("Field name", text: $viewModel.newFilterField)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onChange(of: viewModel.newFilterField) { _, _ in
+                                viewModel.clearFilterError()
+                            }
+
+                        TextField("Value", text: $viewModel.newFilterValue)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onChange(of: viewModel.newFilterValue) { _, _ in
+                                viewModel.clearFilterError()
+                            }
+
+                        Button("Add Filter") {
+                            viewModel.commitNewMetadataFilter()
+                        }
+                        .disabled(!formIsValid)
+                    } header: {
+                        Text("New Filter")
+                    } footer: {
+                        Text("Filters accept exact matches, arrays, or comparison operators (e.g. >=2023).")
+                    }
+
+                    if !viewModel.metadataFilters.isEmpty {
+                        Section("Active Filters") {
+                            ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(field)
+                                            .font(.subheadline.weight(.medium))
+                                        Text(filter.displayValue)
+                                            .font(.caption)
+                                            .foregroundColor(theme.textSecondaryColor)
+                                    }
+                                    Spacer()
+                                    Button {
+                                        viewModel.removeMetadataFilter(field: field)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundColor(theme.errorColor)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Metadata Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !viewModel.metadataFilters.isEmpty {
+                        Button("Clear All") {
+                            viewModel.clearMetadataFilters()
+                        }
+                        .foregroundColor(theme.errorColor)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .bold()
+                }
+            }
+        }
+    }
+
+    private var formIsValid: Bool {
+        !viewModel.newFilterField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !viewModel.newFilterValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 // MARK: - Metadata Filter Editor
 
 struct MetadataFilterEditor: View {
     @ObservedObject var viewModel: SearchViewModel
     @Environment(\.theme) private var theme
+    @State private var isExpanded = false
+    @State private var didInitialize = false
 
     var body: some View {
-        OCCard(padding: 14, cornerRadius: 14) {
+        OCCard(padding: 16, cornerRadius: 18) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Metadata Filters")
-                        .font(.headline)
-                        .foregroundColor(theme.textPrimaryColor)
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Metadata Filters")
+                            .font(.headline)
+                            .foregroundColor(theme.textPrimaryColor)
+
+                        Text(summaryText)
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
 
                     Spacer()
 
                     if !viewModel.metadataFilters.isEmpty {
-                        Button(action: viewModel.clearMetadataFilters) {
-                            Text("Clear All")
-                                .font(.caption.bold())
-                                .foregroundColor(theme.primaryColor)
-                        }
-                        .buttonStyle(PlainButtonStyle())
+                        Button("Clear", action: viewModel.clearMetadataFilters)
+                            .font(.caption.bold())
+                            .foregroundColor(theme.primaryColor)
+                            .buttonStyle(PlainButtonStyle())
                     }
-                }
 
-                if let warning = viewModel.filterParseError {
-                    Text(warning)
-                        .font(.caption)
-                        .foregroundColor(theme.errorColor)
-                }
-
-                HStack(spacing: 8) {
-                    TextField("Field (e.g. doc_id)", text: $viewModel.newFilterField)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: viewModel.newFilterField) { _, _ in
-                            viewModel.clearFilterError()
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isExpanded.toggle()
                         }
-
-                    TextField("Value or rule (e.g. [policy], >=2024)", text: $viewModel.newFilterValue)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onSubmit { viewModel.commitNewMetadataFilter() }
-                        .onChange(of: viewModel.newFilterValue) { _, _ in
-                            viewModel.clearFilterError()
-                        }
-
-                    OCButton(
-                        title: "Add",
-                        icon: "line.3.horizontal.decrease.circle",
-                        style: .primary,
-                        size: .small,
-                        fullWidth: false,
-                        action: viewModel.commitNewMetadataFilter
-                    )
-                    .disabled(
-                        viewModel.newFilterField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                        viewModel.newFilterValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    )
-                }
-
-                if viewModel.metadataFilters.isEmpty {
-                    Text("No filters applied. Add a field and value to narrow results.")
-                        .font(.caption)
-                        .foregroundColor(theme.textSecondaryColor)
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(field)
-                                    .font(.subheadline.bold())
-                                    .foregroundColor(theme.textPrimaryColor)
-
-                                Text(filter.displayValue)
-                                    .font(.subheadline)
-                                    .foregroundColor(theme.textSecondaryColor)
-                                    .lineLimit(1)
-
-                                Spacer()
-
-                                Button {
-                                    viewModel.removeMetadataFilter(field: field)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(theme.textSecondaryColor)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .accessibilityLabel("Remove filter \(field)")
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity)
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(8)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .fill(theme.cardBackgroundColor.opacity(0.7))
+                                    .fill(theme.cardBackgroundColor)
                             )
-                        }
+                            .foregroundColor(theme.textSecondaryColor)
                     }
+                    .buttonStyle(PlainButtonStyle())
+                }
+
+                if isExpanded {
+                    if let warning = viewModel.filterParseError {
+                        Text(warning)
+                            .font(.caption)
+                            .foregroundColor(theme.errorColor)
+                    }
+
+                    VStack(spacing: 10) {
+                        filterInputField(
+                            title: "Field (e.g. doc_id)",
+                            text: $viewModel.newFilterField
+                        )
+
+                        filterInputField(
+                            title: "Value or rule (e.g. [policy], >=2024)",
+                            text: $viewModel.newFilterValue,
+                            submit: viewModel.commitNewMetadataFilter
+                        )
+
+                        OCButton(
+                            title: "Add Filter",
+                            icon: "line.3.horizontal.decrease.circle",
+                            style: .primary,
+                            action: viewModel.commitNewMetadataFilter
+                        )
+                        .disabled(!formIsValid)
+                    }
+
+                    if viewModel.metadataFilters.isEmpty {
+                        Text("Add filters to narrow the context window. Filters accept exact matches, arrays, or comparison operators (e.g. >=2023).")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                            .padding(.top, 4)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
+                                MetadataFilterRow(
+                                    field: field,
+                                    value: filter.displayValue,
+                                    onRemove: { viewModel.removeMetadataFilter(field: field) }
+                                )
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                } else {
+                    filterChipsSummary
+                        .transition(.opacity)
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .onAppear {
+            guard !didInitialize else { return }
+            isExpanded = viewModel.metadataFilters.isEmpty
+            didInitialize = true
+        }
+        .onChange(of: viewModel.metadataFilters.count) { _, newCount in
+            if newCount == 0 {
+                withAnimation { isExpanded = true }
+            }
+        }
+    }
+
+    private var summaryText: String {
+        if viewModel.metadataFilters.isEmpty {
+            return "No filters applied"
+        }
+        return "\(viewModel.metadataFilters.count) active filters"
+    }
+
+    private var formIsValid: Bool {
+        !viewModel.newFilterField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !viewModel.newFilterValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder
+    private var filterChipsSummary: some View {
+        if viewModel.metadataFilters.isEmpty {
+            Text("Tap to add metadata gates before sending a query.")
+                .font(.caption)
+                .foregroundColor(theme.textSecondaryColor)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.sortedMetadataFilters, id: \.0) { field, filter in
+                        MetadataFilterChip(
+                            field: field,
+                            value: filter.displayValue,
+                            onRemove: { viewModel.removeMetadataFilter(field: field) }
+                        )
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private func filterInputField(
+        title: String,
+        text: Binding<String>,
+        submit: (() -> Void)? = nil
+    ) -> some View {
+        TextField(title, text: text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onSubmit { submit?() }
+            .onChange(of: text.wrappedValue) { _, _ in
+                viewModel.clearFilterError()
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(theme.cardBackgroundColor.opacity(0.8))
+            )
+    }
+}
+
+private struct MetadataFilterRow: View {
+    let field: String
+    let value: String
+    let onRemove: () -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(field)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(theme.textPrimaryColor)
+
+                Text(value)
+                    .font(.footnote)
+                    .foregroundColor(theme.textSecondaryColor)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("Remove filter \(field)")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.cardBackgroundColor.opacity(0.7))
+        )
+    }
+}
+
+private struct MetadataFilterChip: View {
+    let field: String
+    let value: String
+    let onRemove: () -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(field)
+                .font(.caption.bold())
+            Text(value)
+                .font(.caption)
+                .lineLimit(1)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(
+            Capsule()
+                .fill(theme.cardBackgroundColor)
+        )
+        .foregroundColor(theme.primaryColor)
     }
 }
 
@@ -1084,7 +1626,6 @@ struct QuickSwitcherView: View {
                 .buttonStyle(PlainButtonStyle())
                 .disabled(viewModel.isSearching)
             }
-            .padding(.horizontal, 16)
 
             // Namespace chips for small sets
             if !viewModel.namespaces.isEmpty && viewModel.namespaces.count <= 6 {
@@ -1110,7 +1651,7 @@ struct QuickSwitcherView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
                 }
             }
         }
