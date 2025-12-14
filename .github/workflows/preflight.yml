@@ -18,13 +18,14 @@ jobs:
   preflight:
     runs-on: macos-15
     env:
-      OPEN_CONE_TEST_DESTINATION: "platform=iOS Simulator,name=iPhone 16"
+      # Use iOS 26 simulator with Xcode 26
+      OPEN_CONE_TEST_DESTINATION: "platform=iOS Simulator,name=iPhone 16,OS=26.1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.1.1.app/Contents/Developer
 
       - name: Show Xcode version
         run: xcodebuild -version
