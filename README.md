@@ -172,12 +172,26 @@ OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
 
 ## Privacy & Compliance
 
-- **Canonical docs** - `PRIVACY.md` explains on-device vs cloud processing; `AppReviewNotes.md` provides the reviewer walkthrough and credential hints.
-- **Secret handling** - `SECURITY.md` outlines Keychain storage, the Release fatal guard, and the `preflight_check.sh`/`secret_scan.py` workflow.
-- **Data & Privacy controls** - Settings now exposes a "Reset Stored Keys & Preferences" action that clears Keychain secrets, conversation history, and bookmark consent so testers can revoke access without deleting the app.
-- **Preflight script** - Run `scripts/preflight_check.sh` before TestFlight upload; it executes `secret_scan.py`, validates Info.plist usage descriptions, confirms privacy docs include a timestamp, and runs `xcodebuild test` on the default `platform=iOS Simulator,name=iPhone 17`. Override the simulator with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or skip tests temporarily with `SKIP_TESTS=1`.
-- **CI guardrail** - GitHub Actions workflow `.github/workflows/preflight.yml` runs the same preflight script on macOS runners (sets `OPEN_CONE_TEST_DESTINATION` to `iPhone 15`). Keep the script fast and deterministic so PRs stay green.
-- **Consent copy** - The Documents tab surfaces a security-scoped bookmark banner until acknowledged; the same language links back to `PRIVACY.md` from Settings for quick reference.
+- **Canonical docs** — [PRIVACY.md](PRIVACY.md) explains on-device vs cloud processing; [APP_STORE.md](APP_STORE.md) provides App Store copy and reviewer walkthrough.
+- **Secret handling** — [SECURITY.md](SECURITY.md) outlines Keychain storage, the Release fatal guard, and the `preflight_check.sh`/`secret_scan.py` workflow.
+- **Data & Privacy controls** — Settings exposes a "Reset Stored Keys & Preferences" action that clears Keychain secrets, conversation history, and bookmark consent.
+- **Preflight script** — Run `scripts/preflight_check.sh` before TestFlight upload; it executes `secret_scan.py`, validates Info.plist usage descriptions, confirms privacy docs include a timestamp, and runs `xcodebuild test`. Override the simulator with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or skip tests with `SKIP_TESTS=1`.
+- **CI guardrail** — GitHub Actions workflow `.github/workflows/preflight.yml` runs the same preflight script on macOS runners.
+
+---
+
+## Documentation
+
+| Document                                                     | Purpose                                     |
+| ------------------------------------------------------------ | ------------------------------------------- |
+| [README.md](README.md)                                       | Project overview, setup, and usage          |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                           | Technical architecture and data flows       |
+| [ROADMAP.md](ROADMAP.md)                                     | Feature status and future plans             |
+| [PRIVACY.md](PRIVACY.md)                                     | Privacy policy and data handling            |
+| [SECURITY.md](SECURITY.md)                                   | Secret management and compliance            |
+| [APP_STORE.md](APP_STORE.md)                                 | App Store copy, reviewer notes, screenshots |
+| [docs/CASE_STUDY.md](docs/CASE_STUDY.md)                     | Marketing case study                        |
+| [docs/reference/PineconeDocs/](docs/reference/PineconeDocs/) | Pinecone API reference (external)           |
 
 ---
 
@@ -208,16 +222,16 @@ OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
 
 ## Configuration
 
-| Setting | Where to change | Notes |
-| --- | --- | --- |
-| OpenAI API Key | Settings tab or environment variable | Stored securely via `SecureSettingsStore`. Validation uses `CredentialValidator` with debounced checks. |
-| Pinecone API Key / Project ID | Settings tab or environment variable | Keys must start with `pcsk_`; region/cloud defaults pulled from secure store. |
-| Embedding model | Settings > Models | Defaults to `text-embedding-3-large` with dimension 3072. Keep in sync with Pinecone index dimensions. |
-| Completion model | Settings > Models | Includes GPT-5 reasoning flag. `Configuration.isReasoningModel` toggles extra parameters. |
-| Chunk size / overlap | Settings > Processing | Validate overlap < size; updates used by `TextProcessorService`. |
-| Default Top K | Settings > Search | Persists to `UserDefaults` key `searchTopK`; `SearchViewModel` reads it during queries. |
-| Metadata presets | Settings > Metadata Filters | Stored as JSON presets; parsed through `PineconeMetadataFilter`. Invalid entries are skipped with warnings. |
-| Appearance | Theme selector (Settings) | Theme changes propagate through `ThemeManager.shared`. |
+| Setting                       | Where to change                      | Notes                                                                                                       |
+| ----------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| OpenAI API Key                | Settings tab or environment variable | Stored securely via `SecureSettingsStore`. Validation uses `CredentialValidator` with debounced checks.     |
+| Pinecone API Key / Project ID | Settings tab or environment variable | Keys must start with `pcsk_`; region/cloud defaults pulled from secure store.                               |
+| Embedding model               | Settings > Models                    | Defaults to `text-embedding-3-large` with dimension 3072. Keep in sync with Pinecone index dimensions.      |
+| Completion model              | Settings > Models                    | Includes GPT-5 reasoning flag. `Configuration.isReasoningModel` toggles extra parameters.                   |
+| Chunk size / overlap          | Settings > Processing                | Validate overlap < size; updates used by `TextProcessorService`.                                            |
+| Default Top K                 | Settings > Search                    | Persists to `UserDefaults` key `searchTopK`; `SearchViewModel` reads it during queries.                     |
+| Metadata presets              | Settings > Metadata Filters          | Stored as JSON presets; parsed through `PineconeMetadataFilter`. Invalid entries are skipped with warnings. |
+| Appearance                    | Theme selector (Settings)            | Theme changes propagate through `ThemeManager.shared`.                                                      |
 
 Document processing accepts the MIME types defined in `Configuration.acceptedMimeTypes`. Unsupported files surface a user-facing warning through `Logger` + `errorMessage` binding.
 

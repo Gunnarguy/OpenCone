@@ -52,8 +52,7 @@ struct OCTheme {
     static let dark = OCTheme(
         id: "dark",
         name: "Dark",
-    // Use a deeper, high-contrast palette for a more "true dark" look
-    // that matches the OpenAssistant aesthetic.
+    // Deep, high-contrast palette for true dark mode
     primaryColor: Color(hex: "#3366FF"),
     secondaryColor: Color(hex: "#7E76FF"),
     backgroundColor: Color(hex: "#121A2B"), // deep desaturated blue/black

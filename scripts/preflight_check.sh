@@ -41,7 +41,7 @@ function require_phrase() {
 }
 
 require_phrase "${REPO_ROOT}/PRIVACY.md" "Last updated"
-require_phrase "${REPO_ROOT}/AppReviewNotes.md" "Last updated"
+require_phrase "${REPO_ROOT}/APP_STORE.md" "Last updated"
 
 # 4. Run unit tests unless explicitly skipped. Customize the destination via
 #    OPEN_CONE_TEST_DESTINATION if your simulator list differs.

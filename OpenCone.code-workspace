@@ -1,0 +1,21 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {},
+  "extensions": {
+    "recommendations": [
+      "swiftlang.swift-vscode",
+      "sweetpad.sweetpad",
+      "vadimcn.vscode-lldb",
+      "vknabel.vscode-swiftformat",
+      "github.copilot",
+      "github.copilot-chat",
+      "eamodio.gitlens",
+      "usernamehw.errorlens",
+      "gruntfuggly.todo-tree"
+    ]
+  }
+}

@@ -1,8 +1,113 @@
 {
-    "github.copilot.chat.agent.thinkingTool": true,
-    "chat.agent.enabled": true,
-    "github.copilot.chat.codesearch.enabled": true,
-    "github.copilot.nextEditSuggestions.enabled": true,
-    "github.copilot.chat.editor.temporalContext.enabled": true,
-    "github.copilot.chat.edits.temporalContext.enabled": true
+  // ════════════════════════════════════════════════════════════════════════════
+  // OpenCone - iOS Architect Profile Settings
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // COPILOT CONFIGURATION
+  // ─────────────────────────────────────────────────────────────────────────────
+  "github.copilot.chat.agent.thinkingTool": true,
+  "chat.agent.enabled": true,
+  "github.copilot.chat.codesearch.enabled": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "github.copilot.chat.editor.temporalContext.enabled": true,
+  "github.copilot.chat.edits.temporalContext.enabled": true,
+  "github.copilot.editor.enableAutoCompletions": true,
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // iOS & Swift Core
+  // ─────────────────────────────────────────────────────────────────────────────
+  "swift.swiftEnvironmentVariables": {},
+  "swift.SDK": "",
+  "sweetpad.build.xcodeWorkspacePath": "OpenCone.xcodeproj/project.xcworkspace",
+  "sweetpad.format.swiftFormatPath": "swift-format",
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Formatting & Linting
+  // ─────────────────────────────────────────────────────────────────────────────
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.swiftlint": "explicit"
+  },
+  "[swift]": {
+    "editor.defaultFormatter": "vknabel.vscode-swiftformat",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Error Lens - Inline error display
+  // ─────────────────────────────────────────────────────────────────────────────
+  "errorLens.fontStyleItalic": true,
+  "errorLens.gutterIconsEnabled": true,
+  "errorLens.messageMaxChars": 100,
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TODO Tree - Scan for debt markers
+  // ─────────────────────────────────────────────────────────────────────────────
+  "todo-tree.tree.showScanModeButton": false,
+  "todo-tree.general.tags": ["TODO", "FIXME", "BUG", "HACK", "XXX"],
+  "todo-tree.highlights.defaultHighlight": {
+    "icon": "alert",
+    "type": "text",
+    "foreground": "#FF8C00",
+    "background": "#FF8C0020"
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // File Exclusions - Keep Copilot context clean
+  // ─────────────────────────────────────────────────────────────────────────────
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/DerivedData": true,
+    "**/build": true,
+    "**/*.xcuserstate": true,
+    "**/xcuserdata": true
+  },
+  "search.exclude": {
+    "**/DerivedData": true,
+    "**/build": true,
+    "**/Vendor": true,
+    "**/*.xcuserstate": true
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // File Associations
+  // ─────────────────────────────────────────────────────────────────────────────
+  "files.associations": {
+    "*.entitlements": "xml",
+    "*.plist": "xml",
+    "*.storekit": "json"
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Git Integration
+  // ─────────────────────────────────────────────────────────────────────────────
+  "gitlens.codeLens.enabled": true,
+  "gitlens.currentLine.enabled": true,
+  "gitlens.hovers.currentLine.over": "line",
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Editor Defaults
+  // ─────────────────────────────────────────────────────────────────────────────
+  "editor.minimap.enabled": false,
+  "editor.renderWhitespace": "selection",
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Terminal
+  // ─────────────────────────────────────────────────────────────────────────────
+  "terminal.integrated.defaultProfile.osx": "zsh",
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Markdown
+  // ─────────────────────────────────────────────────────────────────────────────
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  }
 }

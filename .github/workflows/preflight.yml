@@ -4,9 +4,8 @@ on:
   pull_request:
     paths-ignore:
       - "README.md"
-      - "cline_docs/**"
-      - "AppReviewNotes.md"
-      - "PRIVACY.md"
+      - "docs/**"
+      - "Screenshots/**"
   push:
     branches:
       - main

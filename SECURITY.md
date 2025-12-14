@@ -19,7 +19,7 @@ OpenCone keeps sensitive credentials out of source control and Production builds
 Two scripts located in `scripts/` support pre-submission hygiene:
 
 - `secret_scan.py` – Recursively scans the repository for high-risk token patterns (`sk-`, `pcsk_`, bearer tokens). The script returns exit code 1 if any matches are found.
-- `preflight_check.sh` – Runs the secret scan, asserts required `Info.plist` privacy usage descriptions exist, ensures `PRIVACY.md` plus `AppReviewNotes.md` include a "Last updated" line, and executes `xcodebuild test` against the default `platform=iOS Simulator,name=iPhone 17`. Override the destination with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or set `SKIP_TESTS=1` if you must temporarily bypass tests (not recommended).
+- `preflight_check.sh` – Runs the secret scan, asserts required `Info.plist` privacy usage descriptions exist, ensures `PRIVACY.md` and `APP_STORE.md` include a "Last updated" line, and executes `xcodebuild test`. Override the destination with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or set `SKIP_TESTS=1` to bypass tests.
 
 ```bash
 scripts/preflight_check.sh

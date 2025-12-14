@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "Attach to OpenCone",
+      "program": "${workspaceFolder}/DerivedData/Build/Products/Debug-iphonesimulator/OpenCone.app",
+      "waitFor": true
+    },
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "Attach to Running Process",
+      "pid": "${command:pickProcess}"
+    }
+  ]
+}

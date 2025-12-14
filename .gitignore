@@ -1,17 +1,45 @@
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
 
-# Xcode
-*.xcworkspace/
+# Xcode user-specific data (keep project files, ignore personal state)
 xcuserdata/
-*.xcuserdatad/
 *.xcuserstate
 *.xccheckout
-*.xcodeproj/
-*.xcscheme
-*.xcdebugger/
-*.xcsettings
 *.xcscmblueprint
 DerivedData/
-# VSCode
-.vscode/
+*.moved-aside
+*.hmap
+*.ipa
+
+# Build artifacts
+build/
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Package.resolved
+Packages/
+
+# CocoaPods (if used)
+Pods/
+
+# Carthage (if used)
+Carthage/Build/
+Carthage/Checkouts/
+
+# Secrets (never commit)
+*.env
+.env.*
+secrets.json
+
+# IDE - VS Code (keep settings, ignore user state)
+.vscode/*.log
+.vscode/.ropeproject
+
+# Temporary files
+*.swp
+*.swo
+*~
