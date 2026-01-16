@@ -1,0 +1,26 @@
+Version 2.1 brings a refreshed chat experience with enhanced organization and usability.
+
+REFINED CHAT INTERFACE
+• Segmented chat/sources card keeps conversations organized
+• Contextual utility bar for active filters and selections
+• Compact metadata chips with sheet-driven filter editing
+• Inline typing indicators during answer generation
+• Modern empty, loading, and error treatments
+
+IMPROVED SEARCH RELIABILITY
+• Extended watchdog window (30s) prevents premature cancellations
+• Thread-safe Pinecone host caching stops concurrent mutations
+• Enhanced SSE logging for debugging streamed completions
+• Better diagnostics during long searches
+
+METADATA & FILTER MANAGEMENT
+• Compact context bar shows active filters at a glance
+• Improved chips, rows, and validation states
+• Clearer workflows for adding and editing filters
+
+UNDER THE HOOD
+• Pinecone host caching uses dedicated queue for thread safety
+• Reasoning/text events traced for streaming completions
+• All changes maintain backward compatibility with existing documents
+
+This update delivers richer chat ergonomics, clearer metadata workflows, and more resilient host caching when switching between Pinecone indexes.

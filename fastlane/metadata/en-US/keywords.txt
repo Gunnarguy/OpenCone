@@ -1,0 +1,1 @@
+RAG,AI assistant,OpenAI,Pinecone,document search,semantic search,knowledge base,OCR,vector search

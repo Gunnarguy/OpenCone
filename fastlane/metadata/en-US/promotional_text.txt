@@ -1,0 +1,1 @@
+Turn every file on your iPhone into a searchable, on-device RAG workspace with Pinecone-powered recall and streaming OpenAI answers.

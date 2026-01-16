@@ -1,0 +1,43 @@
+Transform your iPhone and iPad into a self-contained RAG powerhouse. Import PDFs, Word docs, code, images, and text into a secure sandbox—extraction, embedding, and semantic search happen with zero lock-in. Point the app at your OpenAI and Pinecone credentials for a private knowledge base that streams grounded, citation-backed answers in real time.
+
+COMPLETE DOCUMENT PIPELINE
+• Multi-format extraction: PDF, DOCX, TXT, HTML, Markdown, JSON, CSV, and code
+• Apple Vision OCR for on-device image text recognition
+• MIME-aware chunking with configurable size and overlap
+• Security-scoped bookmarks preserve file access across launches
+• Deduplication by path, size, and timestamp fingerprinting
+• Live progress tracking with structured logs for every phase
+
+SEMANTIC SEARCH WITH STREAMING
+• One-tap queries embed prompts and run similarity search against Pinecone
+• Server-Sent Events deliver incremental answer deltas—no blocking spinners
+• Citations reference exact chunks with document names and source metadata
+• Metadata filters scope searches to specific documents or custom tags
+• Conversation memory keeps recent turns in context for coherent follow-ups
+
+GPT-5 REASONING MODEL SUPPORT
+• Choose between standard models (GPT-4o, GPT-4o mini) or GPT-5
+• Dynamic controls: reasoning effort for GPT-5, temperature/top-p for others
+• Unified Responses API with conditional parameterization
+
+RESILIENCE & OBSERVABILITY
+• Pinecone health checks surface outages with dismissible banners
+• Circuit breaker prevents hammering unhealthy hosts
+• Watchdog timers catch stalled streams and trigger fallbacks
+• Per-search trace IDs and granular log levels make every stage inspectable
+• Error banners auto-dismiss after 8 seconds with user-friendly summaries
+
+SETTINGS & PRIVACY
+• Credentials in Keychain via SecureSettingsStore
+• Release guardrails prevent accidental key leaks
+• Model selection, chunk parameters, top-k defaults, metadata presets persist
+• Reset control wipes credentials and history without reinstalling
+• Guided onboarding validates API keys before unlocking main interface
+
+POLISHED SWIFTUI EXPERIENCE
+• Theme manager with alternate icons and dynamic color schemes
+• Reactive MVVM-S architecture decouples views from business logic
+• Async/await throughout keeps UI responsive during heavy operations
+• Design system components ensure consistency across all tabs
+
+Whether building surgical references, legal research corpora, or personal knowledge vaults, OpenCone delivers production-grade RAG without vendor dashboards or billing surprises.

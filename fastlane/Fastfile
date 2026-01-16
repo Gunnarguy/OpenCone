@@ -1,0 +1,111 @@
+# Fastfile for OpenCone
+# More documentation: https://docs.fastlane.tools
+
+default_platform(:ios)
+
+platform :ios do
+
+  desc "Build the app for App Store submission"
+  lane :build do
+    build_app(
+      scheme: "OpenCone",
+      export_method: "app-store",
+      export_options: {
+        provisioningProfiles: {
+          "AI.FascinAIting.OpenCone" => "OpenCone AppStore"
+        }
+      },
+      output_directory: "./build",
+      output_name: "OpenCone.ipa"
+    )
+  end
+
+  desc "Submit to App Store Connect for review"
+  lane :release do
+    # Build the app
+    build
+
+    # Upload to App Store Connect
+    upload_to_app_store(
+      skip_metadata: false,
+      skip_screenshots: true,  # Set to false when you have screenshots
+      submit_for_review: false,  # Set to true to auto-submit
+      automatic_release: false,
+      force: true  # Skip HTML preview
+    )
+  end
+
+  desc "Upload to TestFlight for beta testing"
+  lane :beta do
+    build_app(
+      scheme: "OpenCone",
+      export_method: "app-store"
+    )
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Upload App Store metadata without a binary"
+  lane :metadata do
+    api_key = nil
+    if ENV["APP_STORE_CONNECT_API_KEY_ID"] && ENV["APP_STORE_CONNECT_ISSUER_ID"] && ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+      api_key = app_store_connect_api_key(
+        key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
+        issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+        key_filepath: ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+      )
+    end
+
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      skip_screenshots: ENV["DELIVER_SCREENSHOTS"] != "1",
+      force: true,
+      metadata_path: "fastlane/metadata",
+      screenshots_path: "fastlane/screenshots",
+      run_precheck_before_submit: false,
+      precheck_include_in_app_purchases: false
+    )
+  end
+
+  desc "Increment build number"
+  lane :bump do
+    increment_build_number(xcodeproj: "OpenCone.xcodeproj")
+  end
+
+  desc "Validate app metadata and screenshots"
+  lane :validate do
+    deliver(
+      validate_only: true,
+      skip_screenshots: true,
+      skip_binary_upload: true
+    )
+  end
+
+  desc "Sync metadata from App Store Connect to local files"
+  lane :sync_metadata do
+    api_key = nil
+    if ENV["APP_STORE_CONNECT_API_KEY_ID"] && ENV["APP_STORE_CONNECT_ISSUER_ID"] && ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+      api_key = app_store_connect_api_key(
+        key_id: ENV["APP_STORE_CONNECT_API_KEY_ID"],
+        issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+        key_filepath: ENV["APP_STORE_CONNECT_API_KEY_PATH"]
+      )
+    end
+
+    deliver(
+      api_key: api_key,
+      app_identifier: "AI.FascinAIting.OpenCone",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      run_precheck_before_submit: false,
+      force: true
+    )
+
+    # Download metadata
+    sh("cd .. && fastlane deliver download_metadata --app_identifier AI.FascinAIting.OpenCone")
+  end
+
+end

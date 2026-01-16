@@ -1,6 +1,6 @@
 # App Store Submission Guide
 
-**Last updated:** 2025-12-13
+**Last updated:** 2026-01-16
 
 This document consolidates all App Store submission materials: copy, reviewer notes, and screenshot guidance.
 
@@ -8,21 +8,35 @@ This document consolidates all App Store submission materials: copy, reviewer no
 
 ## Table of Contents
 
-- [Promotional Text](#promotional-text)
-- [Description](#description)
-- [What's New](#whats-new)
-- [Keywords](#keywords)
-- [URLs](#urls)
-- [App Review Notes](#app-review-notes)
-- [Screenshot Capture Guide](#screenshot-capture-guide)
-- [Submission Checklist](#submission-checklist)
-- [Formatting Notes](#formatting-notes)
+- [App Store Submission Guide](#app-store-submission-guide)
+  - [Table of Contents](#table-of-contents)
+  - [Promotional Text](#promotional-text)
+  - [Description](#description)
+  - [What's New](#whats-new)
+  - [Keywords](#keywords)
+  - [URLs](#urls)
+  - [App Review Notes](#app-review-notes)
+    - [Test Credentials](#test-credentials)
+    - [Testing Walkthrough](#testing-walkthrough)
+    - [Privacy \& Data Flow](#privacy--data-flow)
+    - [Troubleshooting](#troubleshooting)
+  - [Screenshot Capture Guide](#screenshot-capture-guide)
+    - [Prerequisites](#prerequisites)
+    - [Capture Flow](#capture-flow)
+    - [Required Screenshots](#required-screenshots)
+    - [Post-Capture](#post-capture)
+  - [Submission Checklist](#submission-checklist)
+    - [Pre-Archive](#pre-archive)
+    - [Fastlane (Recommended)](#fastlane-recommended)
+    - [App Store Connect (Manual Alternative)](#app-store-connect-manual-alternative)
+    - [Post-Submit](#post-submit)
+  - [Formatting Notes](#formatting-notes)
 
 ---
 
 ## Promotional Text
 
-*170 characters max*
+_170 characters max_
 
 Turn every file on your iPhone into a searchable, on-device RAG workspace with Pinecone-powered recall and streaming OpenAI answers.
 
@@ -30,7 +44,7 @@ Turn every file on your iPhone into a searchable, on-device RAG workspace with P
 
 ## Description
 
-*4,000 characters max*
+_4,000 characters max_
 
 Transform your iPhone and iPad into a self-contained RAG powerhouse. Import PDFs, Word docs, code, images, and text into a secure sandbox—extraction, embedding, and semantic search happen with zero lock-in. Point the app at your OpenAI and Pinecone credentials for a private knowledge base that streams grounded, citation-backed answers in real time.
 
@@ -80,54 +94,40 @@ Whether building surgical references, legal research corpora, or personal knowle
 
 ## What's New
 
-*4,000 characters max — Version 2.0*
+_4,000 characters max — Version 2.1_
 
-Version 2.0 brings foundational improvements to answer generation, reliability, and user control.
+Version 2.1 brings a refreshed chat experience with enhanced organization and usability.
 
-OPENAI RESPONSES API & GPT-5
-• Migrated from Chat Completions to structured Responses API
-• Native GPT-5 reasoning model with dynamic effort controls
-• Existing models (GPT-4o, GPT-4o mini) continue with temperature/top-p
-• Settings UI conditionally renders correct parameters
-• Structured "input" field with system/user content arrays
+REFINED CHAT INTERFACE
+• Segmented chat/sources card keeps conversations organized
+• Contextual utility bar for active filters and selections
+• Compact metadata chips with sheet-driven filter editing
+• Inline typing indicators during answer generation
+• Modern empty, loading, and error treatments
 
-SERVER-SENT EVENTS STREAMING
-• Answers stream token-by-token instead of blocking
-• Typing indicator appears immediately while waiting
-• Stop button cancels mid-generation with clear feedback
-• Watchdog timer detects stalls and triggers fallback completion
+IMPROVED SEARCH RELIABILITY
+• Extended watchdog window (30s) prevents premature cancellations
+• Thread-safe Pinecone host caching stops concurrent mutations
+• Enhanced SSE logging for debugging streamed completions
+• Better diagnostics during long searches
 
-CONVERSATION MEMORY
-• Bounded client mode includes last ~8 messages for context
-• Server-managed threads use OpenAI conversation IDs
-• Toggle between modes in Settings for privacy preferences
-• Follow-ups understand prior exchanges without restating
+METADATA & FILTER MANAGEMENT
+• Compact context bar shows active filters at a glance
+• Improved chips, rows, and validation states
+• Clearer workflows for adding and editing filters
 
-RESILIENCE & CIRCUIT BREAKER
-• Pinecone health checks run before queries with short timeout
-• Circuit breaker prevents calls to unhealthy hosts
-• Per-search trace IDs tie logs to specific queries
-• Error banners auto-dismiss with user-friendly summaries
+UNDER THE HOOD
+• Pinecone host caching uses dedicated queue for thread safety
+• Reasoning/text events traced for streaming completions
+• All changes maintain backward compatibility with existing documents
 
-PRIVACY & RESET FLOWS
-• Settings > Data & Privacy exposes credential reset
-• Clears Keychain, conversation history, bookmark consent
-• Onboarding messaging clarifies missing keys
-• Preflight script blocks accidental credential leaks
-
-CITATION STABILITY & POLISH
-• Citations enumerate by offset—no duplicate ID warnings
-• Logs tab filters with color-coded levels
-• Index host transitions emit structured logs
-• Improved keyboard handling and haptic feedback
-
-Behind the scenes: upgraded to OpenAI Responses API, added conditional model parameterization, implemented SSE parsing with cancellation, and wired bounded conversation memory. All changes maintain backward compatibility with existing documents and Pinecone indexes.
+This update delivers richer chat ergonomics, clearer metadata workflows, and more resilient host caching when switching between Pinecone indexes.
 
 ---
 
 ## Keywords
 
-*100 characters max, comma-separated*
+_100 characters max, comma-separated_
 
 ```
 RAG,AI assistant,OpenAI,Pinecone,document search,semantic search,knowledge base,OCR,vector search
@@ -147,7 +147,7 @@ RAG,AI assistant,OpenAI,Pinecone,document search,semantic search,knowledge base,
 
 ## App Review Notes
 
-*Paste this into the "Notes for Review" field in App Store Connect*
+_Paste this into the "Notes for Review" field in App Store Connect_
 
 Dear App Review Team,
 
@@ -157,9 +157,9 @@ Thank you for reviewing OpenCone, a document-centric retrieval-augmented generat
 
 We provide reviewer-specific API keys with access to sample Pinecone namespaces and a locked-down OpenAI project:
 
-- **OpenAI API Key**: *Provided in App Store Connect reviewer notes*
-- **Pinecone API Key**: *Provided in App Store Connect reviewer notes*
-- **Pinecone Project ID**: *Provided in App Store Connect reviewer notes*
+- **OpenAI API Key**: _Provided in App Store Connect reviewer notes_
+- **Pinecone API Key**: _Provided in App Store Connect reviewer notes_
+- **Pinecone Project ID**: _Provided in App Store Connect reviewer notes_
 
 After launching the app you will be prompted to enter these values. No other configuration is required.
 
@@ -238,7 +238,22 @@ For each prompt, stage the UI in simulator, then press **Return** to capture.
 - [ ] Verify app icon (1024px) via `./scripts/generate_app_icons.sh`
 - [ ] Capture 4 screenshots at required resolutions
 
-### App Store Connect
+### Fastlane (Recommended)
+
+```bash
+# Upload metadata only (no binary)
+cd /path/to/OpenCone && fastlane metadata
+
+# Build and upload to TestFlight
+fastlane beta
+
+# Full release with metadata
+fastlane release
+```
+
+See [fastlane/README.md](fastlane/README.md) for setup and configuration.
+
+### App Store Connect (Manual Alternative)
 
 - [ ] Upload archive via Xcode Organizer
 - [ ] Fill promotional text (copy from above)
