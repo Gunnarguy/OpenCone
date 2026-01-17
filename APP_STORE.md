@@ -94,34 +94,33 @@ Whether building surgical references, legal research corpora, or personal knowle
 
 ## What's New
 
-_4,000 characters max — Version 2.1_
+_4,000 characters max — Version 2.4_
 
-Version 2.1 brings a refreshed chat experience with enhanced organization and usability.
+Version 2.4 brings GPT-5.2 support, smart prompts, and powerful data visualization.
 
-REFINED CHAT INTERFACE
-• Segmented chat/sources card keeps conversations organized
-• Contextual utility bar for active filters and selections
-• Compact metadata chips with sheet-driven filter editing
-• Inline typing indicators during answer generation
-• Modern empty, loading, and error treatments
+GPT-5.2 REASONING MODEL
+• Full GPT-5.2 support with 400K context and 128K output tokens
+• New reasoning effort levels: Off, Low, Med, High, and Max (xhigh)
+• Updated token limits for modern AI capabilities
 
-IMPROVED SEARCH RELIABILITY
-• Extended watchdog window (30s) prevents premature cancellations
-• Thread-safe Pinecone host caching stops concurrent mutations
-• Enhanced SSE logging for debugging streamed completions
-• Better diagnostics during long searches
+SMART EXAMPLE PROMPTS
+• Contextual prompts based on your selected index and namespace
+• Four categories: Discover, Analyze, Extract, Compare
+• Tap any suggestion to instantly search
+• Prompts adapt when Charts & Calculations is enabled
 
-METADATA & FILTER MANAGEMENT
-• Compact context bar shows active filters at a glance
-• Improved chips, rows, and validation states
-• Clearer workflows for adding and editing filters
+CHARTS & CALCULATIONS (Code Interpreter)
+• Visualize data from your documents as charts
+• Calculate totals, averages, and trends
+• Extract structured tables and export to CSV/JSON
+• Create timelines and comparison visualizations
 
-UNDER THE HOOD
-• Pinecone host caching uses dedicated queue for thread safety
-• Reasoning/text events traced for streaming completions
-• All changes maintain backward compatibility with existing documents
+PREVIOUS IN 2.3
+• Web Search for current information
+• Quick Settings panel with sliders and presets
+• Haptic feedback and custom system prompts
 
-This update delivers richer chat ergonomics, clearer metadata workflows, and more resilient host caching when switching between Pinecone indexes.
+Ask OpenCone to "chart quarterly revenue" or "compare pricing across vendors."
 
 ---
 
@@ -130,7 +129,7 @@ This update delivers richer chat ergonomics, clearer metadata workflows, and mor
 _100 characters max, comma-separated_
 
 ```
-RAG,AI assistant,OpenAI,Pinecone,document search,semantic search,knowledge base,OCR,vector search
+RAG,AI assistant,OpenAI,GPT-5,document search,semantic search,knowledge base,OCR,data visualization
 ```
 
 ---

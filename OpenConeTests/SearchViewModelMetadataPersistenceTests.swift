@@ -63,10 +63,12 @@ final class SearchViewModelMetadataPersistenceTests: XCTestCase {
         let openAIService = OpenAIService(apiKey: "test")
         let embeddingService = EmbeddingService(openAIService: openAIService)
         let pineconeService = PineconeService(apiKey: "test", projectId: "test")
+        let settingsVM = SettingsViewModel()
         let sut = SearchViewModel(
             pineconeService: pineconeService,
             openAIService: openAIService,
-            embeddingService: embeddingService
+            embeddingService: embeddingService,
+            settingsViewModel: settingsVM
         )
         return sut
     }

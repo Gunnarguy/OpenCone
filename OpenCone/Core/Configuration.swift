@@ -4,7 +4,7 @@ import Foundation
 /// Reads sensitive keys from environment variables for better security practices.
 struct Configuration {
     // MARK: - OpenAI Configuration
-    
+
     /// OpenAI API Key retrieved from environment variables.
     static let openAIAPIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
     /// The specific OpenAI model used for generating text embeddings.
@@ -13,9 +13,9 @@ struct Configuration {
     static let embeddingDimension = 3072
     /// The specific OpenAI model used for generating completions or answers.
     static let completionModel = "gpt-4o"
-    
+
     // MARK: - Pinecone Configuration
-    
+
     /// Pinecone API Key retrieved from environment variables.
     static let pineconeAPIKey = ProcessInfo.processInfo.environment["PINECONE_API_KEY"] ?? ""
     /// Pinecone Project ID retrieved from environment variables, required for authentication.
@@ -42,86 +42,86 @@ struct Configuration {
         let version = SecureSettingsStore.shared.getPineconeMetadataFetchVersion()
         return version.isEmpty ? "2025-10" : version
     }
-    
+
     // MARK: - Document Processing Settings
-    
+
     /// Default size (in characters or tokens, depending on implementation) for text chunks.
     static let defaultChunkSize = 1024
     /// Default overlap size between consecutive text chunks to maintain context.
     static let defaultChunkOverlap = 256
-    
+
     /// Maximum number of Pinecone indexes a user is allowed to create through the app.
     static let maxIndexes = 5
-    
+
     /// Set of MIME types accepted for document processing, including text, documents, web, data, code, and images (for OCR).
     static let acceptedMimeTypes: Set<String> = [
         // Document formats
         "application/pdf", "text/plain",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
         "application/msword", // .doc
-        
+
         // Web formats
         "text/html", "text/css",
-        
+
         // Data formats
         "text/markdown", "application/json", "application/xml",
         "text/csv", "text/tsv", "text/rtf", "application/rtf",
-        
+
         // Code formats
         "application/x-python", "text/x-python",
         "application/javascript", "text/javascript",
-        
+
         // Image formats (for OCR)
         "image/png", "image/jpeg", "image/gif", "image/tiff", "image/bmp"
     ]
-    
+
     /// Checks if a given MIME type is supported for processing.
     /// - Parameter mimeType: The MIME type string to check.
     /// - Returns: `true` if the MIME type is in the `acceptedMimeTypes` set, `false` otherwise.
     static func isMimeTypeSupported(_ mimeType: String) -> Bool {
         return acceptedMimeTypes.contains(mimeType)
     }
-    
+
     // MARK: - API Key Management (Placeholder/Demo)
     // Note: In a production application, API keys should be securely stored and retrieved
     // using the Keychain service, not stored directly in code or UserDefaults.
     // These functions are placeholders demonstrating where such logic would reside.
-    
+
     /// Retrieves the OpenAI API key. (Placeholder - Reads from static property).
     /// - Returns: The configured OpenAI API key.
     static func getOpenAIAPIKey() -> String {
         // Retrieve securely from Keychain-backed store
         return SecureSettingsStore.shared.getOpenAIKey()
     }
-    
+
     /// Retrieves the Pinecone API key. (Placeholder - Reads from static property).
     /// - Returns: The configured Pinecone API key.
     static func getPineconeAPIKey() -> String {
         // Retrieve securely from Keychain-backed store
         return SecureSettingsStore.shared.getPineconeAPIKey()
     }
-    
+
     /// Retrieves the Pinecone Project ID. (Placeholder - Reads from static property).
     /// - Returns: The configured Pinecone Project ID.
     static func getPineconeProjectId() -> String {
         // Retrieve securely from Keychain-backed store
         return SecureSettingsStore.shared.getPineconeProjectId()
     }
-    
+
     /// Saves the OpenAI API key. (Placeholder - Prints confirmation).
     /// - Parameter key: The OpenAI API key to save.
     static func saveOpenAIAPIKey(_ key: String) {
         // Production implementation: Save securely to Keychain.
         print("Placeholder: OpenAI API key saved (should use Keychain)")
     }
-    
+
     /// Saves the Pinecone API key. (Placeholder - Prints confirmation).
     /// - Parameter key: The Pinecone API key to save.
     static func savePineconeAPIKey(_ key: String) {
         // Production implementation: Save securely to Keychain.
         print("Placeholder: Pinecone API key saved (should use Keychain)")
     }
-    
+
     /// Saves the Pinecone Project ID. (Placeholder - Prints confirmation).
     /// - Parameter id: The Pinecone Project ID to save.
     static func savePineconeProjectId(_ id: String) {
@@ -143,11 +143,13 @@ struct Configuration {
 
     // MARK: - Model Capabilities
 
-    /// List of reasoning-capable models
-    static let reasoningModels: Set<String> = ["gpt-5"]
+    /// Prefixes for reasoning-capable models (gpt-5.x series, o-series)
+    static let reasoningModelPrefixes: [String] = ["gpt-5", "o3", "o1"]
 
     /// Returns true if the given model supports the Responses "reasoning" parameters
+    /// This includes the gpt-5.x series and o-series models
     static func isReasoningModel(_ model: String) -> Bool {
-        return reasoningModels.contains(model)
+        let lowercased = model.lowercased()
+        return reasoningModelPrefixes.contains { lowercased.hasPrefix($0.lowercased()) }
     }
 }

@@ -86,6 +86,7 @@ import SwiftUI
         // MARK: - Sample ViewModels
 
         /// Sample `SettingsViewModel` for previews.
+        @MainActor
         static var sampleSettingsViewModel: SettingsViewModel {
             let viewModel = SettingsViewModel()
             // Pre-populate with placeholder keys for visual representation
@@ -102,6 +103,7 @@ import SwiftUI
         }
 
         /// Sample `DocumentsViewModel` for previews.
+        @MainActor
         static var sampleDocumentsViewModel: DocumentsViewModel {
             // Note: Creating real services might be complex for previews.
             // Consider using mock services if needed for more interactive previews.
@@ -212,6 +214,7 @@ import SwiftUI
         ]
 
         /// Sample `SearchViewModel` for previews.
+        @MainActor
         static var sampleSearchViewModel: SearchViewModel {
             // Again, consider mocks for complex service interactions
             // Provide dummy API key and project ID
@@ -221,11 +224,13 @@ import SwiftUI
             let openAI = OpenAIService(apiKey: "dummy-openai-key")
             // Provide OpenAIService instance
             let embedding = EmbeddingService(openAIService: openAI)
+            let settings = SettingsViewModel()
 
             let viewModel = SearchViewModel(
                 pineconeService: pinecone,
                 openAIService: openAI,
-                embeddingService: embedding
+                embeddingService: embedding,
+                settingsViewModel: settings
             )
 
             // Populate with sample data

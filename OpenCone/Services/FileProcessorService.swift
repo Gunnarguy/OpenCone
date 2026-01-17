@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 import Vision
 
 /// Service for processing different file types and extracting text content
-class FileProcessorService {
+@MainActor
+final class FileProcessorService { 
 
     // MARK: - Properties
 
@@ -14,7 +15,7 @@ class FileProcessorService {
     private let documentsDirectory: URL
 
     /// Logger for tracking file operations
-    private let logger = Logger.shared
+    private var logger: Logger { Logger.shared }
 
     // MARK: - Initialization
 

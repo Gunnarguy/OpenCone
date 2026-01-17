@@ -38,7 +38,7 @@ struct MainView: View {
 
             // MARK: Documents Tab
             NavigationView {
-                DocumentsView(viewModel: documentsViewModel)
+                DocumentsViewRedesign(viewModel: documentsViewModel)
                     .navigationTitle("Documents")
             }
             .tabItem {
@@ -141,6 +141,7 @@ struct MainView: View {
 }
 
 /// Creates a preview instance of MainView with mock data and services
+@MainActor
 private func mainViewPreview() -> some View {
     // 1. Create Preview Settings View Model
     let settingsViewModel = SettingsViewModel()
@@ -169,7 +170,8 @@ private func mainViewPreview() -> some View {
     let searchViewModel = SearchViewModel(
         pineconeService: pinecone,
         openAIService: openAI,
-        embeddingService: embedding
+        embeddingService: embedding,
+        settingsViewModel: settingsViewModel
     )
 
     // 4. Return MainView with Preview View Models

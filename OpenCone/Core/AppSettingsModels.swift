@@ -33,4 +33,13 @@ enum SettingsStorageKeys {
     static let searchTopK = "search.topK"
     static let searchMetadataPresets = "search.metadataPresets"
     static let logMinimumLevel = "log.minimumLevel"
+
+    // Hybrid search settings
+    static let hybridSearchEnabled = "search.hybridEnabled"
+    static let hybridSearchAlpha = "search.hybridAlpha"
+
+    // Reranking settings
+    static let rerankingEnabled = "search.rerankingEnabled"
+    static let rerankModel = "search.rerankModel"
+    static let rerankTopN = "search.rerankTopN"
 }

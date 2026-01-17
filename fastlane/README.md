@@ -1,100 +1,80 @@
-# Fastlane for OpenCone
+fastlane documentation
+----
 
-Automates App Store submissions and metadata management for OpenCone.
+# Installation
 
-## Setup
+Make sure you have the latest version of the Xcode command line tools installed:
 
-1. **Install fastlane** (if not already installed):
-
-   ```bash
-   brew install fastlane
-   ```
-
-2. **Configure App Store Connect API key** (recommended):
-   - Go to App Store Connect → Users and Access → Integrations → Keys
-   - Create a new key with Admin role
-   - Download the `.p8` file
-   - Copy `.env.example` to `.env` and fill in:
-     ```bash
-     APP_STORE_CONNECT_API_KEY_ID=YOUR_KEY_ID
-     APP_STORE_CONNECT_ISSUER_ID=YOUR_ISSUER_ID
-     APP_STORE_CONNECT_API_KEY_PATH=/path/to/AuthKey_XXXXX.p8
-     ```
-
-3. **Or use Apple ID auth** (for manual runs):
-   ```bash
-   export FASTLANE_USER=your@apple.id
-   ```
-
-## Available Lanes
-
-| Lane                     | Description                                                              |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `fastlane metadata`      | Upload App Store metadata (description, keywords, etc.) without a binary |
-| `fastlane beta`          | Build and upload to TestFlight                                           |
-| `fastlane release`       | Build and upload to App Store Connect                                    |
-| `fastlane build`         | Build IPA for App Store                                                  |
-| `fastlane bump`          | Increment build number                                                   |
-| `fastlane validate`      | Validate metadata before upload                                          |
-| `fastlane sync_metadata` | Download current metadata from App Store Connect                         |
-
-## Usage
-
-### Upload metadata only (no binary):
-
-```bash
-cd /path/to/OpenCone
-fastlane metadata
+```sh
+xcode-select --install
 ```
 
-### Upload to TestFlight:
+For _fastlane_ installation instructions, see [Installing _fastlane_](https://docs.fastlane.tools/#installing-fastlane)
 
-```bash
-fastlane beta
+# Available Actions
+
+## iOS
+
+### ios build
+
+```sh
+[bundle exec] fastlane ios build
 ```
 
-### Full App Store release:
+Build the app for App Store submission
 
-```bash
-fastlane release
+### ios release
+
+```sh
+[bundle exec] fastlane ios release
 ```
 
-## Metadata Structure
+Submit to App Store Connect for review
 
-```
-fastlane/
-├── metadata/
-│   ├── copyright.txt
-│   ├── en-US/
-│   │   ├── description.txt
-│   │   ├── keywords.txt
-│   │   ├── marketing_url.txt
-│   │   ├── name.txt
-│   │   ├── primary_category.txt
-│   │   ├── privacy_url.txt
-│   │   ├── promotional_text.txt
-│   │   ├── release_notes.txt
-│   │   ├── secondary_category.txt
-│   │   ├── subtitle.txt
-│   │   └── support_url.txt
-│   └── review_information/
-│       ├── email_address.txt
-│       ├── first_name.txt
-│       ├── last_name.txt
-│       ├── notes.txt
-│       └── phone_number.txt
-└── screenshots/
-    └── en-US/
-        └── (iPhone screenshots here)
+### ios beta
+
+```sh
+[bundle exec] fastlane ios beta
 ```
 
-## Troubleshooting
+Upload to TestFlight for beta testing
 
-- **Authentication issues**: Ensure your API key has Admin permissions
-- **Metadata validation errors**: Run `fastlane validate` to check before uploading
-- **Build failures**: Make sure provisioning profiles are set up correctly in Xcode
+### ios metadata
 
-## Related Docs
+```sh
+[bundle exec] fastlane ios metadata
+```
 
-- [APP_STORE.md](../APP_STORE.md) - Full submission copy and reviewer notes
-- [Fastlane docs](https://docs.fastlane.tools)
+Upload App Store metadata without a binary
+
+### ios bump
+
+```sh
+[bundle exec] fastlane ios bump
+```
+
+Increment build number
+
+### ios validate
+
+```sh
+[bundle exec] fastlane ios validate
+```
+
+Validate app metadata and screenshots
+
+### ios sync_metadata
+
+```sh
+[bundle exec] fastlane ios sync_metadata
+```
+
+Sync metadata from App Store Connect to local files
+
+----
+
+This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
+
+More information about _fastlane_ can be found on [fastlane.tools](https://fastlane.tools).
+
+The documentation of _fastlane_ can be found on [docs.fastlane.tools](https://docs.fastlane.tools).

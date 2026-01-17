@@ -2,6 +2,8 @@ import Combine
 import Foundation
 import SwiftUI
 
+// MARK: - MainActor Annotation for Swift 6
+
 // MARK: - Error Handling Enum
 
 /// Defines specific errors that can occur during search operations.
@@ -174,7 +176,8 @@ enum PineconeMetadataFilter: Equatable {
 // MARK: - Search View Model
 
 /// View model for the search functionality
-class SearchViewModel: ObservableObject {
+@MainActor
+final class SearchViewModel: ObservableObject { 
 
     // MARK: - Constants
     private enum Constants {
@@ -182,7 +185,7 @@ class SearchViewModel: ObservableObject {
         static let openAISystemPrompt =
             """
             You are a helpful AI assistant with access to the user's documents. Answer questions based on the provided context.
-            
+
             - If the user's query is a single word or phrase, provide a helpful summary of relevant information from the context about that topic.
             - If the user asks a specific question, answer it directly using the context.
             - If the context doesn't contain relevant information, say so clearly.
@@ -202,10 +205,20 @@ class SearchViewModel: ObservableObject {
         static let watchdogDelayNanoseconds: UInt64 = 30_000_000_000
     }
 
+    /// Returns the effective system prompt - custom override if set, otherwise default
+    private var effectiveSystemPrompt: String {
+        let override = settingsViewModel.systemPromptOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        if override.isEmpty {
+            return Constants.openAISystemPrompt
+        }
+        return "\(Constants.openAISystemPrompt)\n\nAdditional instructions:\n\(override)"
+    }
+
     // MARK: - Dependencies
     private let pineconeService: PineconeService
     private let openAIService: OpenAIService
     private let embeddingService: EmbeddingService
+    let settingsViewModel: SettingsViewModel
     private let logger = Logger.shared
     private var themeManager = ThemeManager.shared
     private let defaults = UserDefaults.standard
@@ -252,11 +265,13 @@ class SearchViewModel: ObservableObject {
     init(
         pineconeService: PineconeService,
         openAIService: OpenAIService,
-        embeddingService: EmbeddingService
+        embeddingService: EmbeddingService,
+        settingsViewModel: SettingsViewModel
     ) {
         self.pineconeService = pineconeService
         self.openAIService = openAIService
         self.embeddingService = embeddingService
+        self.settingsViewModel = settingsViewModel
 
         // Subscribe to theme changes
         themeManager.$currentTheme
@@ -324,46 +339,63 @@ class SearchViewModel: ObservableObject {
     }
 
     /// Load available Pinecone indexes
+    /// Uses cached data immediately for faster startup, then refreshes in background
     func loadIndexes() async {
+        // First, try to get cached indexes for instant display
         do {
-            let indexes = try await pineconeService.listIndexes()
-            let selection = await MainActor.run { () -> (index: String?, needsDescribe: Bool) in
-                self.pineconeIndexes = indexes
-                self.errorMessage = nil
-
-                guard !indexes.isEmpty else {
-                    self.selectedIndex = nil
-                    self.namespaces = []
-                    self.selectedNamespace = nil
-                    self.indexDimension = nil
-                    return (nil, false)
-                }
-
-                let previousIndex = self.selectedIndex
+            let cachedIndexes = try await pineconeService.listIndexes(forceRefresh: false)
+            if !cachedIndexes.isEmpty, self.pineconeIndexes.isEmpty {
+                // Show cached data immediately
+                self.pineconeIndexes = cachedIndexes
                 let resolvedIndex = self.preferences.resolveIndex(
-                    availableIndexes: indexes,
-                    currentSelection: previousIndex
+                    availableIndexes: cachedIndexes,
+                    currentSelection: self.selectedIndex
                 )
-
-                self.selectedIndex = resolvedIndex
-
-                if previousIndex != resolvedIndex {
-                    self.indexDimension = nil
+                if resolvedIndex != nil, self.selectedIndex == nil {
+                    self.selectedIndex = resolvedIndex
                 }
+            }
+        } catch {
+            // Ignore cache errors, we'll load fresh below
+        }
 
-                let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
-                return (resolvedIndex, needsDescribe)
+        // Now load fresh data
+        do {
+            let indexes = try await pineconeService.listIndexes(forceRefresh: true)
+            self.pineconeIndexes = indexes
+            self.errorMessage = nil
+
+            guard !indexes.isEmpty else {
+                self.selectedIndex = nil
+                self.namespaces = []
+                self.selectedNamespace = nil
+                self.indexDimension = nil
+                return
             }
 
-            if let indexName = selection.index {
-                if selection.needsDescribe {
+            let previousIndex = self.selectedIndex
+            let resolvedIndex = self.preferences.resolveIndex(
+                availableIndexes: indexes,
+                currentSelection: previousIndex
+            )
+
+            self.selectedIndex = resolvedIndex
+
+            if previousIndex != resolvedIndex {
+                self.indexDimension = nil
+            }
+
+            let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
+
+            if let indexName = resolvedIndex {
+                if needsDescribe { 
                     await setIndex(indexName)
                 } else {
                     await loadNamespaces()
                 }
             }
         } catch {
-            await handleError(SearchError.indexLoadingFailed(error))
+            handleError(SearchError.indexLoadingFailed(error))
         }
     }
 
@@ -374,54 +406,46 @@ class SearchViewModel: ObservableObject {
             // Set current index first to get the host
             try await pineconeService.setCurrentIndex(indexName)
 
-            await MainActor.run {
-                self.selectedIndex = indexName
-                self.selectedNamespace = nil
-                self.namespaces = []
-                self.indexDimension = nil
-            }
+            self.selectedIndex = indexName
+            self.selectedNamespace = nil
+            self.namespaces = []
+            self.indexDimension = nil
 
             // Now describe the index to get its dimension
             let indexDetails = try await pineconeService.describeIndex(name: indexName)
 
-            await MainActor.run {
-                self.indexDimension = indexDetails.dimension
-                self.logger.log(level: .info, message: "Index '\(indexName)' selected with dimension \(indexDetails.dimension)")
-            }
+            self.indexDimension = indexDetails.dimension
+            self.logger.log(level: .info, message: "Index '\(indexName)' selected with dimension \(indexDetails.dimension)")
 
             preferences.recordLastIndex(indexName)
 
             // Load namespaces for the new index
             await loadNamespaces()
         } catch {
-            await handleError(SearchError.indexSetFailed(error))
+            handleError(SearchError.indexSetFailed(error))
         }
     }
 
     /// Load available namespaces for the current index
     func loadNamespaces() async {
-        guard selectedIndex != nil else {
-            await MainActor.run {
-                self.namespaces = []
-                self.selectedNamespace = nil
-            }
+        guard selectedIndex != nil else { 
+            self.namespaces = []
+            self.selectedNamespace = nil
             return
         }
 
         do {
             let namespaces = try await pineconeService.listNamespaces()
-            let persistence = await MainActor.run { () -> (String?, String?) in
-                self.namespaces = namespaces
+            self.namespaces = namespaces
 
-                let resolvedNamespace = self.preferences.resolveNamespace(
-                    availableNamespaces: namespaces,
-                    index: self.selectedIndex,
-                    currentSelection: self.selectedNamespace
-                )
+            let resolvedNamespace = self.preferences.resolveNamespace(
+                availableNamespaces: namespaces,
+                index: self.selectedIndex,
+                currentSelection: self.selectedNamespace
+            )
 
-                self.selectedNamespace = resolvedNamespace
-                return (self.selectedIndex, resolvedNamespace)
-            }
+            self.selectedNamespace = resolvedNamespace
+            let persistence = (self.selectedIndex, resolvedNamespace)
 
             if let index = persistence.0 {
                 if let namespace = persistence.1 {
@@ -431,7 +455,7 @@ class SearchViewModel: ObservableObject {
                 }
             }
         } catch {
-            await handleError(SearchError.namespaceLoadingFailed(error))
+            handleError(SearchError.namespaceLoadingFailed(error))
         }
     }
 
@@ -560,18 +584,16 @@ class SearchViewModel: ObservableObject {
     /// Perform a search with the current query
     func performSearch() async {
         guard !searchQuery.isEmpty else {
-            await handleError(SearchError.missingSelection("a query"))
+            handleError(SearchError.missingSelection("a query"))
             return
         }
         guard selectedIndex != nil else {
-            await handleError(SearchError.missingSelection("an index"))
+            handleError(SearchError.missingSelection("an index"))
             return
         }
-        await resetSearchState(isPreparingForSearch: true)
+        resetSearchState(isPreparingForSearch: true)
         // Append user message to chat history after resetting state
-        await MainActor.run {
-            self.messages.append(ChatMessage(role: .user, text: self.searchQuery))
-        }
+        self.messages.append(ChatMessage(role: .user, text: self.searchQuery))
 
         // Trace id for this search
         let traceId = UUID().uuidString
@@ -579,11 +601,9 @@ class SearchViewModel: ObservableObject {
 
         // Preflight Pinecone health
         let healthy = await pineconeService.healthCheck()
-        if !healthy || pineconeService.isCircuitOpen {
-            await MainActor.run {
-                self.isSearching = false
-                self.errorMessage = "Pinecone temporarily unavailable; retrying soon."
-            }
+        if !healthy || pineconeService.isCircuitOpen { 
+            self.isSearching = false
+            self.errorMessage = "Pinecone temporarily unavailable; retrying soon."
             self.logger.log(level: .warning, message: "Pinecone preflight failed", context: "traceId=\(traceId)")
             return
         }
@@ -595,14 +615,35 @@ class SearchViewModel: ObservableObject {
             // Generate embedding for query, passing the index's dimension
             let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: searchQuery, dimension: indexDimension)
 
-            // Search Pinecone
+            // Search Pinecone - use hybrid search if enabled
             let filterPayload = buildMetadataFilterPayload()
-            let queryResults = try await pineconeService.query(
-                vector: queryEmbedding,
-                topK: configuredTopK,
-                namespace: selectedNamespace,
-                filter: filterPayload
-            )
+            let queryResults: QueryResponse
+
+            if settingsViewModel.hybridSearchEnabled {
+                // Generate sparse embedding for hybrid search
+                logger.log(level: .info, message: "Generating sparse embedding for hybrid search", context: "traceId=\(traceId)")
+                let sparseVector = try await pineconeService.generateSparseEmbedding(for: searchQuery)
+
+                // Perform hybrid query with alpha weighting
+                let alpha = Float(settingsViewModel.hybridSearchAlpha)
+                logger.log(level: .info, message: "Performing hybrid search", context: "alpha=\(alpha); traceId=\(traceId)")
+                queryResults = try await pineconeService.hybridQuery(
+                    denseVector: queryEmbedding,
+                    sparseVector: sparseVector,
+                    topK: configuredTopK,
+                    namespace: selectedNamespace,
+                    filter: filterPayload,
+                    alpha: alpha
+                )
+            } else {
+                // Standard dense-only query
+                queryResults = try await pineconeService.query(
+                    vector: queryEmbedding,
+                    topK: configuredTopK,
+                    namespace: selectedNamespace,
+                    filter: filterPayload
+                )
+            }
 
             // Map results to search result models (metadata may contain non-string values)
             let results = queryResults.matches.map { match in
@@ -631,8 +672,8 @@ class SearchViewModel: ObservableObject {
 #endif
 
                 // Try multiple possible source fields
-                let source = match.metadata?["title"]?.string ?? 
-                            match.metadata?["source"]?.string ?? 
+                let source = match.metadata?["title"]?.string ??
+                    match.metadata?["source"]?.string ??
                             match.metadata?["doc_id"]?.string ??
                             "Unknown source"
                 // Convert only string-like metadata entries into [String: String] for UI
@@ -649,17 +690,57 @@ class SearchViewModel: ObservableObject {
                 )
             }
 
-            let avgScore = results.isEmpty ? Float(0) : results.map { $0.score }.reduce(0, +) / Float(results.count)
+            // Apply reranking if enabled
+            var finalResults = results
+            if settingsViewModel.rerankingEnabled, !results.isEmpty {
+                do {
+                    let rerankModel = PineconeService.RerankModel(rawValue: settingsViewModel.rerankModel) ?? .bgeRerankerV2M3
+                    let topN = settingsViewModel.rerankTopN
+                    logger.log(level: .info, message: "Reranking \(results.count) results", context: "model=\(rerankModel.rawValue); topN=\(topN); traceId=\(traceId)")
+
+                    // Prepare documents for reranking - format as array of dictionaries with "text" key
+                    let documents = results.map { ["text": $0.content] }
+
+                    // Call rerank API
+                    let rerankResponse = try await pineconeService.rerank(
+                        query: searchQuery,
+                        documents: documents,
+                        model: rerankModel,
+                        topN: topN
+                    )
+
+                    // Reorder results based on rerank scores
+                    finalResults = rerankResponse.data.compactMap { rerankResult -> SearchResultModel? in
+                        guard rerankResult.index < results.count else { return nil }
+                        var result = results[rerankResult.index]
+                        // Update score to rerank score (convert from Double to Float)
+                        result = SearchResultModel(
+                            content: result.content,
+                            sourceDocument: result.sourceDocument,
+                            score: Float(rerankResult.score),
+                            metadata: result.metadata
+                        )
+                        return result
+                    }
+
+                    logger.log(level: .success, message: "Reranking complete", context: "reranked \(finalResults.count) results; traceId=\(traceId)")
+                } catch {
+                    // Log error but continue with original results
+                    logger.log(level: .warning, message: "Reranking failed, using original results", context: "\(error.localizedDescription); traceId=\(traceId)")
+                }
+            }
+
+            let avgScore = finalResults.isEmpty ? Float(0) : finalResults.map { $0.score }.reduce(0, +) / Float(finalResults.count)
             let filterDescription = metadataFilters.isEmpty ? "none" : metadataFilters.map { "\($0.key)=\($0.value.displayValue)" }.joined(separator: ", ")
             logger.log(
                 level: .info,
-                message: "Pinecone query returned \(results.count) matches (avg score \(String(format: "%.3f", Double(avgScore))))",
+                message: "Pinecone query returned \(finalResults.count) matches (avg score \(String(format: "%.3f", Double(avgScore))))",
                 context: "filters: \(filterDescription)"
             )
 
             // Progress update for visuals
             await MainActor.run {
-                self.searchResults = results
+                self.searchResults = finalResults
                 self.searchResultsOpacity = 1.0
                 self.answerGenerationProgress = 0.6
                 self.highlightedResultID = nil
@@ -667,10 +748,10 @@ class SearchViewModel: ObservableObject {
             }
 
             // Prepare context and citations
-            let context = results.prefix(5).map { result in
+            let context = finalResults.prefix(5).map { result in
                 "Source: \(result.sourceDocument)\n\(result.content)"
             }.joined(separator: "\n\n")
-            let citations = results.prefix(5).map { $0.sourceDocument }
+            let citations = finalResults.prefix(5).map { $0.sourceDocument }
 
             // Prepare streaming assistant message
             let assistantMessageId = UUID()
@@ -708,7 +789,7 @@ class SearchViewModel: ObservableObject {
                         let fallbackConversationId: String? = useServer ? nil : convIdArg
                         do {
                             let fallback = try await self.openAIService.generateCompletion(
-                                systemPrompt: Constants.openAISystemPrompt,
+                                systemPrompt: self.effectiveSystemPrompt,
                                 userMessage: query,
                                 context: context,
                                 history: fallbackHistory,
@@ -755,7 +836,7 @@ class SearchViewModel: ObservableObject {
                 do {
                     var deltaCount = 0
                     try await openAIService.streamCompletion(
-                        systemPrompt: Constants.openAISystemPrompt,
+                        systemPrompt: self.effectiveSystemPrompt,
                         userMessage: searchQuery,
                         context: context,
                         history: historyArg,
@@ -769,25 +850,19 @@ class SearchViewModel: ObservableObject {
                         },
                         onTextDelta: { delta in
                             deltaCount += 1
-                            if deltaCount <= 3 {
-                                self.logger.log(level: .info, message: "OpenAI delta", context: "len=\(delta.count); traceId=\(traceId)")
-                            }
                             Task { @MainActor in
                                 self.generatedAnswer += delta
                                 if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
                                     var msg = self.messages[index]
                                     msg.text += delta
                                     self.messages[index] = msg
-                                    if deltaCount <= 3 {
-                                        self.logger.log(level: .info, message: "Updated message text to: '\(msg.text)'")
-                                    }
                                 }
                             }
                         },
                         onCompleted: {
                             // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
                             Task {
-                                self.logger.log(level: .info, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
+                                self.logger.log(level: .success, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
                                 if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
                                     if self.messages[index].text.isEmpty {
                                         do {
@@ -795,7 +870,7 @@ class SearchViewModel: ObservableObject {
                                             let fallbackConversationId: String? = useServer ? nil : convIdArg
                                             let fallbackQuery = await MainActor.run { self.searchQuery }
                                             let fallback = try await self.openAIService.generateCompletion(
-                                                systemPrompt: Constants.openAISystemPrompt,
+                                                systemPrompt: self.effectiveSystemPrompt,
                                                 userMessage: fallbackQuery,
                                                 context: context,
                                                 history: fallbackHistory,
@@ -850,7 +925,7 @@ class SearchViewModel: ObservableObject {
                                     self.logger.log(
                                         level: .success,
                                         message: "Search completed",
-                                        context: "traceId=\(traceId); Found \(results.count) results"
+                                        context: "traceId=\(traceId); Found \(finalResults.count) results"
                                     )
                                 }
                             }
@@ -858,17 +933,15 @@ class SearchViewModel: ObservableObject {
                     )
                 } catch is CancellationError {
                     watchdogTask.cancel() // Clean up watchdog on cancellation
-                    await MainActor.run {
-                        self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
-                    }
+                    self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
                     // Suppress UI error; watchdog or user cancel will handle state and message finalization
                 } catch {
                     watchdogTask.cancel() // Clean up watchdog on error
-                    await self.handleError(SearchError.answerGenerationFailed(error))
+                    self.handleError(SearchError.answerGenerationFailed(error))
                 }
             }
         } catch {
-            await handleError(SearchError.queryFailed(error))
+            handleError(SearchError.queryFailed(error))
         }
     }
 
@@ -882,19 +955,17 @@ class SearchViewModel: ObservableObject {
     /// Generate an answer based on selected results
     func generateAnswerFromSelected() async {
         guard !selectedResults.isEmpty else {
-            await handleError(SearchError.missingSelection("at least one source document"))
+            handleError(SearchError.missingSelection("at least one source document"))
             return
         }
         guard !searchQuery.isEmpty else {
-            await handleError(SearchError.missingSelection("a query"))
+            handleError(SearchError.missingSelection("a query"))
             return
         }
 
-        await MainActor.run {
-            self.isSearching = true
-            self.generatedAnswer = ""
-            self.errorMessage = nil
-        }
+        self.isSearching = true
+        self.generatedAnswer = ""
+        self.errorMessage = nil
 
         let traceId = UUID().uuidString
         self.logger.log(level: .info, message: "Generate from selected started", context: "traceId=\(traceId)")
@@ -906,13 +977,11 @@ class SearchViewModel: ObservableObject {
         let citations = self.selectedResults.map { $0.sourceDocument }
 
         let assistantMessageId = UUID()
-        await MainActor.run {
-            self.generatedAnswer = ""
-            self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
-        }
+        self.generatedAnswer = ""
+        self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
 
         let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
-        let historyArg: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
+        let historyArg: [ChatMessage] = useServer ? [] : self.conversationHistoryExcludingCurrentUser()
         let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
 
         // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
@@ -937,7 +1006,7 @@ class SearchViewModel: ObservableObject {
                     let fallbackConversationId: String? = useServer ? nil : convIdArg
                     do {
                         let fallback = try await self.openAIService.generateCompletion(
-                            systemPrompt: Constants.openAISystemPrompt,
+                            systemPrompt: self.effectiveSystemPrompt,
                             userMessage: query,
                             context: context,
                             history: fallbackHistory,
@@ -984,7 +1053,7 @@ class SearchViewModel: ObservableObject {
             do {
                 var deltaCount = 0
                 try await openAIService.streamCompletion(
-                    systemPrompt: Constants.openAISystemPrompt,
+                    systemPrompt: self.effectiveSystemPrompt,
                     userMessage: searchQuery,
                     context: context,
                     history: historyArg,
@@ -998,9 +1067,6 @@ class SearchViewModel: ObservableObject {
                     },
                     onTextDelta: { delta in
                         deltaCount += 1
-                        if deltaCount <= 3 {
-                            self.logger.log(level: .info, message: "OpenAI delta", context: "len=\(delta.count); traceId=\(traceId)")
-                        }
                         Task { @MainActor in
                             self.generatedAnswer += delta
                             if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
@@ -1016,7 +1082,7 @@ class SearchViewModel: ObservableObject {
                     onCompleted: {
                         // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
                         Task {
-                            self.logger.log(level: .info, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
+                            self.logger.log(level: .success, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
                             if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
                                 if self.messages[index].text.isEmpty {
                                     do {
@@ -1024,7 +1090,7 @@ class SearchViewModel: ObservableObject {
                                         let fallbackConversationId: String? = useServer ? nil : convIdArg
                                         let fallbackQuery = await MainActor.run { self.searchQuery }
                                         let fallback = try await self.openAIService.generateCompletion(
-                                            systemPrompt: Constants.openAISystemPrompt,
+                                            systemPrompt: self.effectiveSystemPrompt,
                                             userMessage: fallbackQuery,
                                             context: context,
                                             history: fallbackHistory,
@@ -1085,13 +1151,11 @@ class SearchViewModel: ObservableObject {
                 )
             } catch is CancellationError {
                 watchdogTask.cancel() // Clean up watchdog on cancellation
-                await MainActor.run {
-                    self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
-                }
+                self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
                 // Suppress UI error; watchdog or user cancel will handle state and message finalization
             } catch {
                 watchdogTask.cancel() // Clean up watchdog on error
-                await self.handleError(SearchError.answerGenerationFailed(error))
+                self.handleError(SearchError.answerGenerationFailed(error))
             }
         }
     }
@@ -1107,6 +1171,104 @@ class SearchViewModel: ObservableObject {
             self.generatedAnswer = ""
             self.errorMessage = nil
         }
+    }
+
+    // MARK: - Export Conversation
+
+    /// Export the current conversation as Markdown
+    func exportConversationAsMarkdown() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        var markdown = "# OpenCone Conversation\n\n"
+        markdown += "**Exported:** \(dateFormatter.string(from: Date()))\n"
+
+        if let index = selectedIndex {
+            markdown += "**Index:** \(index)\n"
+        }
+        if let namespace = selectedNamespace, !namespace.isEmpty {
+            markdown += "**Namespace:** \(namespace)\n"
+        }
+        markdown += "\n---\n\n"
+
+        for message in messages {
+            let timestamp = dateFormatter.string(from: message.createdAt)
+            let role = message.role == .user ? "👤 You" : "🤖 Assistant"
+
+            markdown += "### \(role)\n"
+            markdown += "*\(timestamp)*\n\n"
+            markdown += "\(message.text)\n"
+
+            if let citations = message.citations, !citations.isEmpty {
+                markdown += "\n**Sources:**\n"
+                for citation in citations {
+                    markdown += "- \(citation)\n"
+                }
+            }
+
+            markdown += "\n---\n\n"
+        }
+
+        return markdown
+    }
+
+    /// Export conversation as JSON for backup/import
+    func exportConversationAsJSON() -> Data? {
+        struct ExportedMessage: Codable {
+            let role: String
+            let text: String
+            let citations: [String]?
+            let timestamp: Date
+        }
+
+        struct ExportedConversation: Codable {
+            let exportDate: Date
+            let index: String?
+            let namespace: String?
+            let messages: [ExportedMessage]
+        }
+
+        let exportedMessages = messages.map { msg in
+            ExportedMessage(
+                role: msg.role == .user ? "user" : "assistant",
+                text: msg.text,
+                citations: msg.citations,
+                timestamp: msg.createdAt
+            )
+        }
+
+        let export = ExportedConversation(
+            exportDate: Date(),
+            index: selectedIndex,
+            namespace: selectedNamespace,
+            messages: exportedMessages
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        return try? encoder.encode(export)
+    }
+
+    /// Regenerate the last assistant response
+    func regenerateLastResponse() async {
+        // Find the last assistant message
+        guard let lastAssistantIdx = messages.lastIndex(where: { $0.role == .assistant }) else { return }
+
+        // Find the corresponding user message
+        let userMessageIdx = messages.prefix(lastAssistantIdx).lastIndex(where: { $0.role == .user })
+        guard let userIdx = userMessageIdx else { return }
+
+        let originalQuery = messages[userIdx].text
+
+        // Remove the assistant message we're regenerating
+        messages.remove(at: lastAssistantIdx)
+
+        // Set the search query and perform search again
+        searchQuery = originalQuery
+        await performSearch()
     }
 
     // MARK: - Cancellation

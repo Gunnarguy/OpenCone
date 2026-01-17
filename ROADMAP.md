@@ -20,6 +20,10 @@
 - [x] **Search result selection** — Multi-select sources; regenerate answer from selection
 - [x] **Duplicate rejection** — `DocumentIdentifierBuilder` with content hash; 100MB size limit
 - [x] **Preflight automation** — `preflight_check.sh` (secret scan, Info.plist validation, privacy doc checks, unit tests)
+- [x] **Hybrid search** — Combine dense (semantic) + sparse (keyword) vectors via Pinecone's `hybridQuery`; alpha weighting (0.0 = keyword, 1.0 = semantic); Settings UI with slider
+- [x] **Reranking** — Two-stage retrieval using `bge-reranker-v2-m3`, `cohere-rerank-3.5`, or `pinecone-rerank-v0`; configurable top-N; Settings UI with model picker
+- [x] **Documents tab redesign** — Clean card-based UI; floating bulk action bar; filter by status; advanced options in sheet; reduced from 1541 to ~650 lines
+- [x] **Voice input fix** — `SpeechRecognitionService` now triggers permission prompt on first tap (was incorrectly blocking `.notDetermined` state)
 
 ## 2. Technical Debt (The Cracks)
 
@@ -38,7 +42,6 @@
 ## 3. Future Trajectory
 
 - [ ] **Local embedding cache** — Cache query embeddings locally to reduce redundant OpenAI calls
-- [ ] **Hybrid search** — Combine vector similarity with keyword/BM25 scoring (Pinecone supports this)
 - [ ] **Document update detection** — Re-process documents when source file changes (using bookmarks to detect modifications)
 - [ ] **Export conversation** — Share chat history as Markdown or PDF
 - [ ] **Batch document import** — Folder picker for bulk ingestion with queue visualization

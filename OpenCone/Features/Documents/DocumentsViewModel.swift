@@ -6,60 +6,61 @@ import UniformTypeIdentifiers // Added import for UTType
 
 /// View model for document management and processing
 /// Handles loading, selecting, and processing documents for vector embeddings
-class DocumentsViewModel: ObservableObject {
+@MainActor
+final class DocumentsViewModel: ObservableObject { 
     // MARK: - Dependencies
-    
+
     /// Service for processing document files and extracting text
     private let fileProcessorService: FileProcessorService
-    
+
     /// Service for chunking and processing text
     private let textProcessorService: TextProcessorService
-    
+
     /// Service for generating vector embeddings
     private let embeddingService: EmbeddingService
-    
+
     /// Service for interacting with Pinecone vector database
     private let pineconeService: PineconeService
-    
+
     /// Shared logger instance
     private let logger = Logger.shared
     /// Shared resolver for index/namespace preferences
     private let preferences = PineconePreferenceResolver()
     /// UserDefaults key for tracking bookmark consent acknowledgement
     private let securityConsentKey = "SecurityScopedBookmarkConsentAcknowledged"
-    
+
     // MARK: - Published Properties
-    
+
     /// List of all documents added to the system
     @Published var documents: [DocumentModel] = []
-    
+
     /// Whether document processing is currently in progress
     @Published var isProcessing = false
-    
+
     /// Progress value between 0.0 and 1.0 for document processing
     @Published var processingProgress: Float = 0
-    
+
     /// Set of currently selected document IDs
     @Published var selectedDocuments: Set<UUID> = []
-    
+
     /// Error message to display in the UI
     @Published var errorMessage: String? = nil
-    
+
     /// Available Pinecone indexes
     @Published var pineconeIndexes: [String] = []
-    
+
     /// Available namespaces in the current index
     @Published var namespaces: [String] = []
-    
+
     /// Currently selected Pinecone index
     @Published var selectedIndex: String? = nil
-    
+
     /// Currently selected namespace
     @Published var selectedNamespace: String? = nil
-    
+
     /// Statistics for the current processing operation
     @Published var processingStats: ProcessingStats? = nil
-    
+
     /// Current status message during processing
     @Published var currentProcessingStatus: String? = nil
 
@@ -83,16 +84,16 @@ class DocumentsViewModel: ObservableObject {
 
     /// Indicates whether the user must acknowledge the security-scoped bookmark consent copy
     @Published var needsSecurityConsent: Bool
-    
+
     /// Tracks the granular progress (0.0 to 1.0) for each document being processed concurrently
     @Published private var documentProgress: [UUID: Float] = [:]
-    
+
     /// Cancellables for managing Combine subscriptions
     private var cancellables = Set<AnyCancellable>()
 
     /// Maximum allowed document size for ingestion.
     private let maxDocumentSize: Int64
-    
+
     // MARK: - Constants for Progress Calculation
     private let phaseWeightExtraction: Float = 0.10
     private let phaseWeightChunking: Float = 0.10
@@ -109,9 +110,9 @@ class DocumentsViewModel: ObservableObject {
         let totalVectors: Int
         let averageProcessingSeconds: Double
     }
-    
+
     // MARK: - Initialization
-    
+
     /// Initialize with required services
     /// - Parameters:
     ///   - fileProcessorService: Service for processing document files
@@ -202,9 +203,9 @@ class DocumentsViewModel: ObservableObject {
     var pendingDocuments: [DocumentModel] {
         documents.filter { !$0.isProcessed && $0.processingError == nil }
     }
-    
+
     // MARK: - Document Management
-    
+
     /// Add a document to the list
     /// - Parameter url: URL of the document to add
     func addDocument(at url: URL) {
@@ -245,7 +246,7 @@ class DocumentsViewModel: ObservableObject {
                 logger.log(level: .warning, message: "Document already exists", context: url.lastPathComponent)
                 return
             }
-            
+
             // Check file size limitations
             if fileSize > maxDocumentSize {
                 let maxSizeString = ByteCountFormatter.string(fromByteCount: maxDocumentSize, countStyle: .file)
@@ -254,7 +255,7 @@ class DocumentsViewModel: ObservableObject {
                 errorMessage = "\(url.lastPathComponent): \(sizeMessage)"
                 return
             }
-            
+
             // Copy the file into the app's sandbox to guarantee ongoing read access.
             let persistedURL = try persistDocumentCopy(from: url)
 
@@ -271,7 +272,7 @@ class DocumentsViewModel: ObservableObject {
                 fileSize: fileSize,
                 dateAdded: Date()
             )
-            
+
             // Add to documents list
             DispatchQueue.main.async {
                 self.documents.append(document)
@@ -282,7 +283,7 @@ class DocumentsViewModel: ObservableObject {
             errorMessage = "Failed to add \(url.lastPathComponent): \(error.localizedDescription)"
         }
     }
-    
+
     /// Determine MIME type based on file extension and UTI
     /// - Parameter url: File URL
     /// - Returns: MIME type string
@@ -295,7 +296,7 @@ class DocumentsViewModel: ObservableObject {
                 return mimeType
             }
         }
-        
+
         // Fallback to extension-based detection
         switch url.pathExtension.lowercased() {
         case "pdf":
@@ -326,7 +327,7 @@ class DocumentsViewModel: ObservableObject {
             return "application/octet-stream"
         }
     }
-    
+
     /// Remove all selected documents from the list
     func removeSelectedDocuments() {
         guard !isProcessing else {
@@ -438,7 +439,7 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Toggle selection status for a document
     /// - Parameter documentId: ID of the document to toggle
     func toggleDocumentSelection(_ documentId: UUID) {
@@ -450,51 +451,68 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Pinecone Configuration
-    
+
     /// Load available Pinecone indexes
+    /// Uses cached data immediately for faster startup, then refreshes in background
     func loadIndexes() async {
-        await MainActor.run { self.isLoadingIndexes = true }
-        defer { Task { @MainActor in self.isLoadingIndexes = false } }
+        // First, try to get cached indexes for instant display
+        do {
+            let cachedIndexes = try await pineconeService.listIndexes(forceRefresh: false)
+            if !cachedIndexes.isEmpty, self.pineconeIndexes.isEmpty {
+                // Show cached data immediately
+                self.pineconeIndexes = cachedIndexes
+                let resolvedIndex = self.preferences.resolveIndex(
+                    availableIndexes: cachedIndexes,
+                    currentSelection: self.selectedIndex
+                )
+                if resolvedIndex != nil, self.selectedIndex == nil {
+                    self.selectedIndex = resolvedIndex
+                }
+            }
+        } catch {
+            // Ignore cache errors, we'll load fresh below
+        }
+
+        // Now load fresh data
+        self.isLoadingIndexes = true
+        defer { self.isLoadingIndexes = false }
 
         do {
-            let indexes = try await pineconeService.listIndexes()
+            let indexes = try await pineconeService.listIndexes(forceRefresh: true)
 
-            let selection = await MainActor.run { () -> (index: String?, needsDescribe: Bool) in
-                self.pineconeIndexes = indexes
-                self.errorMessage = nil
+            self.pineconeIndexes = indexes
+            self.errorMessage = nil
 
-                guard !indexes.isEmpty else {
-                    self.selectedIndex = nil
-                    self.selectedNamespace = nil
-                    self.indexDimension = nil
-                    self.indexMetadata = nil
-                    self.indexStats = nil
-                    self.namespaces = []
-                    return (nil, false)
-                }
-
-                let previousIndex = self.selectedIndex
-                let resolvedIndex = self.preferences.resolveIndex(
-                    availableIndexes: indexes,
-                    currentSelection: previousIndex
-                )
-
-                self.selectedIndex = resolvedIndex
-
-                if previousIndex != resolvedIndex {
-                    self.indexDimension = nil
-                    self.indexMetadata = nil
-                    self.indexStats = nil
-                }
-
-                let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
-                return (resolvedIndex, needsDescribe)
+            guard !indexes.isEmpty else {
+                self.selectedIndex = nil
+                self.selectedNamespace = nil
+                self.indexDimension = nil
+                self.indexMetadata = nil
+                self.indexStats = nil
+                self.namespaces = []
+                return
             }
 
-            if let indexName = selection.index {
-                if selection.needsDescribe {
+            let previousIndex = self.selectedIndex
+            let resolvedIndex = self.preferences.resolveIndex(
+                availableIndexes: indexes,
+                currentSelection: previousIndex
+            )
+
+            self.selectedIndex = resolvedIndex
+
+            if previousIndex != resolvedIndex {
+                self.indexDimension = nil
+                self.indexMetadata = nil
+                self.indexStats = nil
+            }
+
+            let needsDescribe = previousIndex != resolvedIndex || self.indexDimension == nil
+
+            if let indexName = resolvedIndex {
+                if needsDescribe { 
                     await setIndex(indexName)
                 } else {
                     await refreshIndexInsights()
@@ -502,14 +520,12 @@ class DocumentsViewModel: ObservableObject {
             }
 
             logger.log(level: .info, message: "Loaded \(indexes.count) Pinecone indexes")
-        } catch {
-            await MainActor.run {
-                self.errorMessage = "Failed to load indexes: \(error.localizedDescription)"
-                self.logger.log(level: .error, message: "Failed to load indexes", context: error.localizedDescription)
-            }
+        } catch { 
+            self.errorMessage = "Failed to load indexes: \(error.localizedDescription)"
+            self.logger.log(level: .error, message: "Failed to load indexes", context: error.localizedDescription)
         }
     }
-    
+
     /// Set the current Pinecone index
     /// - Parameter indexName: Name of the index to set
     func setIndex(_ indexName: String) async {
@@ -650,7 +666,7 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Set the current namespace
     /// - Parameter namespace: Namespace to set
     @MainActor
@@ -669,7 +685,7 @@ class DocumentsViewModel: ObservableObject {
             preferences.clearNamespace(for: index)
         }
     }
-    
+
     /// Create a new namespace
     /// - Parameter name: Name of the new namespace
     func createNamespace(_ name: String) {
@@ -809,16 +825,16 @@ class DocumentsViewModel: ObservableObject {
             self.newIndexName = "" // Clear the name field
         }
     }
-    
+
     // MARK: - Document Processing
-    
+
     /// Process selected documents and index them in Pinecone
     func processSelectedDocuments() async {
         guard !selectedDocuments.isEmpty else {
             logger.log(level: .warning, message: "No documents selected")
             return
         }
-        
+
         guard selectedIndex != nil else {
             await MainActor.run {
                 self.errorMessage = "No Pinecone index selected"
@@ -826,10 +842,10 @@ class DocumentsViewModel: ObservableObject {
             }
             return
         }
-        
+
         // Get documents that need processing
         let documentsToProcess = documents.filter { selectedDocuments.contains($0.id) }
-        
+
         // Initialize processing state
         await MainActor.run {
             self.isProcessing = true
@@ -839,7 +855,7 @@ class DocumentsViewModel: ObservableObject {
             self.documentProgress = Dictionary(uniqueKeysWithValues: documentsToProcess.map { ($0.id, 0.0) }) // Initialize progress for all
             self.errorMessage = nil
         }
-        
+
         // Process documents concurrently with a limit
         await withTaskGroup(of: Void.self) { group in
             for document in documentsToProcess {
@@ -850,7 +866,7 @@ class DocumentsViewModel: ObservableObject {
             // No need to manage concurrency explicitly here, TaskGroup handles it.
             // We update progress within processDocument now.
         }
-        
+
         // Mark processing as complete
         await MainActor.run {
             self.isProcessing = false
@@ -860,53 +876,62 @@ class DocumentsViewModel: ObservableObject {
             self.logger.log(level: .success, message: "Processing completed", context: "Processed \(documentsToProcess.count) documents")
         }
     }
-    
+
     /// Process a single document through the RAG pipeline
     /// - Parameter document: The document to process
     private func processDocument(_ document: DocumentModel) async {
         logger.log(level: .info, message: "Starting to process document", context: document.fileName)
-        
+
         // Initialize processing stats
         var processingStats = DocumentProcessingStats()
         processingStats.startTime = Date()
-        
+
         var currentDocumentProgress: Float = 0.0
-        
+
         do {
             // PHASE 1: Extract text from document (Weight: phaseWeightExtraction)
-            await MainActor.run { self.currentProcessingStatus = "Extracting text (\(document.fileName))..." }
+            self.currentProcessingStatus = "Extracting text (\(document.fileName))..."
             let (documentText, documentMimeType) = try await extractText(from: document, stats: &processingStats)
             currentDocumentProgress += phaseWeightExtraction
-            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
-            
+            updateOverallProgress(for: document.id, progress: currentDocumentProgress)
+
             // PHASE 2: Chunk the text (Weight: phaseWeightChunking)
-            await MainActor.run { self.currentProcessingStatus = "Chunking text (\(document.fileName))..." }
+            self.currentProcessingStatus = "Chunking text (\(document.fileName))..."
             let (chunks, _) = chunkText(document, text: documentText, mimeType: documentMimeType, stats: &processingStats)
             currentDocumentProgress += phaseWeightChunking
-            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
-            
+            updateOverallProgress(for: document.id, progress: currentDocumentProgress)
+
             // Skip processing if no chunks were generated
             guard !chunks.isEmpty else {
                 throw ProcessingError.noChunksGenerated
             }
 
-            let namespaceSnapshot = await MainActor.run { self.selectedNamespace }
-            let indexSnapshot = await MainActor.run { self.selectedIndex }
-            let indexDimensionSnapshot = await MainActor.run { self.indexDimension }
+            let namespaceSnapshot = self.selectedNamespace
+            let indexSnapshot = self.selectedIndex
+            let indexDimensionSnapshot = self.indexDimension
             try await purgeExistingVectors(for: document, namespace: namespaceSnapshot)
-            
+
             // PHASE 3: Generate embeddings (Weight: phaseWeightEmbedding)
-            await MainActor.run { self.currentProcessingStatus = "Generating embeddings (\(document.fileName))..." }
+            self.currentProcessingStatus = "Generating embeddings (\(document.fileName))..."
             let embeddingStart = Date() // Record start time for stats
             let targetDimension = indexDimensionSnapshot ?? Configuration.embeddingDimension
             logger.log(level: .info, message: "Generating embeddings with dimension \(targetDimension)", context: document.fileName)
             let embeddings: [EmbeddingModel]
+
+            // Capture values for Sendable closure
+            let docId = document.id
+            let phaseWeight = self.phaseWeightEmbedding
+            let currentProgress = currentDocumentProgress
+
             do {
-                embeddings = try await embeddingService.generateEmbeddings(for: chunks, dimension: targetDimension) { batchIndex, totalBatches in
+                embeddings = try await embeddingService.generateEmbeddings(for: chunks, dimension: targetDimension) { [weak self] batchIndex, totalBatches in
+                    guard let self = self else { return }
                     // Calculate progress within this phase based on batch completion
                     let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
-                    let phaseProgress = self.phaseWeightEmbedding * batchProgress
-                    await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+                    let phaseProgress = phaseWeight * batchProgress
+                    await MainActor.run {
+                        self.updateOverallProgress(for: docId, progress: currentProgress + phaseProgress)
+                    }
                 }
             } catch {
                 throw ProcessingError.embeddingFailed(underlying: error)
@@ -916,24 +941,32 @@ class DocumentsViewModel: ObservableObject {
             processingStats.addPhase(phase: .embeddingGeneration, start: embeddingStart, end: embeddingEnd)
             // Ensure the full weight is added after the phase completes
             currentDocumentProgress += phaseWeightEmbedding
-            await updateOverallProgress(for: document.id, progress: currentDocumentProgress)
-            
+            updateOverallProgress(for: document.id, progress: currentDocumentProgress)
+
             // Skip processing if no embeddings were generated
             guard !embeddings.isEmpty else {
                 throw ProcessingError.noEmbeddingsGenerated
             }
-            
+
             // PHASE 4: Upsert vectors to Pinecone (Weight: phaseWeightUploading)
-            await MainActor.run { self.currentProcessingStatus = "Uploading vectors (\(document.fileName))..." }
+            self.currentProcessingStatus = "Uploading vectors (\(document.fileName))..."
             let upsertStart = Date() // Record start time for stats
             let vectorsToUpsert = embeddingService.convertToPineconeVectors(from: embeddings)
             let upsertResponse: UpsertResponse
+
+            // Capture values for Sendable closure
+            let uploadPhaseWeight = self.phaseWeightUploading
+            let uploadCurrentProgress = currentDocumentProgress
+
             do {
-                upsertResponse = try await pineconeService.upsertVectors(vectorsToUpsert, namespace: namespaceSnapshot) { batchIndex, totalBatches in
-                     // Calculate progress within this phase based on batch completion
+                upsertResponse = try await pineconeService.upsertVectors(vectorsToUpsert, namespace: namespaceSnapshot) { [weak self] batchIndex, totalBatches in
+                    guard let self = self else { return }
+                    // Calculate progress within this phase based on batch completion
                     let batchProgress = totalBatches > 0 ? Float(batchIndex + 1) / Float(totalBatches) : 1.0
-                    let phaseProgress = self.phaseWeightUploading * batchProgress
-                    await self.updateOverallProgress(for: document.id, progress: currentDocumentProgress + phaseProgress)
+                    let phaseProgress = uploadPhaseWeight * batchProgress
+                    await MainActor.run {
+                        self.updateOverallProgress(for: docId, progress: uploadCurrentProgress + phaseProgress)
+                    }
                 }
             } catch {
                 throw ProcessingError.upsertFailed(underlying: error)
@@ -944,11 +977,11 @@ class DocumentsViewModel: ObservableObject {
             processingStats.vectorsUploaded = upsertResponse.upsertedCount // Save actual count
              // Ensure the full weight is added after the phase completes
             currentDocumentProgress += phaseWeightUploading
-            await updateOverallProgress(for: document.id, progress: 1.0) // Ensure it reaches 100% for this doc
-            
+            updateOverallProgress(for: document.id, progress: 1.0) // Ensure it reaches 100% for this doc
+
             // Finalize processing stats
             processingStats.endTime = Date()
-            
+
             // Update document status and stats
             await updateDocumentStatus(
                 document,
@@ -959,16 +992,16 @@ class DocumentsViewModel: ObservableObject {
                 shouldUpdateContext: true
             )
             await updateDocumentStats(document, stats: processingStats)
-            
+
             logger.log(level: .success, message: "Document processed successfully", context: document.fileName)
             await refreshIndexInsights()
-            
+
         } catch {
             // Mark progress as complete (even on failure) to avoid stalling average
-            await updateOverallProgress(for: document.id, progress: 1.0)
+            updateOverallProgress(for: document.id, progress: 1.0)
             // Record end time even for failures
             processingStats.endTime = Date()
-            
+
             // Format the error message
             let errorMessage: String
             if let processingError = error as? ProcessingError {
@@ -976,11 +1009,11 @@ class DocumentsViewModel: ObservableObject {
             } else {
                 errorMessage = error.localizedDescription
             }
-            
+
             // Update document status to failure
             await updateDocumentStatus(document, isProcessed: false, error: errorMessage)
             await updateDocumentStats(document, stats: processingStats)
-            
+
             logger.log(level: .error, message: "Failed to process document", context: "\(document.fileName): \(errorMessage)")
         }
     }
@@ -1010,7 +1043,7 @@ class DocumentsViewModel: ObservableObject {
             throw ProcessingError.cleanupFailed(underlying: error)
         }
     }
-    
+
     /// Extract text from a document file
     /// - Parameters:
     ///   - document: Document to process
@@ -1019,17 +1052,17 @@ class DocumentsViewModel: ObservableObject {
     /// - Throws: Error if text extraction fails
     private func extractText(from document: DocumentModel, stats: inout DocumentProcessingStats) async throws -> (text: String, mimeType: String) {
         let textExtractionStart = Date()
-        
+
         // Use the stored bookmark to regain access
         guard let bookmarkData = document.securityBookmark else {
             logger.log(level: .error, message: "No security bookmark available", context: document.fileName)
             throw ProcessingError.securityAccessDenied
         }
-        
+
         var isStale = false
         var resolvedURL: URL
         var hasScope = false
-        
+
         do {
             // Resolve the bookmark to regain access without prompting the user again.
             var resolveOptions: URL.BookmarkResolutionOptions = [.withoutUI]
@@ -1081,15 +1114,15 @@ class DocumentsViewModel: ObservableObject {
                 resolvedURL.stopAccessingSecurityScopedResource()
             }
         }
-        
+
         // Call the file processor service with the resolved URL
         let (text, mimeType) = try await fileProcessorService.processFile(at: resolvedURL)
         let textExtractionEnd = Date()
-        
+
         guard let documentText = text, let documentMimeType = mimeType, !documentText.isEmpty else {
                 throw ProcessingError.textExtractionFailed
             }
-            
+
             // Update text extraction stats
             stats.addPhase(
                 phase: .textExtraction,
@@ -1097,13 +1130,13 @@ class DocumentsViewModel: ObservableObject {
                 end: textExtractionEnd
             )
             stats.extractedTextLength = documentText.count
-            
+
             logger.log(level: .info, message: "Text extracted", context: "Document: \(document.fileName), Size: \(documentText.count) characters")
-            
+
             return (documentText, documentMimeType)
         // } // Original closing brace for autoreleasepool
     }
-    
+
     /// Chunk text into semantic units
     /// - Parameters:
     ///   - document: Document being processed
@@ -1157,7 +1190,7 @@ class DocumentsViewModel: ObservableObject {
             return (chunks, analytics)
         }
     }
-    
+
     /// Generate embeddings for text chunks
     /// - Parameters:
     ///   - document: Document being processed
@@ -1166,36 +1199,36 @@ class DocumentsViewModel: ObservableObject {
     /// - Returns: Generated embeddings
     /// - Throws: Error if embedding generation fails
     // Note: Removed the separate 'WithProgress' helper methods as the main service calls now handle the callback directly.
-    
+
     /// Update the status of a document after processing
     /// - Parameters:
     ///   - document: The document to update
     //     var totalUpserted = 0
-        
+
     //     let batchSize = 100 // Pinecone batch size
     //     let totalBatches = (vectors.count + batchSize - 1) / batchSize
-        
+
     //     // Report initial progress
     //     // if totalBatches > 0 { await progressCallback(0.0) } // Callback handled by caller now
-        
+
     //     for i in stride(from: 0, to: vectors.count, by: batchSize) {
     //         let end = min(i + batchSize, vectors.count)
     //         let batch = Array(vectors[i..<end])
     //         let batchNumber = i / batchSize + 1
-            
+
     //         logger.log(level: .info, message: "Upserting batch to Pinecone", context: "Batch: \(batchNumber)/\(totalBatches), Size: \(batch.count)")
-            
+
     //         do {
     //             // This call internally handles retries but not batch progress reporting back
     //             let response = try await pineconeService.upsertVectors(batch, namespace: selectedNamespace) // Removed callback here
     //             totalUpserted += response.upsertedCount
-                
+
     //             logger.log(level: .info, message: "Batch upserted", context: "Upserted: \(response.upsertedCount)")
-                
+
     //             // Report progress after each batch completes
     //             // let batchProgress = Float(batchNumber) / Float(totalBatches) // Callback handled by caller now
     //             // await progressCallback(batchProgress) // Callback handled by caller now
-                
+
     //             // Update global stats
     //                 await MainActor.run {
     //                     self.processingStats?.totalVectors += response.upsertedCount
@@ -1204,16 +1237,16 @@ class DocumentsViewModel: ObservableObject {
     //                 logger.log(level: .error, message: "Upsert failed for batch \(batchNumber)", context: error.localizedDescription)
     //                 throw ProcessingError.upsertFailed(underlying: error)
     //             }
-                
+
     //             // Add a small delay between batches to avoid rate limiting
     //             if i + batchSize < vectors.count {
     //                 try await Task.sleep(nanoseconds: 250_000_000) // 250ms
     //             }
     //         // } // Original closing brace for autoreleasepool
     //     }
-        
+
     //     let upsertEnd = Date()
-        
+
     //     // Update upsert stats
     //     stats.addPhase(
     //         phase: .vectorUpsert,
@@ -1222,7 +1255,7 @@ class DocumentsViewModel: ObservableObject {
     //     )
     //     stats.vectorsUploaded = totalUpserted
     // }
-    
+
     /// Update the status of a document after processing
     /// - Parameters:
     ///   - document: The document to update
@@ -1258,27 +1291,27 @@ class DocumentsViewModel: ObservableObject {
                         updatedDocument.lastIndexedAt = Date()
                     }
                 }
-                
+
                 // Replace the old document with the updated copy in the array
                 self.documents[index] = updatedDocument
             }
         }
     }
-    
+
     /// Recalculates and updates the overall processing progress based on individual document progress.
     @MainActor
     private func updateOverallProgress(for documentId: UUID, progress: Float) {
         // Update the progress for the specific document
         documentProgress[documentId] = min(max(progress, 0.0), 1.0) // Clamp between 0 and 1
-        
+
         // Calculate the average progress across all currently processing documents
         let totalProgress = documentProgress.values.reduce(0, +)
         let averageProgress = documentProgress.isEmpty ? 0 : totalProgress / Float(documentProgress.count)
-        
+
         // Update the main progress property
         self.processingProgress = averageProgress
     }
-    
+
     /// Update document processing statistics (remains unchanged)
     /// - Parameters:
     ///   - document: The document to update
@@ -1299,16 +1332,16 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     /// Checks if the document is already processed
     /// - Parameter documentId: ID of the document to check
     /// - Returns: True if the document is processed
     func isDocumentProcessed(documentId: UUID) -> Bool {
         return documents.first(where: { $0.id == documentId })?.isProcessed ?? false
     }
-    
+
     /// Get the total size of all selected documents
     /// - Returns: Total size in bytes
     func getTotalSelectedSize() -> Int64 {
@@ -1339,7 +1372,7 @@ class DocumentsViewModel: ObservableObject {
     }
 
     // MARK: - Models
-    
+
     /// Custom errors for document processing
     enum ProcessingError: Error, LocalizedError {
         case textExtractionFailed
@@ -1354,7 +1387,7 @@ class DocumentsViewModel: ObservableObject {
         case invalidIndex
         case invalidNamespace
         case documentSizeTooLarge(size: Int64, maxSize: Int64)
-        
+
         var errorDescription: String? {
             switch self {
             case .textExtractionFailed:
@@ -1386,7 +1419,7 @@ class DocumentsViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Statistics for document processing
     struct ProcessingStats {
         var totalDocuments = 0

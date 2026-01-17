@@ -6,6 +6,10 @@
 	<string>AppIcon</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Allow OpenCone to transcribe your voice into search queries for hands-free document search.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow OpenCone to access your microphone for voice-to-text search input.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow OpenCone to import reference documents from your photo library so they can be indexed for search.</string>
 	<key>NSDocumentsFolderUsageDescription</key>

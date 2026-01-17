@@ -3,11 +3,18 @@ import SwiftUI
 struct ChatBubble: View {
     let message: ChatMessage
     let onCitationTap: ((String) -> Void)?
+    var onCopy: ((String) -> Void)?
+    var onShare: ((String) -> Void)?
+    var onRegenerate: (() -> Void)?
     @Environment(\.theme) private var theme
+    @State private var showCopied = false
 
-    init(message: ChatMessage, onCitationTap: ((String) -> Void)? = nil) {
+    init(message: ChatMessage, onCitationTap: ((String) -> Void)? = nil, onCopy: ((String) -> Void)? = nil, onShare: ((String) -> Void)? = nil, onRegenerate: (() -> Void)? = nil) { 
         self.message = message
         self.onCitationTap = onCitationTap
+        self.onCopy = onCopy
+        self.onShare = onShare
+        self.onRegenerate = onRegenerate
     }
 
     private var isUser: Bool {
@@ -40,6 +47,7 @@ struct ChatBubble: View {
                         .foregroundColor(isUser ? Color.white : theme.textPrimaryColor)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+.textSelection(.enabled)
 
                     // Citations for assistant messages
                     if let citations = message.citations, !citations.isEmpty, !isUser {
@@ -77,6 +85,78 @@ struct ChatBubble: View {
                         }
                     }
                 }
+
+                // Action buttons for non-streaming messages
+                if !message.text.isEmpty, message.status != .streaming {
+                    HStack(spacing: 12) {
+                        // Copy with feedback
+                        Button(action: {
+                            Haptics.success()
+                            UIPasteboard.general.string = message.text
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation { showCopied = false }
+                            }
+                            onCopy?(message.text)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 11))
+                                Text(showCopied ? "Copied!" : "Copy")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(showCopied ? theme.successColor : (isUser ? Color.white.opacity(0.7) : theme.textSecondaryColor))
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        Button(action: {
+                            onShare?(message.text)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 11))
+                                Text("Share")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(isUser ? Color.white.opacity(0.7) : theme.textSecondaryColor)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        // Regenerate for assistant messages
+                        if !isUser, let onRegenerate {
+                            Button(action: onRegenerate) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 11))
+                                    Text("Retry")
+                                        .font(.caption2)
+                                }
+                                .foregroundColor(theme.textSecondaryColor)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+
+                        Spacer()
+
+                        // Timestamp
+                        Text(formatTime(message.createdAt))
+                            .font(.caption2)
+                            .foregroundColor(isUser ? Color.white.opacity(0.5) : theme.textSecondaryColor.opacity(0.5))
+
+                        // Word count for assistant
+                        if !isUser {
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondaryColor.opacity(0.4))
+                            Text("\(message.text.split(separator: " ").count) words")
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondaryColor.opacity(0.6))
+                        }
+                    }
+                    .padding(.top, 4)
+                }
             }
             .padding(12)
             .background(
@@ -98,6 +178,37 @@ struct ChatBubble: View {
             )
             .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
             .frame(maxWidth: 600, alignment: .leading)
+.contextMenu {
+    Button(action: {
+        UIPasteboard.general.string = message.text
+        onCopy?(message.text)
+    }) {
+        Label("Copy Message", systemImage: "doc.on.doc")
+    }
+
+    Button(action: {
+        onShare?(message.text)
+    }) {
+        Label("Share Message", systemImage: "square.and.arrow.up")
+    }
+
+    if !isUser, let onRegenerate {
+        Divider()
+        Button(action: onRegenerate) {
+            Label("Regenerate", systemImage: "arrow.clockwise")
+        }
+    }
+
+    if let citations = message.citations, !citations.isEmpty {
+        Divider()
+        Button(action: {
+            let citationText = citations.joined(separator: "\n")
+            UIPasteboard.general.string = citationText
+        }) {
+            Label("Copy Sources", systemImage: "doc.text")
+        }
+    }
+}
 
             if !isUser { Spacer(minLength: 40) }
         }
@@ -108,6 +219,12 @@ struct ChatBubble: View {
     private func fileName(from path: String) -> String {
         let components = path.split(separator: "/")
         return components.last.map(String.init) ?? path
+    }
+
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

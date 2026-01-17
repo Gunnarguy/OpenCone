@@ -2,53 +2,438 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Redesigned document orchestration surface aligned with Pinecone playbooks.
+/// Simplified, intuitive document management view
 struct DocumentsView: View {
     @ObservedObject var viewModel: DocumentsViewModel
     @State private var showingDocumentPicker = false
     @State private var showingNamespaceDialog = false
+    @State private var showAdvancedOptions = false
     @State private var newNamespace = ""
     @Environment(\.theme) private var theme: OCTheme
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 28) {
+            VStack(spacing: 20) { 
                 if viewModel.needsSecurityConsent {
                     securityConsentBanner
                 }
-                heroSection
-                indexOverviewSection
-                pipelineSection
-                processingPanel
-                documentCatalogSection
-                operationsSection
-                referencesSection
+
+                // Simple status + knowledge base selector
+                knowledgeBaseCard
+
+                // Primary action: Add documents
+                if !viewModel.isLoadingIndexes, viewModel.selectedIndex != nil {
+                    addDocumentsCard
+                }
+
+                // Show processing status if active
+                if viewModel.isProcessing {
+                    processingPanel
+                }
+
+                // Document list
+                if !viewModel.documents.isEmpty {
+                    yourDocumentsSection
+                }
+
+                // Show advanced options toggle
+                advancedOptionsToggle
+
+                // Advanced sections (collapsed by default)
+                if showAdvancedOptions {
+                    pipelineSection
+                    operationsSection
+                    referencesSection
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 28)
+            .padding(.horizontal, 16)
+                .padding(.vertical, 20)
         }
         .background(theme.backgroundColor.ignoresSafeArea())
         .sheet(isPresented: $showingDocumentPicker) {
             DocumentPicker(viewModel: viewModel)
         }
-        .alert("Create Namespace", isPresented: $showingNamespaceDialog) {
+.alert("Create Collection", isPresented: $showingNamespaceDialog) { 
             namespaceDialogContent
         } message: {
-            Text("Enter a name for the new namespace:")
+            Text("Enter a name for the new collection:")
         }
-        .alert("Create Pinecone Index", isPresented: $viewModel.showingCreateIndexDialog) {
+.alert("Create Knowledge Base", isPresented: $viewModel.showingCreateIndexDialog) { 
             createIndexDialogContent
         } message: {
-            Text("Enter a name for the new index (lowercase, alphanumeric, hyphens):")
+            Text("Enter a name for your knowledge base:")
         }
         .animation(.spring(duration: 0.25), value: viewModel.isProcessing)
         .animation(.spring(duration: 0.25), value: viewModel.documents.count)
-        .animation(.spring(duration: 0.25), value: viewModel.selectedDocuments)
+.animation(.spring(duration: 0.25), value: showAdvancedOptions)
     }
 }
 
 private extension DocumentsView {
-    // MARK: - Hero
+    // MARK: - Knowledge Base Card (Simplified Index/Namespace Selector)
+
+    var knowledgeBaseCard: some View {
+        VStack(spacing: 16) {
+            // Header with status indicator
+            HStack {
+                if viewModel.isLoadingIndexes {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if viewModel.selectedIndex != nil {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(theme.successColor)
+                        .font(.system(size: 20))
+                } else {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundColor(theme.warningColor)
+                        .font(.system(size: 20))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.headline)
+                        .foregroundColor(theme.textPrimaryColor)
+                    Text(statusSubtitle)
+                        .font(.subheadline)
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+
+                Spacer()
+
+                // Refresh button
+                Button {
+                    Task { await viewModel.loadIndexes() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(theme.primaryColor)
+                }
+                .disabled(viewModel.isLoadingIndexes)
+            }
+
+            // Knowledge Base selector (Index)
+            if !viewModel.pineconeIndexes.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Knowledge Base")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(theme.textSecondaryColor)
+                        .textCase(.uppercase)
+
+                    Menu {
+                        ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                            Button {
+                                Task { await viewModel.setIndex(index) }
+                            } label: {
+                                HStack {
+                                    Text(index)
+                                    if viewModel.selectedIndex == index {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        Divider()
+                        Button {
+                            viewModel.showingCreateIndexDialog = true
+                        } label: {
+                            Label("Create New...", systemImage: "plus")
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "server.rack")
+                                .foregroundColor(theme.primaryColor)
+                            Text(viewModel.selectedIndex ?? "Select...")
+                                .foregroundColor(theme.textPrimaryColor)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12))
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(theme.backgroundColor)
+                        )
+                    }
+                    .disabled(viewModel.isProcessing)
+                }
+            }
+
+            // Collection selector (Namespace)
+            if viewModel.selectedIndex != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Collection")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(theme.textSecondaryColor)
+                        .textCase(.uppercase)
+
+                    Menu {
+                        ForEach(viewModel.namespaces, id: \.self) { namespace in
+                            Button {
+                                viewModel.setNamespace(namespace)
+                            } label: {
+                                HStack {
+                                    Text(namespace.isEmpty ? "Default" : namespace)
+                                    if viewModel.selectedNamespace == namespace {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        if viewModel.namespaces.isEmpty {
+                            Button {
+                                viewModel.setNamespace("")
+                            } label: {
+                                Text("Default")
+                            }
+                        }
+                        Divider()
+                        Button {
+                            showingNamespaceDialog = true
+                        } label: {
+                            Label("Create New...", systemImage: "plus")
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "folder")
+                                .foregroundColor(theme.primaryColor)
+                            Text(collectionDisplayName)
+                                .foregroundColor(theme.textPrimaryColor)
+                            Spacer()
+                            if viewModel.selectedNamespaceVectorCount > 0 {
+                                Text("\(formattedCount(viewModel.selectedNamespaceVectorCount)) items")
+                                    .font(.caption)
+                                    .foregroundColor(theme.textSecondaryColor)
+                            }
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12))
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(theme.backgroundColor)
+                        )
+                    }
+                    .disabled(viewModel.isProcessing)
+                }
+            }
+
+            // Empty state: no indexes
+            if viewModel.pineconeIndexes.isEmpty && !viewModel.isLoadingIndexes {
+                VStack(spacing: 12) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 32))
+                        .foregroundColor(theme.textSecondaryColor)
+                    Text("No knowledge bases found")
+                        .font(.subheadline)
+                        .foregroundColor(theme.textSecondaryColor)
+                    OCButton(title: "Create Knowledge Base", icon: "plus.circle.fill", style: .primary) {
+                        viewModel.showingCreateIndexDialog = true
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(theme.cardBackgroundColor)
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+        )
+    }
+
+    var statusTitle: String {
+        if viewModel.isLoadingIndexes {
+            return "Loading..."
+        } else if viewModel.selectedIndex == nil {
+            return "Select a Knowledge Base"
+        } else if viewModel.isProcessing {
+            return "Processing..."
+        } else {
+            return "Ready"
+        }
+    }
+
+    var statusSubtitle: String {
+        if viewModel.isLoadingIndexes {
+            return "Connecting to Pinecone"
+        } else if viewModel.selectedIndex == nil {
+            return "Choose where to store your documents"
+        } else {
+            let docCount = viewModel.dashboardMetrics.processed
+            let vectorCount = viewModel.selectedNamespaceVectorCount
+            if docCount == 0 && vectorCount == 0 {
+                return "Add documents to get started"
+            }
+            return "\(docCount) documents • \(formattedCount(vectorCount)) searchable items"
+        }
+    }
+
+    var collectionDisplayName: String {
+        let namespace = viewModel.selectedNamespace ?? ""
+        return namespace.isEmpty ? "Default" : namespace
+    }
+
+    // MARK: - Add Documents Card
+
+    var addDocumentsCard: some View {
+        Button {
+            showingDocumentPicker = true
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(theme.primaryColor.opacity(0.15))
+                        .frame(width: 56, height: 56)
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(theme.primaryColor)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Add Documents")
+                        .font(.headline)
+                        .foregroundColor(theme.textPrimaryColor)
+                    Text("PDFs, images, text files, and more")
+                        .font(.subheadline)
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(theme.cardBackgroundColor)
+                    .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isProcessing)
+    }
+
+    // MARK: - Your Documents Section
+
+    var yourDocumentsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Your Documents")
+                    .font(.title3.bold())
+                    .foregroundColor(theme.textPrimaryColor)
+
+                Spacer()
+
+                Text("\(viewModel.documents.count)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(theme.textSecondaryColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(theme.primaryLight))
+            }
+
+            LazyVStack(spacing: 12) {
+                ForEach(viewModel.documents) { document in
+                    simpleDocumentRow(document)
+                }
+            }
+        }
+    }
+
+    func simpleDocumentRow(_ document: DocumentModel) -> some View {
+        let isSelected = viewModel.selectedDocuments.contains(document.id)
+
+        return HStack(spacing: 14) {
+            // Icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(document.viewIconColor.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                Image(systemName: document.viewIconName)
+                    .foregroundColor(document.viewIconColor)
+            }
+
+            // File info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(document.fileName)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(theme.textPrimaryColor)
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    Text(document.formattedFileSize)
+                        .font(.caption)
+                        .foregroundColor(theme.textSecondaryColor)
+
+                    if document.isProcessed {
+                        Label("\(document.chunkCount) chunks", systemImage: "checkmark")
+                            .font(.caption)
+                            .foregroundColor(theme.successColor)
+                    } else if document.processingError != nil {
+                        Label("Error", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundColor(theme.errorColor)
+                    } else {
+                        Text("Pending")
+                            .font(.caption)
+                            .foregroundColor(theme.warningColor)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Selection indicator or nav
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(theme.primaryColor)
+                    .font(.system(size: 22))
+            } else {
+                NavigationLink(destination: DocumentDetailsView(document: document)) {
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(theme.textSecondaryColor)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(isSelected ? theme.primaryLight : theme.cardBackgroundColor)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.toggleDocumentSelection(document.id)
+        }
+    }
+
+    // MARK: - Advanced Options Toggle
+
+    var advancedOptionsToggle: some View {
+        Button {
+            withAnimation(.spring(duration: 0.3)) {
+                showAdvancedOptions.toggle()
+            }
+        } label: {
+            HStack {
+                Image(systemName: "gearshape")
+                    .foregroundColor(theme.textSecondaryColor)
+                Text("Advanced Options")
+                    .font(.subheadline)
+                    .foregroundColor(theme.textSecondaryColor)
+                Spacer()
+                Image(systemName: showAdvancedOptions ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Hero (kept for advanced mode)
 
     var heroSection: some View {
         let metrics = viewModel.dashboardMetrics
@@ -1153,4 +1538,3 @@ private extension DocumentsView {
         }
     }
 }
-

@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// Manages app-wide theme settings
-class ThemeManager: ObservableObject {
+@MainActor
+final class ThemeManager: ObservableObject, Sendable { 
     /// The currently selected theme
     @Published var currentTheme: OCTheme
 

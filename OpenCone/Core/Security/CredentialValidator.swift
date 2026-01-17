@@ -1,7 +1,7 @@
 import Foundation
 
 /// Result of a credential validation check
-enum CredentialStatus: Equatable {
+enum CredentialStatus: Equatable, Sendable { 
     case unknown
     case validating
     case valid
@@ -12,12 +12,17 @@ enum CredentialStatus: Equatable {
 /// Performs lightweight, non-destructive credential validation against provider APIs.
 /// - OpenAI: GET /v1/models (cheap and fast)
 /// - Pinecone: GET /indexes with Api-Key + X-Project-Id (controller endpoint)
-final class CredentialValidator {
-    private let logger = Logger.shared
+final class CredentialValidator: Sendable { 
     private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    /// Async helper to log on MainActor
+    @MainActor
+    private func log(level: ProcessingLogEntry.LogLevel, message: String) {
+        Logger.shared.log(level: level, message: message)
     }
 
     // MARK: - OpenAI
@@ -31,7 +36,7 @@ final class CredentialValidator {
 
         if !apiKey.starts(with: "sk-") {
             // Allow non-prefixed temporarily but warn
-            logger.log(level: .warning, message: "OpenAI key does not start with 'sk-'; attempting validation anyway.")
+            await log(level: .warning, message: "OpenAI key does not start with 'sk-'; attempting validation anyway.")
         }
 
         guard let url = URL(string: "https://api.openai.com/v1/models") else {
@@ -67,7 +72,7 @@ final class CredentialValidator {
             let generic = decodeOpenAIErrorMessage(data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
             return .invalid(message: "OpenAI error \(http.statusCode): \(generic)")
         } catch {
-            logger.log(level: .error, message: "OpenAI validation request failed: \(error.localizedDescription)")
+            await log(level: .error, message: "OpenAI validation request failed: \(error.localizedDescription)")
             return .invalid(message: "Network error: \(error.localizedDescription)")
         }
     }
@@ -92,7 +97,7 @@ final class CredentialValidator {
 
         guard !key.isEmpty else { return .invalid(message: "Pinecone API key is empty") }
         if !key.hasPrefix("pcsk_") {
-            logger.log(level: .warning, message: "Pinecone key does not start with 'pcsk_'; attempting validation anyway.")
+            await log(level: .warning, message: "Pinecone key does not start with 'pcsk_'; attempting validation anyway.")
         }
         guard !pid.isEmpty else { return .invalid(message: "Pinecone Project ID is required") }
 
@@ -131,7 +136,7 @@ final class CredentialValidator {
             let generic = decodePineconeErrorMessage(data) ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
             return .invalid(message: "Pinecone error \(http.statusCode): \(generic)")
         } catch {
-            logger.log(level: .error, message: "Pinecone validation request failed: \(error.localizedDescription)")
+            await log(level: .error, message: "Pinecone validation request failed: \(error.localizedDescription)")
             return .invalid(message: "Network error: \(error.localizedDescription)")
         }
     }

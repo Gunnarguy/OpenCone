@@ -1,14 +1,15 @@
 import Foundation
 
 /// Service for interacting with OpenAI API
-class OpenAIService {
-    
-    private let logger = Logger.shared
+@MainActor
+final class OpenAIService: Sendable {
+
+    private var logger: Logger { Logger.shared }
     private let apiKey: String
     private let embeddingModel: String
     private let completionModel: String
     private let baseURL = "https://api.openai.com/v1"
-    
+
     init(apiKey: String, embeddingModel: String = Configuration.embeddingModel, completionModel: String = Configuration.completionModel) {
         self.apiKey = apiKey
         self.embeddingModel = embeddingModel
@@ -34,7 +35,20 @@ class OpenAIService {
     }
 
     private func currentReasoningEffort() -> String {
-        return UserDefaults.standard.string(forKey: "openai.reasoningEffort") ?? "medium"
+        return UserDefaults.standard.string(forKey: "openai.reasoningEffort") ?? "none"
+    }
+
+    private func isWebSearchEnabled() -> Bool {
+        return (UserDefaults.standard.object(forKey: "search.webSearchEnabled") as? Bool) ?? false
+    }
+
+    private func isCodeInterpreterEnabled() -> Bool {
+        return (UserDefaults.standard.object(forKey: "search.codeInterpreterEnabled") as? Bool) ?? false
+    }
+
+    private func currentMaxOutputTokens() -> Int {
+        let stored = UserDefaults.standard.integer(forKey: "search.maxOutputTokens")
+        return stored > 0 ? stored : 1000
     }
 
     // MARK: - Conversation input builder
@@ -49,7 +63,7 @@ class OpenAIService {
         } else {
             Logger.shared.log(level: .warning, message: "Warning: Context is EMPTY!")
         }
-        
+
         let systemContent: [[String: Any]] = [
             ["type": "input_text", "text": "\(systemPrompt)\n\nContext:\n\(context)"]
         ]
@@ -75,7 +89,7 @@ class OpenAIService {
         // Compose in order: system, history..., current user
         return [["role": "system", "content": systemContent]] + historyItems + currentUser
     }
-    
+
     /// Create embeddings for a list of texts, optionally with a specific dimension
     /// - Parameters:
     ///   - texts: Array of text strings
@@ -85,39 +99,39 @@ class OpenAIService {
         guard !texts.isEmpty else {
             return []
         }
-        
+
         let endpoint = "\(baseURL)/embeddings"
         var body: [String: Any] = [
             "input": texts,
             "model": currentEmbeddingModel()
         ]
-        
+
         // Add dimension to the request if provided, otherwise use the default
         body["dimensions"] = dimension ?? Configuration.embeddingDimension
-        
+
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             throw APIError.invalidRequestData
         }
-        
+
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            
+
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
             }
-            
+
             if httpResponse.statusCode != 200 {
                 let errorMessage = try? JSONDecoder().decode(APIErrorResponse.self, from: data)
                 logger.log(level: .error, message: "OpenAI API error: \(errorMessage?.error.message ?? "Unknown error")")
                 throw APIError.requestFailed(statusCode: httpResponse.statusCode, message: errorMessage?.error.message)
             }
-            
+
             let embeddingResponse = try JSONDecoder().decode(EmbeddingResponse.self, from: data)
             return embeddingResponse.data.map { $0.embedding }
         } catch {
@@ -125,7 +139,7 @@ class OpenAIService {
             throw APIError.requestFailed(statusCode: 0, message: error.localizedDescription)
         }
     }
-    
+
     /// Generate a completion using the OpenAI Responses API (v1/responses)
     /// - Parameters:
     ///   - systemPrompt: The system prompt
@@ -261,8 +275,7 @@ class OpenAIService {
             "model": model,
             "input": input,
             "stream": true,
-            // Responses API uses max_output_tokens instead of max_tokens
-            "max_output_tokens": 1000,
+            "max_output_tokens": currentMaxOutputTokens(),
             "store": false
         ]
 
@@ -272,6 +285,22 @@ class OpenAIService {
             body["temperature"] = currentTemperature()
             body["top_p"] = currentTopP()
         }
+
+        // Build tools array from enabled features
+        var tools: [[String: Any]] = []
+
+        if isWebSearchEnabled() {
+            tools.append(["type": "web_search"])
+        }
+
+        if isCodeInterpreterEnabled() {
+            tools.append(["type": "code_interpreter"])
+        }
+
+        if !tools.isEmpty {
+            body["tools"] = tools
+        }
+
         if let convId = conversationId {
             body["conversation"] = convId
         }
@@ -311,6 +340,7 @@ class OpenAIService {
         var currentEvent: String? = nil
         var completedCalled = false
         var eventCount = 0
+        var deltaCount = 0
         func completeOnce() {
             if !completedCalled {
                 completedCalled = true
@@ -323,13 +353,24 @@ class OpenAIService {
                 if line.hasPrefix("event:") {
                     currentEvent = line.replacingOccurrences(of: "event:", with: "").trimmingCharacters(in: .whitespaces)
                     eventCount += 1
-                    if eventCount <= 15 || currentEvent?.contains("reasoning") == true || currentEvent?.contains("text") == true {
-                        logger.log(level: .info, message: "SSE event: \(currentEvent ?? "nil")")
+                    // Only log non-delta events and first few of each type
+                    let isImportantEvent = currentEvent == "response.created" ||
+                        currentEvent == "response.completed" ||
+                        currentEvent == "response.in_progress" ||
+                        currentEvent?.contains("reasoning") == true ||
+                        currentEvent == "response.output_item.added" ||
+                        currentEvent == "response.output_item.done"
+                    if isImportantEvent, eventCount <= 10 {
+                        logger.log(level: .debug, message: "SSE event: \(currentEvent ?? "nil")")
                     }
                 } else if line.hasPrefix("data:") {
                     let payload = line.replacingOccurrences(of: "data:", with: "").trimmingCharacters(in: .whitespaces)
-                    if eventCount <= 15 || currentEvent?.contains("reasoning") == true || currentEvent?.contains("text") == true {
-                        logger.log(level: .info, message: "SSE data for event '\(currentEvent ?? "nil")': \(payload.prefix(200))")
+                    // Skip logging delta data payloads entirely - too verbose
+                    let isImportantEvent = currentEvent == "response.created" ||
+                        currentEvent == "response.completed" ||
+                        currentEvent?.contains("reasoning") == true
+                    if isImportantEvent, eventCount <= 10 {
+                        logger.log(level: .debug, message: "SSE data for event '\(currentEvent ?? "nil")': \(payload.prefix(200))")
                     }
                     // Handle completion (also try to capture conversation id from payload)
                     if currentEvent == "response.completed" {
@@ -354,8 +395,17 @@ class OpenAIService {
                         currentEvent = nil
                         continue
                     }
-                    // Handle text delta
-                    if currentEvent == "response.output_text.delta" {
+                    // Handle text delta - check multiple event types used by Responses API
+                    // response.output_text.delta - standard text streaming
+                    // response.content_part.delta - alternative format with tools
+                    // response.text.delta - another variant
+                    let isTextDeltaEvent = currentEvent == "response.output_text.delta" ||
+                        currentEvent == "response.content_part.delta" ||
+                        currentEvent == "response.text.delta" ||
+                        currentEvent == "response.output_item.delta"
+
+                    if isTextDeltaEvent {
+                        deltaCount += 1
                         if payload == "[DONE]" {
                             completeOnce()
                             currentEvent = nil
@@ -364,27 +414,59 @@ class OpenAIService {
                         if let data = payload.data(using: .utf8) {
                             // Try JSON decode first, then fallback to raw text
                             if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                                if let delta = obj["delta"] as? String {
-                                    logger.log(level: .info, message: "Extracted delta: '\(delta)'")
+                                // Try multiple possible keys for the text content
+                                let delta = obj["delta"] as? String ??
+                                    obj["text"] as? String ??
+                                    obj["content"] as? String ??
+                                    (obj["part"] as? [String: Any])?["text"] as? String
+
+                                if let delta = delta, !delta.isEmpty {
+                                    // Only log first 3 deltas at debug level
+                                    if deltaCount <= 3 {
+                                        logger.log(level: .debug, message: "Extracted delta: '\(delta.prefix(20))'")
+                                    }
                                     onTextDelta(delta)
-                                } else if let text = obj["text"] as? String {
-                                    logger.log(level: .info, message: "Extracted text: '\(text.prefix(50))'")
-                                    onTextDelta(text)
                                 } else {
-                                    logger.log(level: .warning, message: "No delta or text in payload, keys: \(obj.keys)")
-                                    if let s = String(data: data, encoding: .utf8) {
-                                        onTextDelta(s)
+                                    // Only log warnings occasionally to avoid spam
+                                    if deltaCount <= 3 {
+                                        logger.log(level: .warning, message: "No text found in payload, keys: \(obj.keys)")
                                     }
                                 }
                             } else {
-                                logger.log(level: .warning, message: "Failed to decode JSON, using raw payload")
+                                if deltaCount <= 3 { 
+                                    logger.log(level: .warning, message: "Failed to decode JSON, using raw payload")
+                                }
                                 onTextDelta(payload)
                             }
                         } else {
                             onTextDelta(payload)
                         }
                     }
+
+                    // Handle response.output_item.done which may contain final text content
+                    if currentEvent == "response.output_item.done" {
+                        if let data = payload.data(using: .utf8),
+                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        {
+                            // Check for message content in the done event
+                            if let item = obj["item"] as? [String: Any],
+                               let content = item["content"] as? [[String: Any]]
+                            {
+                                for c in content {
+                                    if let text = c["text"] as? String, !text.isEmpty {
+                                        logger.log(level: .debug, message: "Extracted final text from output_item.done: '\(text.prefix(50))'")
+                                        onTextDelta(text)
+                                        deltaCount += 1
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+            // Log final stats
+            if deltaCount == 0 {
+                logger.log(level: .warning, message: "OpenAI stream completed with no text deltas received")
             }
             // If stream ended without explicit completed event, still signal completion
             completeOnce()
@@ -397,7 +479,7 @@ class OpenAIService {
         }
     }
 }
- 
+
 // MARK: - Response Models
 
 struct EmbeddingResponse: Codable {
@@ -425,7 +507,7 @@ struct Choice: Codable {
     let index: Int
     let message: Message
     let finishReason: String?
-    
+
     enum CodingKeys: String, CodingKey {
         case index
         case message
@@ -442,7 +524,7 @@ struct Usage: Codable {
     let promptTokens: Int
     let completionTokens: Int?
     let totalTokens: Int
-    
+
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"

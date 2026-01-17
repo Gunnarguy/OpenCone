@@ -3,34 +3,35 @@ import NaturalLanguage
 import CryptoKit
 
 /// Service for processing text: chunking, tokenization, and analysis
-class TextProcessorService {
-    
-    private let logger = Logger.shared
-    
+@MainActor
+final class TextProcessorService {
+
+    private var logger: Logger { Logger.shared }
+
     // Tokenizer for counting tokens
     private let tokenizer: NLTokenizer
-    
+
     init() {
         tokenizer = NLTokenizer(unit: .word)
     }
-    
+
     /// Count tokens in a text string
     /// - Parameter text: The text to count tokens in
     /// - Returns: The token count
     func countTokens(in text: String) -> Int {
         tokenizer.string = text
         var tokenCount = 0
-        
+
         // Use Range<String.Index> for enumerateTokens
         let stringRange = text.startIndex..<text.endIndex
         tokenizer.enumerateTokens(in: stringRange) { _, _ in
             tokenCount += 1
             return true
         }
-        
+
         return tokenCount
     }
-    
+
     /// Split text into chunks based on MIME type
     /// - Parameters:
     ///   - text: The text to split
@@ -52,19 +53,19 @@ class TextProcessorService {
                 maxTokens: 0
             ))
         }
-        
+
         // Use autoreleasepool to manage memory during complex operation
         return autoreleasepool { () -> ([ChunkModel], ChunkAnalytics) in
             // Get the appropriate chunking strategy based on MIME type
             let (chunkSize, chunkOverlap, separators) = getChunkParametersForMimeType(mimeType)
-            
+
             let chunkingStrategy = "RecursiveTextSplitter"
-            
-            // For large texts, log a progress message 
+
+            // For large texts, log a progress message
             if text.count > 100_000 {
                 logger.log(level: .info, message: "Processing large text (size: \(text.count) characters)")
             }
-            
+
             // Split the text into chunks
             let textChunks = splitTextRecursively(
                 text: text,
@@ -72,48 +73,48 @@ class TextProcessorService {
                 chunkOverlap: chunkOverlap,
                 separators: separators
             )
-            
+
             // Initialize analytics variables
             var tokenDistribution: [Int] = []
             tokenDistribution.reserveCapacity(textChunks.count)
-            
+
             var chunkSizes: [Int] = []
             chunkSizes.reserveCapacity(textChunks.count)
-            
+
             var totalTokens = 0
-            
+
             // Create chunks array with enough capacity to avoid reallocations
             var chunks: [ChunkModel] = []
             chunks.reserveCapacity(textChunks.count)
-            
+
             let isoFormatter = ISO8601DateFormatter()
             let processedDate = metadata["dateProcessed"].flatMap { isoFormatter.date(from: $0) } ?? Date()
 
             // Process chunks in batches to avoid memory spikes
             let batchSize = min(100, max(1, textChunks.count / 4))
             let batches = stride(from: 0, to: textChunks.count, by: batchSize)
-            
+
             for batchStart in batches {
                 autoreleasepool {
                     let batchEnd = min(batchStart + batchSize, textChunks.count)
-                    
+
                     // Log batch progress
                     // Removed condition textChunks.count > 200 and changed level to .info
                     logger.log(level: .info, message: "Processing chunk batch \(batchStart/batchSize + 1)/\(textChunks.count / batchSize + 1)")
-                    
+
                     // Process each chunk in this batch
                     for index in batchStart..<batchEnd {
                         let chunkText = textChunks[index]
-                        
+
                         // Calculate token counts
                         let tokenCount = countTokens(in: chunkText)
                         totalTokens += tokenCount
                         tokenDistribution.append(tokenCount)
                         chunkSizes.append(chunkText.count)
-                        
+
                         // Create a content hash
                         let contentHash = generateContentHash(for: chunkText)
-                        
+
                         var additionalMetadata = metadata
                         additionalMetadata["chunkCharacterCount"] = String(chunkText.count)
                         additionalMetadata["chunkTokenCount"] = String(tokenCount)
@@ -129,7 +130,7 @@ class TextProcessorService {
                             position: nil,
                             additionalMetadata: additionalMetadata
                         )
-                        
+
                         // Create chunk model and add to chunks array
                         let chunk = ChunkModel(
                             content: chunkText,
@@ -138,21 +139,21 @@ class TextProcessorService {
                             contentHash: contentHash,
                             tokenCount: tokenCount
                         )
-                        
+
                         chunks.append(chunk)
                     }
                 }
-                
+
                 // Manually trigger a memory cleanup after each batch
                 Thread.sleep(forTimeInterval: 0.01)
             }
-            
+
             // Calculate analytics
             let avgTokensPerChunk = totalTokens > 0 && !chunks.isEmpty ? Double(totalTokens) / Double(chunks.count) : 0
             let avgCharsPerChunk = !chunkSizes.isEmpty ? Double(chunkSizes.reduce(0, +)) / Double(chunkSizes.count) : 0
             let minTokens = tokenDistribution.min() ?? 0
             let maxTokens = tokenDistribution.max() ?? 0
-            
+
             let analytics = ChunkAnalytics(
                 totalChunks: chunks.count,
                 totalTokens: totalTokens,
@@ -165,11 +166,11 @@ class TextProcessorService {
                 minTokens: minTokens,
                 maxTokens: maxTokens
             )
-            
+
             return (chunks, analytics)
         }
     }
-    
+
     /// Get the appropriate chunking parameters based on MIME type
     /// - Parameter mimeType: The MIME type of the document
     /// - Returns: A tuple containing chunk size, overlap, and separators
@@ -187,7 +188,7 @@ class TextProcessorService {
             return (Configuration.defaultChunkSize, Configuration.defaultChunkOverlap, ["\n\n", "\n", ". ", " ", ""])
         }
     }
-    
+
     /// Split text recursively using multiple separators
     /// - Parameters:
     ///   - text: The text to split
@@ -200,17 +201,17 @@ class TextProcessorService {
         guard text.count > 10 else {
             return text.isEmpty ? [] : [text]
         }
-        
+
         // Base case: if we're at the last separator or text is smaller than chunk size
         if separators.isEmpty || text.count <= chunkSize {
             return [text]
         }
-        
+
         // Use autoreleasepool to free up memory sooner - important for large documents
         return autoreleasepool { () -> [String] in
             let separator = separators[0]
             let components = text.components(separatedBy: separator)
-            
+
             // If splitting with this separator doesn't help, try the next one
             if components.count <= 1 {
                 return splitTextRecursively(
@@ -220,22 +221,22 @@ class TextProcessorService {
                     separators: Array(separators.dropFirst())
                 )
             }
-            
+
             var chunks: [String] = []
             chunks.reserveCapacity(max(1, text.count / (chunkSize / 2))) // Pre-allocate to avoid resizing
             var currentChunk = ""
-            
+
             for component in components {
                 // Check if we should start a new chunk
                 let potentialChunk = currentChunk.isEmpty ? component : currentChunk + separator + component
-                
+
                 if potentialChunk.count <= chunkSize {
                     currentChunk = potentialChunk
                 } else {
                     if !currentChunk.isEmpty {
                         chunks.append(currentChunk)
                     }
-                    
+
                     // If the component itself is larger than the chunk size, recursively split it
                     if component.count > chunkSize {
                         let subChunks = autoreleasepool { () -> [String] in
@@ -253,17 +254,17 @@ class TextProcessorService {
                     }
                 }
             }
-            
+
             // Add the last chunk if it's not empty
             if !currentChunk.isEmpty {
                 chunks.append(currentChunk)
             }
-            
+
             // Apply overlap if needed
             if chunkOverlap > 0 && chunks.count > 1 {
                 var overlapChunks: [String] = []
                 overlapChunks.reserveCapacity(chunks.count)
-                
+
                 for i in 0..<chunks.count {
                     autoreleasepool {
                         if i == 0 {
@@ -271,7 +272,7 @@ class TextProcessorService {
                         } else {
                             let previousChunk = chunks[i-1]
                             let currentChunk = chunks[i]
-                            
+
                             // Calculate overlap from previous chunk
                             var overlapText = ""
                             if previousChunk.count > chunkOverlap {
@@ -280,19 +281,19 @@ class TextProcessorService {
                             } else {
                                 overlapText = previousChunk
                             }
-                            
+
                             overlapChunks.append(overlapText + separator + currentChunk)
                         }
                     }
                 }
-                
+
                 return overlapChunks
             }
-            
+
             return chunks
         }
     }
-    
+
     /// Generate a content hash for a text chunk
     /// - Parameter text: The text to hash
     /// - Returns: A hash string
@@ -302,7 +303,7 @@ class TextProcessorService {
             let prefix = text.prefix(1000)
             let suffix = text.suffix(1000)
             let sampleText = "\(prefix)...\(suffix)"
-            
+
             let data = Data(sampleText.utf8)
             let hash = CryptoKit.SHA256.hash(data: data)
             return hash.compactMap { String(format: "%02x", $0) }.joined()
@@ -312,14 +313,14 @@ class TextProcessorService {
             return hash.compactMap { String(format: "%02x", $0) }.joined()
         }
     }
-    
+
     /// Tokenize text and return information about the tokens
     /// - Parameter text: The text to tokenize
     /// - Returns: Array of tokens with ranges
     func tokenizeText(_ text: String) -> [(token: String, range: NSRange)] {
         tokenizer.string = text
         var tokens: [(token: String, range: NSRange)] = []
-        
+
         // Use Range<String.Index> for enumerateTokens
         let stringRange = text.startIndex..<text.endIndex
         tokenizer.enumerateTokens(in: stringRange) { tokenRange, _ in
@@ -329,7 +330,7 @@ class TextProcessorService {
             tokens.append((token, nsRange))
             return true // Continue enumeration
         } // End of enumerateTokens closure
-        
+
         return tokens // Return the collected tokens
     } // End of tokenizeText function
 }

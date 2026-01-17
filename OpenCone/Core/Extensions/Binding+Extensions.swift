@@ -10,7 +10,8 @@ extension Binding where Value: ExpressibleByNilLiteral {
     ///
     /// - Parameter defaultValue: The value to use when the wrapped optional value is `nil`.
     /// - Returns: A `Binding` to a non-optional value `T`.
-    func toUnwrapped<T>(defaultValue: T) -> Binding<T> where Value == T? {
+    @MainActor
+    func toUnwrapped<T: Sendable>(defaultValue: T) -> Binding<T> where Value == T? { 
         Binding<T>(
             get: { self.wrappedValue ?? defaultValue },
             set: { self.wrappedValue = $0 }

@@ -5,94 +5,103 @@ struct ChatInputBar: View {
     let isSending: Bool
     let onSend: () -> Void
     let onStop: (() -> Void)?
+    var speechService: SpeechRecognitionService?
 
-    // Explicit initializer to ensure onStop is available at call site
     init(
         text: Binding<String>,
         isSending: Bool,
         onSend: @escaping () -> Void,
-        onStop: (() -> Void)? = nil
+        onStop: (() -> Void)? = nil,
+        speechService: SpeechRecognitionService? = nil
     ) {
         self._text = text
         self.isSending = isSending
         self.onSend = onSend
         self.onStop = onStop
+        self.speechService = speechService
     }
 
     @Environment(\.theme) private var theme
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        OCCard(padding: 10, cornerRadius: 16) {
-            HStack(spacing: 10) {
-                // Text input
-                HStack(spacing: 6) {
-                    Image(systemName: "text.bubble")
-                        .foregroundColor(isFocused ? theme.primaryColor : theme.textSecondaryColor)
-                        .padding(.leading, 6)
-
-                    TextField("Ask about your documents…", text: $text, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...4)
-                        .submitLabel(.send)
-                        .focused($isFocused)
-                        .onSubmit {
-                            guard canSend else { return }
-                            isFocused = false
-                            onSend()
-                        }
-
-                    if !text.isEmpty {
-                        Button {
-                            text = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(theme.textSecondaryColor)
-                                .padding(.trailing, 6)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Clear input")
-                    }
-                }
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(theme.backgroundColor)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(isFocused ? theme.primaryColor : Color.clear, lineWidth: 1.5)
-                        )
-                )
-
-                // Send / Stop button
-                if isSending, let onStop = onStop {
-                    OCButton(
-                        title: "",
-                        icon: "stop.fill",
-                        style: .outline
-                    ) {
-                        isFocused = false
-                        onStop()
-                    }
-                    .frame(width: 44, height: 44)
-                } else {
-                    OCButton(
-                        title: "",
-                        icon: "arrow.up.circle.fill",
-                        style: .primary
-                    ) {
-                        guard canSend else { return }
-                        isFocused = false
-                        onSend()
-                    }
-                    .frame(width: 44, height: 44)
-                    .disabled(!canSend)
-                    .opacity(canSend ? 1.0 : 0.5)
+        HStack(spacing: 8) {
+            // Voice input button (if available)
+            if let speechService = speechService {
+                VoiceInputButton(speechService: speechService) { transcription in
+                    text = transcription
                 }
             }
+
+            // Text field with inline clear
+            HStack(spacing: 0) {
+                TextField("Ask anything...", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+.font(.system(size: 16))
+    .lineLimit(1 ... 5)
+    .submitLabel(.send)
+    .focused($isFocused)
+.padding(.horizontal, 14)
+    .padding(.vertical, 10)
+.onSubmit {
+    guard canSend else { return }
+    isFocused = false
+    onSend()
+}
+
+                if !text.isEmpty, !isSending {
+                    Button {
+                        text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+.font(.system(size: 16))
+    .foregroundColor(theme.textSecondaryColor.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+.padding(.trailing, 8)
+                }
+            }
+.background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(theme.backgroundColor)
+            )
+.overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(isFocused ? theme.primaryColor.opacity(0.5) : theme.textSecondaryColor.opacity(0.2), lineWidth: 1)
+            )
+
+            // Send / Stop button
+            Button {
+                if isSending {
+                    Haptics.warning()
+                    onStop?()
+                } else if canSend {
+                    Haptics.tap()
+                    isFocused = false
+                    onSend()
+                }
+            } label: {
+                Group {
+                    if isSending {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                }
+.foregroundColor(canSend || isSending ? .white : theme.textSecondaryColor)
+    .frame(width: 32, height: 32)
+    .background(
+        Circle()
+            .fill(isSending ? Color.red : (canSend ? theme.primaryColor : theme.textSecondaryColor.opacity(0.2)))
+    )
+            }
+.buttonStyle(.plain)
+    .disabled(!canSend && !isSending)
+    .animation(.easeInOut(duration: 0.15), value: canSend)
+.animation(.easeInOut(duration: 0.15), value: isSending)
         }
-        .animation(.easeInOut(duration: 0.15), value: isSending)
-        .animation(.easeInOut(duration: 0.15), value: text.isEmpty)
     }
 
     private var canSend: Bool {
@@ -101,10 +110,11 @@ struct ChatInputBar: View {
 }
 
 #Preview {
-    VStack {
-        ChatInputBar(text: .constant("Ask about Q1 financials"), isSending: false, onSend: {})
-        ChatInputBar(text: .constant(""), isSending: true, onSend: {})
-        ChatInputBar(text: .constant("Type here"), isSending: false, onSend: {})
+    VStack(spacing: 20) {
+        ChatInputBar(text: .constant(""), isSending: false, onSend: {})
+        ChatInputBar(text: .constant("What are the key findings?"), isSending: false, onSend: {})
+        ChatInputBar(text: .constant("Generating..."), isSending: true, onSend: {}, onStop: {})
     }
     .padding()
+.background(Color.gray.opacity(0.1))
 }

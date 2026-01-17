@@ -8,18 +8,15 @@ import UIKit
 struct OpenConeApp: App {
     // MARK: - Properties
 
-    // Core services used throughout the app
-    private let fileProcessorService = FileProcessorService()
-    private let textProcessorService = TextProcessorService()
-    private let logger = Logger.shared  // Centralized logging instance
-
     // View models managing state for different features
-    @StateObject private var settingsViewModel = SettingsViewModel()  // Manages app settings and API keys
-    @State private var documentsViewModel: DocumentsViewModel?  // Manages document processing
-    @State private var searchViewModel: SearchViewModel?  // Manages search functionality
+    @StateObject private var settingsViewModel = SettingsViewModel() // Manages app settings and API keys
 
     // Tracks the current state of the app (loading, welcome, main, error)
     @State private var appState: AppState = .loading
+
+    // Store view models and services after creation
+    @State private var documentsViewModel: DocumentsViewModel? // Manages document processing
+    @State private var searchViewModel: SearchViewModel? // Manages search functionality
 
     // MARK: - Body
     var body: some Scene {
@@ -67,10 +64,16 @@ struct OpenConeApp: App {
         }
     }
 
+    // MARK: - Computed Properties (MainActor)
+
+    @MainActor
+    private var logger: Logger { Logger.shared }
+
     // MARK: - App Launch Logic
 
     /// Handles the initial app launch sequence.
     /// Determines whether to show the welcome screen or proceed to initialize services.
+    @MainActor
     private func handleAppLaunch() {
         // Check if this is the very first time the app is launched
         let isFirstLaunch = !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
@@ -88,6 +91,7 @@ struct OpenConeApp: App {
     }
 
     /// Sets a flag in UserDefaults to indicate the app has been launched at least once.
+    @MainActor
     private func markAppAsLaunched() {
         UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
         logger.log(level: .info, message: "App marked as launched (hasLaunchedBefore = true)")
@@ -95,6 +99,7 @@ struct OpenConeApp: App {
 
     /// Called when the welcome/setup flow is successfully completed.
     /// Saves settings and proceeds to initialize core services.
+    @MainActor
     private func handleWelcomeComplete() {
         logger.log(level: .info, message: "Welcome flow completed by user.")
         // Save any settings configured during the welcome flow (like API keys)
@@ -107,6 +112,7 @@ struct OpenConeApp: App {
 
     /// Initializes core application services (OpenAI, Pinecone, Embedding).
     /// Transitions the app state to `.main` on success or `.welcome` if keys are missing.
+    @MainActor
     private func initializeServices() {
         logger.log(level: .info, message: "Attempting to initialize services...")
         enforceNoBundledSecrets()
@@ -124,22 +130,22 @@ struct OpenConeApp: App {
         // Create view models, injecting the necessary services
         let viewModels = createViewModels(with: services)
 
-        // Update the app state on the main thread after services and view models are ready
-        DispatchQueue.main.async {
-            self.documentsViewModel = viewModels.documentsVM
-            self.searchViewModel = viewModels.searchVM
-            self.appState = .main  // Transition to the main application view
-            logger.log(
-                level: .success,
-                message: "Services and ViewModels initialized. App state set to .main.")
+        // Update state directly since we're on MainActor
+        self.documentsViewModel = viewModels.documentsVM
+        self.searchViewModel = viewModels.searchVM
+        self.appState = .main // Transition to the main application view
+        logger.log(
+            level: .success, 
+            message: "Services and ViewModels initialized. App state set to .main."
+        )
 
-            // Start loading Pinecone indexes in the background
-            self.loadIndexes(documentsVM: viewModels.documentsVM, searchVM: viewModels.searchVM)
-        }
+        // Start loading Pinecone indexes in the background
+        self.loadIndexes(documentsVM: viewModels.documentsVM, searchVM: viewModels.searchVM)
     }
 
     /// Validates that essential API keys (OpenAI, Pinecone) and the Pinecone Project ID are configured.
     /// - Returns: `true` if all required keys/IDs are present, `false` otherwise.
+    @MainActor
     private func validateAPIKeys() -> Bool {
         let isValid =
             !settingsViewModel.openAIAPIKey.isEmpty && !settingsViewModel.pineconeAPIKey.isEmpty
@@ -156,6 +162,7 @@ struct OpenConeApp: App {
 
     /// Handles the scenario where required API keys are missing during initialization.
     /// Logs an error and sets the app state back to `.welcome` to prompt the user for setup.
+    @MainActor
     private func handleMissingAPIKeys() {
         logger.log(
             level: .error,
@@ -169,6 +176,7 @@ struct OpenConeApp: App {
     /// Creates instances of the core network/processing services.
     /// Requires valid API keys to be available in `settingsViewModel`.
     /// - Returns: A tuple containing initialized `OpenAIService`, `PineconeService`, and `EmbeddingService`.
+    @MainActor
     private func createServices() -> (
         openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService
     ) {
@@ -189,11 +197,16 @@ struct OpenConeApp: App {
     /// Creates instances of the main view models, injecting their required service dependencies.
     /// - Parameter services: A tuple containing the initialized core services.
     /// - Returns: A tuple containing initialized `DocumentsViewModel` and `SearchViewModel`.
+    @MainActor
     private func createViewModels(
         with services: (
             openAI: OpenAIService, pinecone: PineconeService, embedding: EmbeddingService
         )
     ) -> (documentsVM: DocumentsViewModel, searchVM: SearchViewModel) {
+        // Initialize file processor and text processor services
+        let fileProcessorService = FileProcessorService()
+        let textProcessorService = TextProcessorService()
+
         // Initialize Documents view model with its dependencies
         let documentsVM = DocumentsViewModel(
             fileProcessorService: fileProcessorService,
@@ -206,7 +219,8 @@ struct OpenConeApp: App {
         let searchVM = SearchViewModel(
             pineconeService: services.pinecone,
             openAIService: services.openAI,
-            embeddingService: services.embedding
+            embeddingService: services.embedding,
+            settingsViewModel: settingsViewModel
         )
 
         logger.log(level: .info, message: "Core ViewModels (Documents, Search) created.")
@@ -217,18 +231,24 @@ struct OpenConeApp: App {
     /// - Parameters:
     ///   - documentsVM: The `DocumentsViewModel` instance.
     ///   - searchVM: The `SearchViewModel` instance.
+    @MainActor
     private func loadIndexes(documentsVM: DocumentsViewModel, searchVM: SearchViewModel) {
-        // Run index loading in a background task to avoid blocking the main thread
+        // Run index loading in a background task - load in parallel for faster startup
         Task {
             logger.log(level: .info, message: "Initiating background loading of Pinecone indexes.")
-            // Load indexes for the documents view
-            await documentsVM.loadIndexes()
-            // Load indexes for the search view
-            await searchVM.loadIndexes()
+            // Load indexes for both views in parallel
+            async let docsLoad: () = documentsVM.loadIndexes()
+            async let searchLoad: () = searchVM.loadIndexes()
+
+            // Wait for both to complete
+            _ = await (docsLoad, searchLoad)
+
+            logger.log(level: .info, message: "Pinecone indexes loaded for both Documents and Search.")
         }
     }
 
     /// Ensures Release builds are not running with compile-time or scheme-supplied API keys.
+    @MainActor
     private func enforceNoBundledSecrets() {
         #if !DEBUG
         if !Configuration.openAIAPIKey.isEmpty ||
@@ -243,19 +263,18 @@ struct OpenConeApp: App {
     /// Sets the application's user interface style (light/dark).
     /// Requires UIKit.
     /// - Parameter darkMode: A boolean indicating whether dark mode should be enabled.
+    @MainActor
     private func setAppearance(darkMode: Bool) {
         // Access the first connected window scene to set the appearance
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
             logger.log(level: .warning, message: "Could not find UIWindowScene to set appearance.")
             return
         }
-        // Ensure UI updates happen on the main thread
-        DispatchQueue.main.async {
-            // Use overrideUserInterfaceStyle to force light or dark mode
-            scene.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
-            self.logger.log(
-                level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode.")
-        }
+        // Use overrideUserInterfaceStyle to force light or dark mode
+        scene.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
+        logger.log(
+            level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode."
+        )
     }
     #endif // canImport(UIKit)
 }

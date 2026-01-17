@@ -4,7 +4,7 @@ import Security
 /// SecureSettingsStore centralizes secure storage for API credentials using the Keychain,
 /// and persists non-secret preferences (like region/cloud) in UserDefaults.
 /// This provides a single, typed interface for the app to access secrets and settings.
-final class SecureSettingsStore {
+final class SecureSettingsStore: @unchecked Sendable { 
     static let shared = SecureSettingsStore()
     private init() {
         // One-time migrations from UserDefaults (legacy) to Keychain-backed storage

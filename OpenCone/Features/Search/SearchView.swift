@@ -8,9 +8,11 @@ import UIKit
 struct SearchView: View {
     @ObservedObject var viewModel: SearchViewModel  // The view model managing search state and logic
     @Environment(\.theme) private var theme  // Access the current theme
-    var onRequestDocumentsTab: (() -> Void)? = nil  // Callback to jump to the Documents tab
-    @State private var activeDetailSegment: ConversationDetailSegment = .conversation
+    var onRequestDocumentsTab: (() -> Void)? // Callback to jump to the Documents tab
     @State private var showMetadataSheet = false
+    @State private var showSourcesSheet = false
+    @State private var showExportSheet = false
+    @StateObject private var speechService = SpeechRecognitionService()
 
     var body: some View {
         Group {
@@ -22,67 +24,98 @@ struct SearchView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            QuickSwitcherView(viewModel: viewModel)
-
-                            if !viewModel.metadataFilters.isEmpty || viewModel.selectedResults.count > 0 {
-                                CompactContextBar(viewModel: viewModel)
-                            }
-
-                            ConversationSurface(
-                                viewModel: viewModel,
-                                activeSegment: $activeDetailSegment
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.top, 12)
+                    // Compact context selector
+                    CompactContextSelector(viewModel: viewModel)
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
-                    }
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
 
-                    HStack(spacing: 12) {
-                        if !viewModel.metadataFilters.isEmpty || viewModel.messages.isEmpty {
-                            Button {
-                                showMetadataSheet = true
-                            } label: {
-                                Image(systemName: viewModel.metadataFilters.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                                    .font(.system(size: 20, weight: .medium))
-                                    .foregroundColor(viewModel.metadataFilters.isEmpty ? theme.textSecondaryColor : theme.primaryColor)
+                    // Chat timeline takes all available space
+                    ChatTimelineView(viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Sleek input bar
+                    VStack(spacing: 0) {
+                        Divider()
+                            .background(theme.textSecondaryColor.opacity(0.1))
+
+                        HStack(spacing: 8) {
+                            // Left accessories
+                            HStack(spacing: 4) {
+                                // Quick Settings Menu
+                                QuickSettingsMenu(settings: viewModel.settingsViewModel)
+
+                                // Filters
+                                if !viewModel.metadataFilters.isEmpty || viewModel.messages.isEmpty { 
+                                    Button { showMetadataSheet = true } label: {
+                                        Image(systemName: viewModel.metadataFilters.isEmpty ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(viewModel.metadataFilters.isEmpty ? theme.textSecondaryColor : theme.primaryColor)
+.frame(width: 28, height: 28)
+                                    }
+.buttonStyle(.plain)
+                                }
+
+                                // Sources
+                                if !viewModel.searchResults.isEmpty {
+                                    Button { showSourcesSheet = true } label: {
+                                        ZStack(alignment: .topTrailing) {
+                                            Image(systemName: "doc.text")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(theme.textSecondaryColor)
+                                                .frame(width: 28, height: 28)
+
+                                            Text("\(viewModel.searchResults.count)")
+                                                .font(.system(size: 8, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .frame(width: 14, height: 14)
+                                                .background(Circle().fill(theme.primaryColor))
+                                                .offset(x: 4, y: -2)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(PlainButtonStyle())
+
+                            // Main input
+                            ChatInputBar(
+                                text: Binding(
+                                    get: { viewModel.searchQuery },
+                                    set: { viewModel.searchQuery = $0 }
+                                ),
+                                isSending: viewModel.isSearching, 
+                                onSend: { Task { await viewModel.performSearch() } },
+                                onStop: { viewModel.cancelActiveSearch() },
+                                speechService: speechService
+                            )
+                            .disabled(viewModel.selectedIndex == nil)
+
+                            // Export conversation
+                            if viewModel.messages.count > 1 { 
+                                Button { showExportSheet = true } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(theme.textSecondaryColor)
+                                        .frame(width: 28, height: 28)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            // New topic
+                            if viewModel.messages.count > 1 {
+                                Button { viewModel.newTopic() } label: {
+                                    Image(systemName: "plus.bubble")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(theme.primaryColor)
+.frame(width: 28, height: 28)
+                                }
+.buttonStyle(.plain)
+    .disabled(viewModel.isSearching)
+                            }
                         }
-
-                        ChatInputBar(
-                            text: Binding(
-                                get: { viewModel.searchQuery },
-                                set: { viewModel.searchQuery = $0 }
-                            ),
-                            isSending: viewModel.isSearching,
-                            onSend: {
-                                Task { await viewModel.performSearch() }
-                            },
-                            onStop: {
-                                viewModel.cancelActiveSearch()
-                            }
-                        )
-                        .disabled(viewModel.selectedIndex == nil)
-
-                        if viewModel.messages.count > 1 {
-                            Button {
-                                viewModel.newTopic()
-                            } label: {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(theme.primaryColor)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                            .disabled(viewModel.isSearching)
-                        }
+.padding(.horizontal, 12)
+    .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
                     .background(theme.cardBackgroundColor)
                 }
             }
@@ -91,11 +124,846 @@ struct SearchView: View {
         .sheet(isPresented: $showMetadataSheet) {
             MetadataFilterSheet(viewModel: viewModel)
         }
+.sheet(isPresented: $showSourcesSheet) {
+    SourcesSheet(viewModel: viewModel)
+}
+.sheet(isPresented: $showExportSheet) {
+    ExportConversationSheet(viewModel: viewModel)
+}
         .overlay(alignment: .top) {
             if let error = viewModel.errorMessage, !error.isEmpty {
                 ErrorBanner(message: error)
                     .padding(.top, 8)
             }
+        }
+.overlay(alignment: .bottom) {
+    ListeningOverlay(speechService: speechService)
+        .padding(.bottom, 80)
+        .animation(.spring(response: 0.3), value: speechService.isListening)
+}
+// Keyboard shortcuts for Mac Catalyst
+.keyboardShortcut(.return, modifiers: [.command]) // Cmd+Enter to send
+.onKeyPress(.escape) {
+    if viewModel.isSearching {
+        viewModel.cancelActiveSearch()
+        return .handled
+    }
+    return .ignored
+}
+    }
+}
+
+// MARK: - Compact Context Selector (single line)
+
+struct CompactContextSelector: View { 
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+
+    private var displayIndex: String {
+        viewModel.selectedIndex ?? "..."
+    }
+
+    private var displayNamespace: String {
+        let ns = viewModel.selectedNamespace ?? ""
+        return ns.isEmpty ? "All" : ns
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Index menu
+            Menu {
+                ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                    Button {
+                        Task { await viewModel.setIndex(index) }
+                    } label: {
+                        HStack {
+                            Text(index)
+                            if viewModel.selectedIndex == index {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "cylinder.fill")
+                        .font(.system(size: 9))
+                    Text(displayIndex)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8))
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+.background(Capsule().fill(theme.primaryLight))
+    .foregroundColor(theme.primaryColor)
+            }
+.disabled(viewModel.isSearching)
+
+            // Namespace menu
+            if viewModel.selectedIndex != nil {
+                Menu {
+                    Button {
+                        viewModel.setNamespace(nil)
+                    } label: {
+                        HStack {
+                            Text("All")
+                            if viewModel.selectedNamespace == nil || viewModel.selectedNamespace?.isEmpty == true {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    ForEach(viewModel.namespaces.filter { !$0.isEmpty }, id: \.self) { ns in
+                        Button {
+                            viewModel.setNamespace(ns)
+                        } label: {
+                            HStack {
+                                Text(ns)
+                                if viewModel.selectedNamespace == ns {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(displayNamespace)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 8)
+                    .background(Capsule().fill(theme.cardBackgroundColor))
+                    .foregroundColor(theme.textSecondaryColor)
+                }
+                .disabled(viewModel.isSearching)
+            }
+
+            Spacer()
+
+            // Filter count (tiny)
+            if !viewModel.metadataFilters.isEmpty {
+                Text("\(viewModel.metadataFilters.count)")
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(4)
+                    .background(Circle().fill(theme.primaryColor))
+                    .foregroundColor(.white)
+            }
+        }
+        .onAppear {
+            if viewModel.selectedIndex == nil, let first = viewModel.pineconeIndexes.first {
+                Task { await viewModel.setIndex(first) }
+            }
+        }
+    }
+}
+
+// MARK: - Quick Settings Menu
+
+/// Compact settings button that opens a popover with sliders and toggles
+struct QuickSettingsMenu: View {
+    @ObservedObject var settings: SettingsViewModel
+    @Environment(\.theme) private var theme
+    @State private var showSettings = false
+
+    private var modelShortName: String {
+        settings.completionModel
+            .replacingOccurrences(of: "gpt-", with: "")
+            .replacingOccurrences(of: "-2025-04-14", with: "")
+    }
+
+    private var isReasoningModel: Bool {
+        Configuration.isReasoningModel(settings.completionModel)
+    }
+
+    private var activeToolCount: Int {
+        var count = 0
+        if settings.webSearchEnabled { count += 1 }
+        if settings.codeInterpreterEnabled { count += 1 }
+        return count
+    }
+
+    private var hasActiveTools: Bool {
+        activeToolCount > 0
+    }
+
+    private var toolIcon: String {
+        if settings.codeInterpreterEnabled { return "chart.bar.doc.horizontal" }
+        if settings.webSearchEnabled { return "globe" }
+        return "gearshape"
+    }
+
+    var body: some View {
+        Button {
+            showSettings = true
+        } label: {
+            HStack(spacing: 4) { 
+                Image(systemName: toolIcon)
+                    .font(.system(size: 12))
+                    .foregroundColor(hasActiveTools ? theme.primaryColor : theme.textSecondaryColor)
+                Text(modelShortName)
+                    .font(.system(size: 10, weight: .medium))
+                    .lineLimit(1)
+                if activeToolCount > 0 {
+                    Text("•\(activeToolCount)")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(theme.primaryColor))
+                }
+            }
+            .foregroundColor(theme.textSecondaryColor)
+.padding(.vertical, 4)
+.padding(.horizontal, 6)
+    .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(theme.cardBackgroundColor)
+                )
+        }
+.buttonStyle(.plain)
+    .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+        QuickSettingsPopover(settings: settings)
+            }
+    }
+}
+
+/// The actual settings popover content with sliders, pickers, and toggles
+struct QuickSettingsPopover: View {
+    @ObservedObject var settings: SettingsViewModel
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+    @State private var showAdvanced = false
+
+    private var isReasoningModel: Bool {
+        Configuration.isReasoningModel(settings.completionModel)
+    }
+
+    /// Formats token counts with K suffix for readability
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 1000 {
+            let k = Double(count) / 1000.0
+            if k == Double(Int(k)) {
+                return "\(Int(k))K"
+            } else {
+                return String(format: "%.1fK", k)
+            }
+        }
+        return "\(count)"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Model Picker
+                    SettingsSection(title: "Model", icon: "cpu") {
+                        Menu {
+                            ForEach(settings.availableCompletionModels, id: \.self) { model in
+                                Button {
+                                    settings.completionModel = model
+                                } label: {
+                                    HStack {
+                                        Text(model)
+                                        if settings.completionModel == model {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(settings.completionModel)
+                                    .foregroundColor(theme.textPrimaryColor)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(theme.textSecondaryColor)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(theme.cardBackgroundColor))
+                        }
+                    }
+
+                    // Temperature OR Reasoning (contextual)
+                    if isReasoningModel {
+                        SettingsSection(title: "Reasoning Effort", icon: "brain", value: settings.reasoningEffort.uppercased()) {
+                            Picker("", selection: $settings.reasoningEffort) {
+                                Text("Off").tag("none")
+                                Text("Low").tag("low")
+                                Text("Med").tag("medium")
+                                Text("High").tag("high")
+                                Text("Max").tag("xhigh")
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                    } else {
+                        SettingsSection(title: "Temperature", icon: "thermometer.medium", value: String(format: "%.1f", settings.temperature)) {
+                            VStack(spacing: 4) {
+                                Slider(value: $settings.temperature, in: 0 ... 2, step: 0.1)
+                                    .tint(theme.primaryColor)
+                                HStack {
+                                    Text("Precise").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                    Spacer()
+                                    Text("Creative").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                }
+                            }
+                        }
+
+                        SettingsSection(title: "Top-P", icon: "dial.low", value: String(format: "%.2f", settings.topP)) {
+                            VStack(spacing: 4) {
+                                Slider(value: $settings.topP, in: 0 ... 1, step: 0.05)
+                                    .tint(theme.primaryColor)
+                                HStack {
+                                    Text("Focused").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                    Spacer()
+                                    Text("Diverse").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                }
+                            }
+                        }
+                    }
+
+                    // Search Results
+                    SettingsSection(title: "Search Results", icon: "list.number", value: "Top \(settings.defaultTopK)") {
+                        Slider(value: Binding(
+                            get: { Double(settings.defaultTopK) },
+                            set: { settings.defaultTopK = Int($0) }
+                        ), in: 1 ... 30, step: 1)
+                            .tint(theme.primaryColor)
+                    }
+
+                    // Response Length
+                    SettingsSection(title: "Response Length", icon: "text.alignleft", value: formatTokens(settings.maxOutputTokens)) {
+                        Slider(value: Binding(
+                            get: { Double(settings.maxOutputTokens) },
+                            set: { settings.maxOutputTokens = Int($0) }
+                        ), in: 500 ... 32000, step: 500)
+                            .tint(theme.primaryColor)
+                    }
+
+                    // Tools & Features
+                    SettingsSection(title: "AI Tools", icon: "sparkles") {
+                        VStack(spacing: 12) {
+                            Toggle(isOn: $settings.webSearchEnabled) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "globe")
+                                        .foregroundColor(settings.webSearchEnabled ? theme.primaryColor : theme.textSecondaryColor)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Web Search")
+                                            .font(.subheadline)
+                                        Text("Search the web for current info")
+                                            .font(.caption2)
+                                            .foregroundColor(theme.textSecondaryColor)
+                                    }
+                                }
+                            }
+                            .tint(theme.primaryColor)
+
+                            Toggle(isOn: $settings.codeInterpreterEnabled) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "chart.bar.doc.horizontal")
+                                        .foregroundColor(settings.codeInterpreterEnabled ? theme.primaryColor : theme.textSecondaryColor)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Charts & Calculations")
+                                            .font(.subheadline)
+                                        Text("Visualize data, compute totals, export tables")
+                                            .font(.caption2)
+                                            .foregroundColor(theme.textSecondaryColor)
+                                    }
+                                }
+                            }
+                            .tint(theme.primaryColor)
+
+                            Toggle(isOn: $settings.streamingEnabled) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "text.bubble")
+                                        .foregroundColor(theme.textSecondaryColor)
+                                    Text("Stream Response")
+                                        .font(.subheadline)
+                                }
+                            }
+                            .tint(theme.primaryColor)
+                        }
+                    }
+
+                    // Advanced Section
+                    DisclosureGroup(isExpanded: $showAdvanced) {
+                        VStack(spacing: 16) {
+                            // Conversation Mode
+                            SettingsSection(title: "Conversation", icon: "bubble.left.and.bubble.right") {
+                                Picker("", selection: $settings.conversationMode) {
+                                    Text("Server").tag("server")
+                                    Text("Local").tag("client")
+                                }
+                                .pickerStyle(.segmented)
+
+                                if settings.conversationMode == "client" {
+                                    HStack {
+                                        Text("Max Turns")
+                                            .font(.caption)
+                                            .foregroundColor(theme.textSecondaryColor)
+                                        Spacer()
+                                        Stepper("\(settings.maxConversationTurns)", value: $settings.maxConversationTurns, in: 2 ... 20)
+                                            .font(.caption)
+                                    }
+.padding(.top, 4)
+                                }
+                            }
+
+                            // Similarity Threshold
+                            SettingsSection(title: "Min Score", icon: "chart.bar", value: settings.similarityThreshold > 0 ? String(format: "%.0f%%", settings.similarityThreshold * 100) : "Off") {
+                                VStack(spacing: 4) {
+                                    Slider(value: $settings.similarityThreshold, in: 0 ... 0.9, step: 0.05)
+                                        .tint(theme.primaryColor)
+                                    HStack {
+                                        Text("All").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                        Spacer()
+                                        Text("Strict").font(.caption2).foregroundColor(theme.textSecondaryColor)
+                                    }
+                                }
+                            }
+
+                            // Context Window
+                            SettingsSection(title: "Context Window", icon: "doc.text", value: formatTokens(settings.maxContextTokens)) {
+                                Slider(value: Binding(
+                                    get: { Double(settings.maxContextTokens) },
+                                    set: { settings.maxContextTokens = Int($0) }
+                                ), in: 4000 ... 128_000, step: 4000)
+                                    .tint(theme.primaryColor)
+                            }
+
+                            // System Prompt
+                            SettingsSection(title: "Custom Instructions", icon: "text.quote") {
+                                TextField("Add custom behavior...", text: $settings.systemPromptOverride, axis: .vertical)
+                                    .textFieldStyle(.plain)
+                                    .font(.caption)
+                                    .lineLimit(3 ... 6)
+                                    .padding(8)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.cardBackgroundColor))
+                            }
+
+                            // Debug toggles
+                            Toggle(isOn: $settings.verboseLogging) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "ant")
+                                        .foregroundColor(theme.textSecondaryColor)
+                                    Text("Verbose Logging")
+                                        .font(.caption)
+                                }
+                            }
+                            .tint(theme.primaryColor)
+                        }
+                        .padding(.top, 12)
+                    } label: {
+                        HStack {
+                            Image(systemName: "gearshape.2")
+                                .foregroundColor(theme.textSecondaryColor)
+                            Text("Advanced")
+                                .font(.subheadline.bold())
+                                .foregroundColor(theme.textSecondaryColor)
+                            Spacer()
+                            if !settings.systemPromptOverride.isEmpty {
+                                Image(systemName: "text.badge.checkmark")
+                                    .font(.caption)
+                                    .foregroundColor(theme.primaryColor)
+                            }
+                        }
+                    }
+                    .tint(theme.textSecondaryColor)
+
+                    // Quick Presets
+                    SettingsSection(title: "Presets", icon: "sparkle.magnifyingglass") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                PresetButton(title: "Precise", icon: "scope") {
+                                    settings.temperature = 0.1
+                                    settings.topP = 0.9
+                                    settings.defaultTopK = 5
+                                }
+                                PresetButton(title: "Balanced", icon: "equal.circle") {
+                                    settings.temperature = 0.5
+                                    settings.topP = 0.95
+                                    settings.defaultTopK = 10
+                                }
+                                PresetButton(title: "Creative", icon: "paintbrush") {
+                                    settings.temperature = 1.0
+                                    settings.topP = 1.0
+                                    settings.defaultTopK = 15
+                                }
+                                PresetButton(title: "Research", icon: "books.vertical") {
+                                    settings.temperature = 0.3
+                                    settings.topP = 0.9
+                                    settings.defaultTopK = 20
+                                    settings.maxOutputTokens = 2000
+                                }
+                            }
+                        }
+                    }
+
+                    // Appearance
+                    SettingsSection(title: "Appearance", icon: "paintpalette") {
+                        HStack(spacing: 12) {
+                            ForEach(OCTheme.allThemes.prefix(4), id: \.id) { themeOption in
+                                Button {
+                                    ThemeManager.shared.setTheme(themeOption)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Circle()
+                                            .fill(themeOption.primaryColor)
+                                            .frame(width: 28, height: 28)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(ThemeManager.shared.currentTheme.id == themeOption.id ? theme.primaryColor : Color.clear, lineWidth: 2)
+                                                    .padding(-2)
+                                            )
+                                        Text(themeOption.name)
+                                            .font(.caption2)
+                                            .foregroundColor(theme.textSecondaryColor)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(theme.backgroundColor)
+                .navigationTitle("Quick Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                            .fontWeight(.semibold)
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            resetToDefaults()
+                        } label: {
+                            Text("Reset")
+                                .font(.subheadline)
+                        }
+                    }
+                }
+        }
+        .frame(minWidth: 320, idealWidth: 360, minHeight: 520, idealHeight: 650)
+            .presentationCompactAdaptation(.popover)
+    }
+
+    private func resetToDefaults() {
+        settings.temperature = 0.3
+        settings.topP = 0.95
+        settings.defaultTopK = 10
+        settings.maxOutputTokens = 4000
+        settings.webSearchEnabled = false
+        settings.codeInterpreterEnabled = false
+        settings.streamingEnabled = true
+        settings.maxContextTokens = 32000
+        settings.systemPromptOverride = ""
+        settings.similarityThreshold = 0.0
+    }
+}
+
+/// Quick preset button
+private struct PresetButton: View {
+    let title: String
+    let icon: String
+    let action: () -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                Text(title)
+                    .font(.caption2)
+            }
+.foregroundColor(theme.primaryColor)
+    .frame(width: 70, height: 50)
+    .background(RoundedRectangle(cornerRadius: 10).fill(theme.primaryLight))
+        }
+.buttonStyle(.plain)
+    }
+}
+
+/// Reusable settings section component
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let icon: String
+    var value: String? = nil
+    @ViewBuilder let content: Content
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.subheadline.bold())
+                    .foregroundColor(theme.textSecondaryColor)
+                Spacer()
+                if let value {
+                    Text(value)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundColor(theme.primaryColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(theme.primaryLight))
+                }
+            }
+            content
+        }
+    }
+}
+
+// MARK: - Sources Sheet
+
+struct SourcesSheet: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    private func isResultSelected(_ result: SearchResultModel) -> Bool {
+        viewModel.selectedResults.contains { $0.id == result.id }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(viewModel.searchResults) { result in
+                        SearchResultRow(
+                            result: result,
+                            isSelected: isResultSelected(result),
+                            viewModel: viewModel
+                        ) {
+                            viewModel.toggleResultSelection(result)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(theme.backgroundColor)
+.navigationTitle("Sources (\(viewModel.searchResults.count))")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Done") { dismiss() }
+                .fontWeight(.semibold)
+        }
+        if !viewModel.selectedResults.isEmpty {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    Task { await viewModel.generateAnswerFromSelected() }
+                    dismiss()
+                } label: {
+                    Label("Regenerate", systemImage: "arrow.clockwise")
+                        }
+                    }
+                }
+            }
+        }
+.presentationDetents([.medium, .large])
+    .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - Export Conversation Sheet
+
+struct ExportConversationSheet: View {
+    @ObservedObject var viewModel: SearchViewModel
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
+    @State private var exportFormat: ExportFormat = .markdown
+
+    enum ExportFormat: String, CaseIterable {
+        case markdown = "Markdown"
+        case json = "JSON"
+        case text = "Plain Text"
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                // Format picker
+                Picker("Format", selection: $exportFormat) {
+                    ForEach(ExportFormat.allCases, id: \.self) { format in
+                        Text(format.rawValue).tag(format)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                // Preview
+                ScrollView {
+                    Text(exportPreview)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(theme.textSecondaryColor)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackgroundColor))
+                .padding(.horizontal)
+
+                // Stats
+                HStack(spacing: 24) {
+                    VStack {
+                        Text("\(viewModel.messages.count)")
+                            .font(.title2.bold())
+                            .foregroundColor(theme.primaryColor)
+                        Text("Messages")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+
+                    VStack {
+                        Text("\(totalWords)")
+                            .font(.title2.bold())
+                            .foregroundColor(theme.primaryColor)
+                        Text("Words")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+
+                    VStack {
+                        Text("\(totalCharacters)")
+                            .font(.title2.bold())
+                            .foregroundColor(theme.primaryColor)
+                        Text("Characters")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).fill(theme.cardBackgroundColor))
+                .padding(.horizontal)
+
+                Spacer()
+
+                // Action buttons
+                VStack(spacing: 12) {
+                    Button { 
+                        copyToClipboard()
+                    } label: {
+                        HStack {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            Text(copied ? "Copied!" : "Copy to Clipboard")
+                        }
+.font(.headline)
+    .foregroundColor(.white)
+    .frame(maxWidth: .infinity)
+    .padding()
+    .background(RoundedRectangle(cornerRadius: 12).fill(theme.primaryColor))
+                    }
+
+                    Button {
+                        shareContent()
+                    } label: { 
+                        HStack {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share")
+                        }
+                        .font(.headline)
+                        .foregroundColor(theme.primaryColor)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(RoundedRectangle(cornerRadius: 12).stroke(theme.primaryColor, lineWidth: 2))
+                    }
+                }
+                .padding(.horizontal)
+                    .padding(.bottom)
+            }
+            .background(theme.backgroundColor)
+                .navigationTitle("Export Conversation")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                            .fontWeight(.semibold)
+                    }
+            }
+        }
+        .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+    }
+
+    private var exportPreview: String {
+        switch exportFormat {
+        case .markdown:
+            return String(viewModel.exportConversationAsMarkdown().prefix(500)) + "..."
+        case .json:
+            if let data = viewModel.exportConversationAsJSON(),
+               let string = String(data: data, encoding: .utf8)
+            {
+                return String(string.prefix(500)) + "..."
+            }
+            return "Unable to generate JSON"
+        case .text:
+            return plainTextExport.prefix(500) + "..."
+        }
+    }
+
+    private var plainTextExport: String {
+        viewModel.messages.map { msg in
+            let role = msg.role == .user ? "You" : "Assistant"
+            return "\(role):\n\(msg.text)\n"
+        }.joined(separator: "\n")
+    }
+
+    private var fullExport: String {
+        switch exportFormat {
+        case .markdown:
+            return viewModel.exportConversationAsMarkdown()
+        case .json:
+            if let data = viewModel.exportConversationAsJSON(),
+               let string = String(data: data, encoding: .utf8)
+            {
+                return string
+            }
+            return "Unable to generate JSON"
+        case .text:
+            return plainTextExport
+        }
+    }
+
+    private var totalWords: Int {
+        viewModel.messages.reduce(0) { $0 + $1.text.split(separator: " ").count }
+    }
+
+    private var totalCharacters: Int {
+        viewModel.messages.reduce(0) { $0 + $1.text.count }
+    }
+
+    private func copyToClipboard() {
+        UIPasteboard.general.string = fullExport
+        Haptics.success()
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            copied = false
+        }
+    }
+
+    private func shareContent() {
+        let activityVC = UIActivityViewController(
+            activityItems: [fullExport],
+            applicationActivities: nil
+        )
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = windowScene.windows.first,
+           let rootVC = window.rootViewController
+        {
+            // Handle iPad popover
+            if let popover = activityVC.popoverPresentationController {
+                popover.sourceView = rootVC.view
+                popover.sourceRect = CGRect(x: rootVC.view.bounds.midX, y: rootVC.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            rootVC.present(activityVC, animated: true)
         }
     }
 }
@@ -122,7 +990,7 @@ struct CompactContextBar: View {
                         Capsule()
                             .fill(theme.primaryLight)
                     )
-                    .foregroundColor(theme.primaryColor)
+.foregroundColor(theme.primaryColor)
                 }
 
                 if viewModel.selectedResults.count > 0 {
@@ -138,223 +1006,197 @@ struct CompactContextBar: View {
                         Capsule()
                             .fill(theme.primaryLight)
                     )
-                    .foregroundColor(theme.primaryColor)
+.foregroundColor(theme.primaryColor)
                 }
             }
-            .padding(.horizontal, 4)
+.padding(.horizontal, 4)
         }
     }
 }
 
-// MARK: - Search Surface Components
-
-enum ConversationDetailSegment: String, CaseIterable, Identifiable {
-    case conversation = "Chat"
-    case sources = "Sources"
-
-    var id: String { rawValue }
-
-    var icon: String {
-        switch self {
-        case .conversation: return "ellipsis.bubble"
-        case .sources: return "doc.on.doc"
-        }
-    }
-}
-
-struct SearchUtilityBar: View {
-    @ObservedObject var viewModel: SearchViewModel
-    var onRequestDocumentsTab: (() -> Void)?
-    @Environment(\.theme) private var theme
-
-    private var contextTitle: String {
-        if let index = viewModel.selectedIndex {
-            let namespace = viewModel.selectedNamespace ?? "Default"
-            return "Using \(index)"
-                + (namespace.isEmpty ? "" : " • \(namespace)")
-        }
-        return "Select an index to start"
-    }
-
-    private var contextSubtitle: String {
-        if viewModel.isSearching {
-            return "Streaming answer from Pinecone"
-        } else if viewModel.messages.isEmpty {
-            return "Ask anything about your ingested documents"
-        } else {
-            return "Tap sources below to narrow context"
-        }
-    }
-
-    var body: some View {
-        OCCard(padding: 16, cornerRadius: 18) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(contextTitle)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(theme.textPrimaryColor)
-
-                    Text(contextSubtitle)
-                        .font(.footnote)
-                        .foregroundColor(theme.textSecondaryColor)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 12)
-
-                if let docsAction = onRequestDocumentsTab {
-                    IconAccessoryButton(
-                        systemIcon: "rectangle.stack.badge.plus",
-                        tint: theme.primaryColor,
-                        action: docsAction
-                    )
-                    .accessibilityLabel("Manage documents")
-                }
-
-                OCButton(
-                    title: "New Topic",
-                    icon: "sparkles",
-                    style: .outline,
-                    size: .small,
-                    fullWidth: false,
-                    action: viewModel.newTopic
-                )
-                .disabled(viewModel.isSearching)
-            }
-        }
-    }
-}
-
-struct ConversationSurface: View {
-    @ObservedObject var viewModel: SearchViewModel
-    @Binding var activeSegment: ConversationDetailSegment
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        OCCard(padding: 0, cornerRadius: 22) {
-            VStack(spacing: 0) {
-                ConversationSegmentControl(
-                    activeSegment: $activeSegment,
-                    sourcesDisabled: viewModel.searchResults.isEmpty
-                )
-                .padding(12)
-
-                Divider()
-                    .background(theme.cardBackgroundColor)
-
-                Group {
-                    switch activeSegment {
-                    case .conversation:
-                        ChatTimelineView(viewModel: viewModel)
-                    case .sources:
-                        SourcesSurfaceView(viewModel: viewModel)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(theme.backgroundColor)
-            }
-        }
-        .onChange(of: viewModel.searchResults.count) { _, newValue in
-            if newValue == 0 && activeSegment == .sources {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    activeSegment = .conversation
-                }
-            }
-        }
-    }
-}
-
-private struct ConversationSegmentControl: View {
-    @Binding var activeSegment: ConversationDetailSegment
-    let sourcesDisabled: Bool
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(ConversationDetailSegment.allCases) { segment in
-                let isDisabled = segment == .sources && sourcesDisabled
-                Button {
-                    guard !isDisabled else { return }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        activeSegment = segment
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: segment.icon)
-                        Text(segment.rawValue)
-                            .fontWeight(.semibold)
-                    }
-                    .font(.footnote)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(activeSegment == segment ? theme.primaryLight : theme.cardBackgroundColor)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(activeSegment == segment ? theme.primaryColor : theme.cardBackgroundColor, lineWidth: 1)
-                    )
-                    .foregroundColor(
-                        isDisabled ? theme.textSecondaryColor.opacity(0.6)
-                            : (activeSegment == segment ? theme.primaryColor : theme.textSecondaryColor)
-                    )
-                    .opacity(isDisabled ? 0.5 : 1)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(isDisabled)
-            }
-        }
-    }
-}
+// MARK: - Chat Timeline
 
 struct ChatTimelineView: View {
     @ObservedObject var viewModel: SearchViewModel
     @Environment(\.theme) private var theme
+    @State private var showShareSheet = false
+    @State private var shareContent = ""
+    @State private var showCopiedToast = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    if viewModel.messages.isEmpty {
-                        if viewModel.isSearching {
-                            SearchLoadingView()
-                                .padding(.vertical, 32)
-                        } else {
-                            InitialStateView()
+        ZStack(alignment: .top) { 
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if viewModel.messages.isEmpty {
+                            if viewModel.isSearching {
+                                SearchLoadingView()
+                                    .padding(.vertical, 32)
+                            } else { 
+                                InitialStateView(
+                                    indexName: viewModel.selectedIndex,
+                                    namespaceName: viewModel.selectedNamespace,
+                                    codeInterpreterEnabled: viewModel.settingsViewModel.codeInterpreterEnabled,
+                                    webSearchEnabled: viewModel.settingsViewModel.webSearchEnabled,
+                                    onPromptTap: { prompt in
+                                        viewModel.searchQuery = prompt
+                                    }
+                                )
                                 .padding(.vertical, 24)
-                        }
-                    } else {
-                        ForEach(viewModel.messages) { message in
-                            ChatBubble(
-                                message: message,
-                                onCitationTap: { source in
-                                    viewModel.focusResult(for: source)
+                            }
+                        } else { 
+                            // Export conversation button
+                            HStack {
+                                Spacer()
+                                Menu {
+                                    Button(action: { copyConversation() }) {
+                                        Label("Copy Conversation", systemImage: "doc.on.doc")
+                                    }
+                                    Button(action: { shareConversation() }) {
+                                        Label("Share Conversation", systemImage: "square.and.arrow.up")
+                                    }
+                                    Button(action: { exportAsMarkdown() }) {
+                                        Label("Export as Markdown", systemImage: "doc.text")
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(.system(size: 14))
+                                        Text("Export")
+                                            .font(.caption)
+                                    }
+                                    .foregroundColor(theme.textSecondaryColor)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(theme.cardBackgroundColor)
+                                    )
                                 }
-                            )
-                            .id(message.id)
-                        }
-                        .padding(.horizontal, 8)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 4)
 
-                        if viewModel.isSearching {
-                            TypingIndicatorView()
-                                .padding(.horizontal, 8)
+                            ForEach(viewModel.messages) { message in
+                                ChatBubble(
+                                    message: message,
+                                    onCitationTap: { source in
+                                        viewModel.focusResult(for: source)
+                                    },
+                                    onCopy: { _ in
+                                            showCopiedFeedback()
+                                        },
+                                    onShare: { text in
+                                            shareContent = text
+                                            showShareSheet = true
+                                    }
+                                )
+                                .id(message.id)
+                            }
+                            .padding(.horizontal, 8)
+
+                            if viewModel.isSearching {
+                                TypingIndicatorView()
+                                    .padding(.horizontal, 8)
+                            }
                         }
                     }
+                    .padding(.vertical, 18)
                 }
-                .padding(.vertical, 18)
-            }
-            .background(Color.clear)
-            .onChange(of: viewModel.messages.count) { _, _ in
-                if let lastId = viewModel.messages.last?.id {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(lastId, anchor: .bottom)
+                .background(Color.clear)
+                    .onChange(of: viewModel.messages.count) { _, _ in
+                        if let lastId = viewModel.messages.last?.id {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
                     }
+            }
+
+            // Copied toast
+            if showCopiedToast {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.white)
+                    Text("Copied!")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
                 }
+.padding(.horizontal, 16)
+    .padding(.vertical, 10)
+    .background(
+        Capsule()
+            .fill(theme.successColor)
+    )
+    .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+    .transition(.move(edge: .top).combined(with: .opacity))
+    .padding(.top, 8)
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(items: [shareContent])
+        }
+    }
+
+    private func showCopiedFeedback() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            showCopiedToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            withAnimation(.easeOut(duration: 0.2)) {
+                showCopiedToast = false
             }
         }
     }
+
+    private func copyConversation() {
+        let text = formatConversation(asMarkdown: false)
+        UIPasteboard.general.string = text
+        showCopiedFeedback()
+    }
+
+    private func shareConversation() {
+        shareContent = formatConversation(asMarkdown: false)
+        showShareSheet = true
+    }
+
+    private func exportAsMarkdown() {
+        shareContent = formatConversation(asMarkdown: true)
+        showShareSheet = true
+    }
+
+    private func formatConversation(asMarkdown: Bool) -> String {
+        var output = asMarkdown ? "# OpenCone Conversation\n\n" : "OpenCone Conversation\n\n"
+
+        for message in viewModel.messages {
+            let role = message.role == .user ? "You" : "Assistant"
+            if asMarkdown {
+                output += "**\(role):**\n\(message.text)\n\n"
+                if let citations = message.citations, !citations.isEmpty {
+                    output += "_Sources:_ \(citations.joined(separator: ", "))\n\n"
+                }
+            } else {
+                output += "\(role):\n\(message.text)\n\n"
+                if let citations = message.citations, !citations.isEmpty {
+                    output += "Sources: \(citations.joined(separator: ", "))\n\n"
+                }
+            }
+        }
+
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct SourcesSurfaceView: View {
@@ -416,131 +1258,6 @@ struct TypingIndicatorView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(theme.cardBackgroundColor)
         )
-    }
-}
-
-// MARK: - Search Configuration Component
-
-/// A collapsible view section allowing users to configure search parameters like
-/// the active Pinecone index and namespace.
-struct SearchConfigurationView: View {
-    @ObservedObject var viewModel: SearchViewModel  // Shared view model
-    @State private var isConfigExpanded = false  // State to control the expansion of the configuration section
-    @Environment(\.theme) private var theme  // Access the current theme
-
-    var body: some View {
-        OCCard(padding: 12) {
-            VStack(spacing: 0) {
-                // Header button to toggle the configuration section's visibility
-                Button(action: {
-                    // Animate the expansion/collapse
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        isConfigExpanded.toggle()
-                    }
-                }) {
-                    HStack {
-                        Text("Search Configuration")
-                            .font(.headline)
-                            .foregroundColor(theme.textPrimaryColor)
-                        Spacer()
-                        // Chevron icon indicating expanded/collapsed state
-                        Image(systemName: "chevron.\(isConfigExpanded ? "up" : "down")")
-                            .font(.caption)
-                            .foregroundColor(theme.textSecondaryColor)
-                    }
-                }
-                .buttonStyle(PlainButtonStyle())  // Use plain style to avoid default button appearance
-                .padding(.vertical, 8)  // Slightly reduced vertical padding
-
-                // Show configuration options only if expanded
-                if isConfigExpanded {
-                    VStack(spacing: 14) {  // Slightly reduced spacing
-                        // Row for selecting the Pinecone index
-                        HStack {
-                            Text("Index")
-                                .foregroundColor(theme.textSecondaryColor)
-                                .frame(width: 80, alignment: .leading)  // Fixed width for alignment
-
-                            // Picker for selecting the index
-                            Picker("", selection: $viewModel.selectedIndex) {
-                                Text("Select Index").tag(String?.none)  // Tag for nil selection
-                                // Populate with available indexes from the view model
-                                ForEach(viewModel.pineconeIndexes, id: \.self) { index in
-                                    Text(index).tag(index)
-                                }
-                            }
-                            .pickerStyle(MenuPickerStyle())  // Use menu style for dropdown appearance
-                            .onChange(of: viewModel.selectedIndex) { oldValue, newValue in
-                                // Update the index in the view model when selection changes
-                                if let index = newValue, !index.isEmpty {
-                                    Task {
-                                        await viewModel.setIndex(index)
-                                    }
-                                }
-                            }
-
-                            // Button to refresh the list of available indexes
-                            configRefreshButton {
-                                Task {
-                                    await viewModel.loadIndexes()
-                                }
-                            }
-                            .disabled(viewModel.isSearching)  // Disable while searching
-                        }
-
-                        // Row for selecting the Pinecone namespace
-                        HStack {
-                            Text("Namespace")
-                                .foregroundColor(theme.textSecondaryColor)
-                                .frame(width: 80, alignment: .leading)  // Fixed width for alignment
-
-                            // Picker for selecting the namespace
-                            Picker("", selection: $viewModel.selectedNamespace) {
-                                Text("Default namespace").tag(String?.none)  // Tag for nil selection
-                                // Populate with available namespaces
-                                ForEach(viewModel.namespaces, id: \.self) { namespace in
-                                    Text(namespace).tag(namespace)
-                                }
-                            }
-                            .pickerStyle(MenuPickerStyle())
-                            .onChange(of: viewModel.selectedNamespace) { oldValue, newValue in
-                                // Update the namespace in the view model
-                                viewModel.setNamespace(newValue)
-                            }
-
-                            // Button to refresh the list of namespaces for the selected index
-                            configRefreshButton {
-                                Task {
-                                    await viewModel.loadNamespaces()
-                                }
-                            }
-                            .disabled(viewModel.isSearching)  // Disable while searching
-                        }
-                    }
-                    .padding(.vertical, 10)  // Add vertical padding inside expanded view
-                    .padding(.horizontal, 4)  // Add slight horizontal padding inside
-                    .background(theme.cardBackgroundColor)  // Add subtle background when expanded
-                    .cornerRadius(8)  // Inner corner radius
-                    .padding(.top, 8)  // Padding below the expanded section
-                    // Apply transition for smooth appearance/disappearance
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-        }
-        .padding(.horizontal, 16)  // Consistent horizontal padding
-    }
-
-    // Custom refresh button for config section
-    private func configRefreshButton(action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(theme.primaryColor)
-                .padding(5)
-                .background(theme.primaryLight)
-                .clipShape(Circle())
-        }
-        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -740,119 +1457,291 @@ struct NoResultsView: View {
 
 // MARK: - Initial State View
 
-/// The view shown before any search is initiated, prompting the user to enter a query.
-/// Includes a decorative icon.
+/// The view shown before any search is initiated, with smart example prompts.
 struct InitialStateView: View {
-    @Environment(\.theme) private var theme  // Access the current theme
+    let indexName: String?
+    let namespaceName: String?
+    let codeInterpreterEnabled: Bool
+    let webSearchEnabled: Bool
+    let onPromptTap: (String) -> Void
+
+    @Environment(\.theme) private var theme
     @State private var rotation: Double = 0
-    @State private var particleOffsets: [CGSize] = Array(repeating: .zero, count: 5)
+    @State private var selectedCategory: PromptCategory = .discover
+
+    enum PromptCategory: String, CaseIterable {
+        case discover = "Discover"
+        case analyze = "Analyze"
+        case extract = "Extract"
+        case compare = "Compare"
+
+        var icon: String {
+            switch self {
+            case .discover: return "magnifyingglass"
+            case .analyze: return "chart.bar.xaxis"
+            case .extract: return "list.bullet.clipboard"
+            case .compare: return "arrow.left.arrow.right"
+            }
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 30) {
-            Spacer()
-
-            // Decorative icon element
-            ZStack {
-                // Animated particles
-                ForEach(0..<5, id: \.self) { index in
+        VStack(spacing: 24) {
+            // Header with context
+            VStack(spacing: 8) {
+                ZStack {
                     Circle()
-                        .fill(theme.primaryColor.opacity(0.3))
-                        .frame(width: 12, height: 12)
-                        .offset(particleOffsets[index])
-                        .opacity(0.7)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [theme.primaryLight, theme.primaryMedium]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+.frame(width: 80, height: 80)
+
+                    Image(systemName: currentIcon)
+                        .resizable()
+                        .scaledToFit()
+.frame(width: 35, height: 35)
+    .foregroundColor(theme.primaryColor)
+    .rotationEffect(Angle(degrees: rotation))
                 }
 
-                // Main circle background
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [theme.primaryLight, theme.primaryMedium]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 120, height: 120)
-
-                // Document icon
-                Image(systemName: "doc.text.magnifyingglass")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 50, height: 50)
-                    .foregroundColor(theme.primaryColor)
-                    .rotationEffect(Angle(degrees: rotation))
-            }
-
-            // Informational text
-            VStack(spacing: 8) {
-                Text("Document Search")
+                Text(headerTitle)
                     .font(.system(.title3, design: .rounded))
                     .fontWeight(.semibold)
                     .foregroundColor(theme.textPrimaryColor)
 
-                Text("Ask a question to search your documents")
+                Text(headerSubtitle)
                     .font(.system(.callout, design: .rounded))
                     .foregroundColor(theme.textSecondaryColor)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 50)
+.padding(.horizontal, 40)
+            }
+            .padding(.top, 16)
+
+            // Category picker
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PromptCategory.allCases, id: \.self) { category in
+                        CategoryPill(
+                            title: category.rawValue,
+                            icon: category.icon,
+                            isSelected: selectedCategory == category,
+                            theme: theme
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedCategory = category
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+
+            // Example prompts
+            VStack(spacing: 10) {
+                ForEach(promptsForCategory(selectedCategory), id: \.self) { prompt in
+                    PromptSuggestionRow(prompt: prompt, theme: theme) {
+                        onPromptTap(prompt)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .animation(.easeInOut(duration: 0.2), value: selectedCategory)
+
+            // Active tools indicator
+            if codeInterpreterEnabled || webSearchEnabled {
+                HStack(spacing: 12) {
+                    if codeInterpreterEnabled {
+                        Label("Charts & Calculations", systemImage: "terminal")
+                            .font(.caption)
+                            .foregroundColor(theme.primaryColor)
+                    }
+                    if webSearchEnabled {
+                        Label("Web Search", systemImage: "globe")
+                            .font(.caption)
+                            .foregroundColor(theme.primaryColor)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(theme.primaryLight.opacity(0.5))
+                )
             }
 
             Spacer()
-
-            // Subtle hints about the search capabilities
-            VStack(spacing: 16) {
-                featureRow(
-                    icon: "text.magnifyingglass", text: "Semantic search across your documents")
-                featureRow(icon: "brain", text: "AI-generated answers from your content")
-                featureRow(icon: "checkmark.shield", text: "Context-aware responses from your data")
-            }
-            .padding(.horizontal, 40)
-            .padding(.bottom, 20)
         }
-        .onAppear {
-            // Subtle icon rotation
+.onAppear { 
             withAnimation(Animation.easeInOut(duration: 20).repeatForever(autoreverses: false)) {
                 rotation = 360
             }
-
-            // Animate particles
-            animateParticles()
         }
     }
 
-    // Helper to create consistent feature rows
-    private func featureRow(icon: String, text: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundColor(theme.primaryColor)
-                .frame(width: 24, height: 24)
+    // MARK: - Dynamic Content
 
-            Text(text)
-                .font(.callout)
-                .foregroundColor(theme.textSecondaryColor)
-
-            Spacer()
-        }
+    private var currentIcon: String {
+        if codeInterpreterEnabled { return "chart.bar.doc.horizontal" }
+        if webSearchEnabled { return "globe.badge.chevron.backward" }
+        return "doc.text.magnifyingglass"
     }
 
-    // Animate particles in random patterns
-    private func animateParticles() {
-        for i in 0..<particleOffsets.count {
-            // Generate random offset within a radius
-            let randomRadius = CGFloat.random(in: 70...120)
-            let randomAngle = CGFloat.random(in: 0...2 * .pi)
-            let xOffset = randomRadius * cos(randomAngle)
-            let yOffset = randomRadius * sin(randomAngle)
+    private var headerTitle: String {
+        if let namespace = namespaceName, !namespace.isEmpty {
+            return "Search \(namespace.capitalized)"
+        } else if let index = indexName {
+            return "Search \(index.capitalized)"
+        }
+        return "Document Search"
+    }
 
-            // Animate with delay for each particle
-            withAnimation(
-                Animation.easeInOut(duration: Double.random(in: 10...15))
-                    .repeatForever()
-                    .delay(Double(i) * 0.3)
-            ) {
-                particleOffsets[i] = CGSize(width: xOffset, height: yOffset)
+    private var headerSubtitle: String {
+        if codeInterpreterEnabled {
+            return "Ask questions, get answers with charts and calculations"
+        } else if webSearchEnabled {
+            return "Search your documents and the web together"
+        }
+        return "Ask anything about your documents"
+    }
+
+    private func promptsForCategory(_ category: PromptCategory) -> [String] {
+        let context = contextualTerm
+
+        switch category {
+        case .discover:
+            return [
+                "What are the key topics covered in \(context)?",
+                "Summarize the main points from \(context)",
+                "What should I know first about \(context)?",
+                "Give me an overview of \(context)",
+            ]
+        case .analyze:
+            if codeInterpreterEnabled {
+                return [
+                    "Chart any numerical data found in \(context)",
+                    "Calculate totals and averages from \(context)",
+                    "Create a timeline visualization from \(context)",
+                    "Analyze trends mentioned in \(context) and graph them",
+                ]
+            } else {
+                return [
+                    "What patterns or trends appear in \(context)?",
+                    "Analyze the key findings from \(context)",
+                    "What conclusions can be drawn from \(context)?",
+                    "Identify any issues or concerns in \(context)",
+                ]
+            }
+        case .extract:
+            if codeInterpreterEnabled {
+                return [
+                    "Extract all dates and deadlines into a table",
+                    "Pull all mentioned names and roles into CSV format",
+                    "List all action items with owners and due dates",
+                    "Create a structured JSON of key entities from \(context)",
+                ]
+            } else {
+                return [
+                    "List all action items mentioned in \(context)",
+                    "What dates and deadlines are referenced?",
+                    "Extract all names and their roles from \(context)",
+                    "What are the requirements listed in \(context)?",
+                ]
+            }
+        case .compare:
+            if codeInterpreterEnabled {
+                return [
+                    "Compare metrics across documents and chart differences",
+                    "Create a comparison table of key attributes",
+                    "Calculate percentage differences between values found",
+                    "Visualize how numbers changed over time in \(context)",
+                ]
+            } else {
+                return [
+                    "Compare the different approaches mentioned",
+                    "What are the pros and cons discussed?",
+                    "How do the options differ from each other?",
+                    "What changed between versions or updates?",
+                ]
             }
         }
+    }
+
+    private var contextualTerm: String {
+        if let namespace = namespaceName, !namespace.isEmpty {
+            return "the \(namespace) documents"
+        } else if let index = indexName {
+            return "my \(index) index"
+        }
+        return "these documents"
+    }
+}
+
+// MARK: - Supporting Views
+
+private struct CategoryPill: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let theme: OCTheme
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+.font(.system(size: 12))
+Text(title)
+    .font(.subheadline.weight(.medium))
+            }
+            .foregroundColor(isSelected ? .white : theme.primaryColor)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? theme.primaryColor : theme.primaryLight)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PromptSuggestionRow: View {
+    let prompt: String
+    let theme: OCTheme
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundColor(theme.primaryColor)
+
+                Text(prompt)
+                    .font(.subheadline)
+                    .foregroundColor(theme.textPrimaryColor)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textSecondaryColor)
+            }
+.padding(.horizontal, 14)
+    .padding(.vertical, 12)
+    .background(
+        RoundedRectangle(cornerRadius: 12)
+            .fill(theme.cardBackgroundColor)
+            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+    )
+        }
+.buttonStyle(.plain)
     }
 }
 
@@ -884,9 +1773,9 @@ struct SourcesTabView: View {
                 Text("Sources")
                     .font(.headline)
                     .foregroundColor(theme.textPrimaryColor)
-                
+
                 Spacer()
-                
+
                 if !viewModel.selectedResults.isEmpty {
                     OCButton(
                         title: "Regenerate",
@@ -1055,6 +1944,7 @@ struct SearchResultRow: View {
     let onTap: () -> Void  // Action to perform when the row is tapped (toggles selection)
 
     @Environment(\.theme) private var theme  // Access the current theme
+    @State private var showShareSheet = false
 
     var body: some View {
         let isExpanded = viewModel.expandedResultIDs.contains(result.id)
@@ -1081,6 +1971,38 @@ struct SearchResultRow: View {
                     ResultContentView(content: result.content, theme: theme)
                         // Apply transition for smooth appearance/disappearance
                         .transition(.opacity.combined(with: .move(edge: .top)))
+
+                    // Action buttons when expanded
+                    HStack(spacing: 16) {
+                        Button(action: {
+                            UIPasteboard.general.string = result.content
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 12))
+                                Text("Copy")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        Button(action: {
+                            showShareSheet = true
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 12))
+                                Text("Share")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        Spacer()
+                    }
+                    .padding(.top, 8)
                 }
             }
         }
@@ -1095,6 +2017,43 @@ struct SearchResultRow: View {
                     lineWidth: isHighlighted ? 3 : (isSelected ? 2 : 0)
                 )
         )
+.contextMenu {
+    Button(action: {
+        UIPasteboard.general.string = result.content
+    }) {
+        Label("Copy Content", systemImage: "doc.on.doc")
+    }
+
+    Button(action: {
+        showShareSheet = true
+    }) {
+        Label("Share Content", systemImage: "square.and.arrow.up")
+    }
+
+    Divider()
+
+    Button(action: {
+        let fullInfo = """
+        Source: \(result.sourceDocument)
+        Score: \(String(format: "%.3f", result.score))
+
+        Content:
+        \(result.content)
+        """
+        UIPasteboard.general.string = fullInfo
+    }) {
+        Label("Copy with Metadata", systemImage: "doc.text")
+    }
+
+    Button(action: {
+        onTap()
+    }) {
+        Label(isSelected ? "Deselect" : "Select", systemImage: isSelected ? "checkmark.circle" : "circle")
+    }
+}
+.sheet(isPresented: $showShareSheet) {
+    ShareSheet(items: [result.content])
+}
     }
 }
 
@@ -1587,159 +2546,6 @@ private struct MetadataFilterChip: View {
     }
 }
 
- // MARK: - Quick Switcher (Index • Namespace)
-
-struct QuickSwitcherView: View {
-    @ObservedObject var viewModel: SearchViewModel
-    @Environment(\.theme) private var theme
-
-    @State private var showIndexSheet = false
-    @State private var showNamespaceSheet = false
-    @State private var indexQuery: String = ""
-    @State private var namespaceQuery: String = ""
-
-    var body: some View {
-        VStack(spacing: 8) {
-            // Summary pill button
-            OCCard(padding: 0, cornerRadius: 14) {
-                Button(action: { showIndexSheet = true }) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "folder")
-                            .foregroundColor(theme.primaryColor)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Index • Namespace")
-                                .font(.caption)
-                                .foregroundColor(theme.textSecondaryColor)
-                            Text("\(viewModel.selectedIndex ?? "Select Index") • \(viewModel.selectedNamespace ?? "Default")")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(theme.textPrimaryColor)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(theme.textSecondaryColor)
-                    }
-                    .padding(.horizontal, 14)
-                    .frame(height: 52) // 44+ tap target
-                }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(viewModel.isSearching)
-            }
-
-            // Namespace chips for small sets
-            if !viewModel.namespaces.isEmpty && viewModel.namespaces.count <= 6 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        // Default namespace (nil)
-                        NamespaceChip(
-                            title: "Default",
-                            selected: viewModel.selectedNamespace == nil,
-                            theme: theme
-                        ) {
-                            hapticSelection()
-                            viewModel.setNamespace(nil)
-                        }
-                        ForEach(viewModel.namespaces, id: \.self) { ns in
-                            NamespaceChip(
-                                title: ns,
-                                selected: viewModel.selectedNamespace == ns,
-                                theme: theme
-                            ) {
-                                hapticSelection()
-                                viewModel.setNamespace(ns)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-            }
-        }
-        // Index Sheet
-        .sheet(isPresented: $showIndexSheet) {
-            IndexListSheet(
-                title: "Select Index",
-                allItems: viewModel.pineconeIndexes,
-                query: $indexQuery,
-                onRefresh: {
-                    Task { await viewModel.loadIndexes() }
-                },
-                onSelect: { index in
-                    hapticSelection()
-                    showIndexSheet = false
-                    Task {
-                        await viewModel.setIndex(index)
-                        // If multiple namespaces, open namespace sheet automatically
-                        await MainActor.run {
-                            if viewModel.namespaces.count > 1 {
-                                showNamespaceSheet = true
-                            }
-                        }
-                    }
-                }
-            )
-        }
-        // Namespace Sheet
-        .sheet(isPresented: $showNamespaceSheet) {
-            NamespaceListSheet(
-                title: "Select Namespace",
-                allItems: viewModel.namespaces,
-                query: $namespaceQuery,
-                onRefresh: {
-                    Task { await viewModel.loadNamespaces() }
-                },
-                onSelect: { ns in
-                    hapticSelection()
-                    viewModel.setNamespace(ns)
-                    showNamespaceSheet = false
-                }
-            )
-        }
-        .onAppear {
-            // If no index yet but we have indexes loaded, nudge user with sheet
-            if viewModel.selectedIndex == nil && !viewModel.pineconeIndexes.isEmpty {
-                showIndexSheet = true
-            }
-        }
-    }
-
-    private func hapticSelection() {
-        let generator = UISelectionFeedbackGenerator()
-        generator.selectionChanged()
-    }
-}
-
-private struct NamespaceChip: View {
-    let title: String
-    let selected: Bool
-    let theme: OCTheme
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if selected { Image(systemName: "checkmark.circle.fill") }
-                Text(title)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 14, weight: .semibold))
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(
-                Capsule()
-                    .fill(selected ? theme.primaryLight : theme.cardBackgroundColor)
-            )
-            .foregroundColor(selected ? theme.primaryColor : theme.textSecondaryColor)
-            .overlay(
-                Capsule()
-                    .stroke(selected ? theme.primaryColor.opacity(0.6) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .accessibilityLabel("Namespace \(title)")
-    }
-}
-
 // Generic searchable sheet for Indexes
 private struct IndexListSheet: View {
     let title: String
@@ -1857,18 +2663,18 @@ private struct NamespaceListSheet: View {
 private struct NoIndexEmptyState: View {
     @Environment(\.theme) private var theme
     let onShowDocuments: () -> Void
-    
+
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "server.rack")
                 .font(.system(size: 60, weight: .light))
                 .foregroundColor(theme.textSecondaryColor)
-            
+
             VStack(spacing: 8) {
                 Text("No Pinecone Index Found")
                     .font(.title3.bold())
                     .foregroundColor(theme.textPrimaryColor)
-                
+
                 Text(
                     "Create a Pinecone index + namespace from the Documents tab to start searching your knowledge base.")
                     .font(.subheadline)
