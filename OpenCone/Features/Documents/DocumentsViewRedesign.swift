@@ -192,14 +192,13 @@ private extension DocumentsViewRedesign {
             // Index picker
             if !viewModel.pineconeIndexes.isEmpty {
                 Menu {
-                    ForEach(Array(viewModel.pineconeIndexes), id: \.self) { index in
+                    ForEach(viewModel.pineconeIndexes, id: \.self) { index in
                         Button {
-                            viewModel.selectedIndex = index
-                            Task { await viewModel.fetchNamespacesForIndex(index) }
+                            Task { await viewModel.setIndex(index) }
                         } label: {
                             HStack {
                                 Text(index)
-                                if index == viewModel.selectedIndex {
+                                if viewModel.selectedIndex == index { 
                                     Image(systemName: "checkmark")
                                 }
                             }
@@ -235,13 +234,13 @@ private extension DocumentsViewRedesign {
             // Namespace picker (if index selected)
             if viewModel.selectedIndex != nil && !viewModel.namespaces.isEmpty {
                 Menu {
-                    ForEach(viewModel.namespaces, id: \.self) { ns in
+                    ForEach(viewModel.namespaces, id: \.self) { namespace in
                         Button {
-                            viewModel.selectedNamespace = ns
+                            viewModel.setNamespace(namespace)
                         } label: {
                             HStack {
-                                Text(ns.isEmpty ? "(default)" : ns)
-                                if ns == viewModel.selectedNamespace {
+                                Text(namespace.isEmpty ? "Default" : namespace)
+                                if viewModel.selectedNamespace == namespace { 
                                     Image(systemName: "checkmark")
                                 }
                             }
