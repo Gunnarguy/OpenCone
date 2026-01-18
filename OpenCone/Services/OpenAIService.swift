@@ -1,5 +1,26 @@
 import Foundation
 
+// MARK: - Code Interpreter Output Models
+
+/// Represents output from OpenAI's code interpreter tool
+struct CodeInterpreterOutput: Identifiable, Equatable {
+    let id: String
+    let type: OutputType
+    let content: String
+
+    enum OutputType: String, Equatable {
+        case logs // stdout/stderr from Python execution
+        case image // Base64 PNG or image URL
+        case error // Execution error
+    }
+
+    init(id: String = UUID().uuidString, type: OutputType, content: String) {
+        self.id = id
+        self.type = type
+        self.content = content
+    }
+}
+
 /// Service for interacting with OpenAI API
 @MainActor
 final class OpenAIService: Sendable {
@@ -146,7 +167,7 @@ final class OpenAIService: Sendable {
     ///   - userMessage: The user message
     ///   - context: The context from retrieved documents
     /// - Returns: Generated completion text
-    func generateCompletion(systemPrompt: String, userMessage: String, context: String, history: [ChatMessage] = [], conversationId: String? = nil, onConversationId: ((String) -> Void)? = nil) async throws -> String {
+    func generateCompletion(systemPrompt: String, userMessage: String, context: String, history: [ChatMessage] = [], conversationId: String? = nil, onConversationId: ((String) -> Void)? = nil, allowCodeInterpreter: Bool = false) async throws -> String { 
         let endpoint = "\(baseURL)/responses"
 
         // Build Responses API "input" with conversation history
@@ -166,6 +187,12 @@ final class OpenAIService: Sendable {
         } else {
             body["temperature"] = currentTemperature()
             body["top_p"] = currentTopP()
+        }
+        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+            body["tools"] = [[
+                "type": "code_interpreter",
+                "container": ["type": "auto"],
+            ]]
         }
         if let convId = conversationId {
             body["conversation"] = convId
@@ -263,6 +290,8 @@ final class OpenAIService: Sendable {
         conversationId: String? = nil,
         onConversationId: ((String) -> Void)? = nil,
         onTextDelta: @escaping (String) -> Void,
+        allowCodeInterpreter: Bool = true,
+        onCodeInterpreterOutput: ((CodeInterpreterOutput) -> Void)? = nil,
         onCompleted: @escaping () -> Void
     ) async throws {
         let endpoint = "\(baseURL)/responses"
@@ -279,6 +308,20 @@ final class OpenAIService: Sendable {
             "store": false
         ]
 
+        // Build include array for tool outputs
+        var includes: [String] = []
+        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+            includes.append("code_interpreter_call.outputs")
+        }
+
+        if isWebSearchEnabled() {
+            includes.append("web_search_call.action.sources")
+        }
+
+        if !includes.isEmpty {
+            body["include"] = includes
+        }
+
         if Configuration.isReasoningModel(model) {
             body["reasoning"] = ["effort": currentReasoningEffort()]
         } else {
@@ -293,8 +336,15 @@ final class OpenAIService: Sendable {
             tools.append(["type": "web_search"])
         }
 
-        if isCodeInterpreterEnabled() {
-            tools.append(["type": "code_interpreter"])
+        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+            // Code interpreter requires a container parameter
+            // Using auto mode creates a new container or reuses an existing one
+            tools.append([
+                "type": "code_interpreter",
+                "container": [
+                    "type": "auto",
+                ],
+            ])
         }
 
         if !tools.isEmpty {
@@ -308,6 +358,12 @@ final class OpenAIService: Sendable {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             throw APIError.invalidRequestData
         }
+
+        // Log request details for debugging
+        #if DEBUG
+            let toolsList = tools.compactMap { $0["type"] as? String }.joined(separator: ",")
+            Logger.shared.log(level: .debug, message: "OpenAI Responses request", context: "model=\(model); tools=\(toolsList.isEmpty ? "none" : toolsList)")
+        #endif
 
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
@@ -460,6 +516,27 @@ final class OpenAIService: Sendable {
                                     }
                                 }
                             }
+
+                            // Check for code interpreter output in the done event
+                            if let item = obj["item"] as? [String: Any],
+                               let itemType = item["type"] as? String,
+                               itemType == "code_interpreter_call"
+                            {
+                                parseCodeInterpreterItem(item, callback: onCodeInterpreterOutput)
+                            }
+                        }
+                    }
+
+                    // Handle code interpreter specific events
+                    let isCodeInterpreterEvent = currentEvent == "response.code_interpreter_call.completed" ||
+                        currentEvent == "response.code_interpreter_call_output.done" ||
+                        currentEvent == "response.code_interpreter_call.in_progress"
+
+                    if isCodeInterpreterEvent {
+                        if let data = payload.data(using: .utf8),
+                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        {
+                            parseCodeInterpreterItem(obj, callback: onCodeInterpreterOutput)
                         }
                     }
                 }
@@ -476,6 +553,58 @@ final class OpenAIService: Sendable {
         } catch {
             logger.log(level: .error, message: "Responses streaming failed: \(error.localizedDescription)")
             throw APIError.requestFailed(statusCode: 0, message: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Code Interpreter Parsing
+
+    /// Parse code interpreter output from SSE payload
+    private func parseCodeInterpreterItem(_ obj: [String: Any], callback: ((CodeInterpreterOutput) -> Void)?) {
+        guard let callback = callback else { return }
+
+        // Try to get outputs array from various possible locations
+        let outputs: [[String: Any]]? = obj["outputs"] as? [[String: Any]] ??
+            (obj["item"] as? [String: Any])?["outputs"] as? [[String: Any]] ??
+            (obj["code_interpreter_call"] as? [String: Any])?["outputs"] as? [[String: Any]]
+
+        if let outputs = outputs {
+            for output in outputs {
+                if let outputType = output["type"] as? String {
+                    switch outputType {
+                    case "logs":
+                        if let logs = output["logs"] as? String, !logs.isEmpty {
+                            logger.log(level: .info, message: "Code interpreter logs: \(logs.prefix(100))")
+                            callback(CodeInterpreterOutput(type: .logs, content: logs))
+                        }
+                    case "image":
+                        // Image can be base64 data or a URL
+                        if let imageData = output["image"] as? [String: Any] {
+                            if let base64 = imageData["data"] as? String {
+                                logger.log(level: .info, message: "Code interpreter generated image (base64, \(base64.count) chars)")
+                                callback(CodeInterpreterOutput(type: .image, content: base64))
+                            } else if let url = imageData["url"] as? String {
+                                logger.log(level: .info, message: "Code interpreter generated image URL")
+                                callback(CodeInterpreterOutput(type: .image, content: url))
+                            }
+                        }
+                    default:
+                        logger.log(level: .debug, message: "Unknown code interpreter output type: \(outputType)")
+                    }
+                }
+            }
+        }
+
+        // Check for error in execution
+        if let error = obj["error"] as? String, !error.isEmpty {
+            logger.log(level: .warning, message: "Code interpreter error: \(error)")
+            callback(CodeInterpreterOutput(type: .error, content: error))
+        }
+
+        // Also check for code that was executed (useful for display)
+        if let code = obj["code"] as? String ?? (obj["item"] as? [String: Any])?["code"] as? String,
+           !code.isEmpty
+        {
+            logger.log(level: .debug, message: "Code interpreter executed: \(code.prefix(100))")
         }
     }
 }

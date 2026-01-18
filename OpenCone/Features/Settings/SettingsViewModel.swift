@@ -83,6 +83,23 @@ final class SettingsViewModel: ObservableObject {
     // Hybrid Search settings (Dense + Sparse vectors)
     @Published var hybridSearchEnabled: Bool = false // Combine semantic + keyword search
     @Published var hybridSearchAlpha: Double = 0.5 // 1.0 = pure semantic, 0.0 = pure keyword
+    @Published var currentIndexMetric: String? = nil // Set by SearchViewModel when index changes
+
+    /// Returns true if the current index supports hybrid search (requires dotproduct metric)
+    var indexSupportsHybridSearch: Bool {
+        currentIndexMetric?.lowercased() == "dotproduct"
+    }
+
+    /// User-friendly message explaining why hybrid search is unavailable
+    var hybridSearchDisabledReason: String? {
+        guard let metric = currentIndexMetric else {
+            return "Select an index first"
+        }
+        if metric.lowercased() != "dotproduct" {
+            return "Requires dotproduct index (current: \(metric))"
+        }
+        return nil
+    }
 
     // Reranking settings (two-stage retrieval)
     @Published var rerankingEnabled: Bool = false // Post-retrieval reranking

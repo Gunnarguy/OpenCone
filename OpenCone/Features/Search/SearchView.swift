@@ -83,7 +83,7 @@ struct SearchView: View {
                                     get: { viewModel.searchQuery },
                                     set: { viewModel.searchQuery = $0 }
                                 ),
-                                isSending: viewModel.isSearching, 
+                                isSending: viewModel.isSearching,
                                 onSend: { Task { await viewModel.performSearch() } },
                                 onStop: { viewModel.cancelActiveSearch() },
                                 speechService: speechService
@@ -1094,6 +1094,12 @@ struct ChatTimelineView: View {
                                 .id(message.id)
                             }
                             .padding(.horizontal, 8)
+
+                            // Code Interpreter outputs (charts, logs, images)
+                            if !viewModel.codeInterpreterOutputs.isEmpty {
+                                CodeInterpreterOutputsView(outputs: viewModel.codeInterpreterOutputs)
+                                    .padding(.horizontal, 8)
+                            }
 
                             if viewModel.isSearching {
                                 TypingIndicatorView()
@@ -2748,5 +2754,151 @@ extension View {
     func hideKeyboard() {
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+// MARK: - Code Interpreter Outputs View
+
+/// Displays outputs from OpenAI's code interpreter tool (charts, logs, images)
+struct CodeInterpreterOutputsView: View {
+    let outputs: [CodeInterpreterOutput]
+    @Environment(\.theme) private var theme
+    @State private var expandedOutputs: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(theme.primaryColor)
+                Text("Code Interpreter Results")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(theme.textPrimaryColor)
+                Spacer()
+                Text("\(outputs.count)")
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(theme.textSecondaryColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(theme.cardBackgroundColor))
+            }
+
+            ForEach(outputs) { output in
+                outputCard(for: output)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(theme.cardBackgroundColor)
+                .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
+        )
+    }
+
+    @ViewBuilder
+    private func outputCard(for output: CodeInterpreterOutput) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Type badge and expand toggle
+            HStack {
+                Label(
+                    output.type == .logs ? "Execution Output" :
+                        output.type == .image ? "Generated Chart" : "Error",
+                    systemImage: output.type == .logs ? "terminal" :
+                        output.type == .image ? "photo" : "exclamationmark.triangle"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundColor(output.type == .error ? theme.errorColor : theme.textSecondaryColor)
+
+                Spacer()
+
+                if output.type == .logs && output.content.count > 200 {
+                    Button {
+                        if expandedOutputs.contains(output.id) {
+                            expandedOutputs.remove(output.id)
+                        } else {
+                            expandedOutputs.insert(output.id)
+                        }
+                    } label: {
+                        Image(systemName: expandedOutputs.contains(output.id) ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                    }
+                }
+            }
+
+            // Content
+            switch output.type {
+            case .logs:
+                let isExpanded = expandedOutputs.contains(output.id)
+                let displayContent = isExpanded || output.content.count <= 200
+                    ? output.content
+                    : String(output.content.prefix(200)) + "..."
+
+                Text(displayContent)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(theme.textPrimaryColor)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.black.opacity(0.05))
+                    )
+                    .textSelection(.enabled)
+
+            case .image:
+                if output.content.hasPrefix("http") {
+                    // It's a URL
+                    AsyncImage(url: URL(string: output.content)) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .frame(height: 200)
+                        case let .success(image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 300)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        case .failure:
+                            Label("Failed to load image", systemImage: "exclamationmark.triangle")
+                                .foregroundColor(theme.errorColor)
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                } else {
+                    // It's base64
+                    if let data = Data(base64Encoded: output.content),
+                       let uiImage = UIImage(data: data)
+                    {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        Label("Invalid image data", systemImage: "exclamationmark.triangle")
+                            .foregroundColor(theme.errorColor)
+                    }
+                }
+
+            case .error:
+                Text(output.content)
+                    .font(.caption)
+                    .foregroundColor(theme.errorColor)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(theme.errorLight)
+                    )
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.textSecondaryColor.opacity(0.1), lineWidth: 1)
+        )
     }
 }

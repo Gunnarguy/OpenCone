@@ -104,6 +104,10 @@ final class PineconeService {
     /// Set the current index
     /// - Parameter indexName: Name of the index
     func setCurrentIndex(_ indexName: String) async throws {
+        if currentIndex == indexName, indexHost != nil {
+            logger.log(level: .debug, message: "Current index unchanged", context: "index=\(indexName)")
+            return
+        }
         self.currentIndex = indexName
         try await getIndexHost(for: indexName)
 

@@ -27,7 +27,6 @@ enum SearchError: LocalizedError {
         case .missingSelection(let item): return "Please select \(item) before proceeding."
         }
     }
-
     var recoverySuggestion: String? {
         switch self {
         case .indexLoadingFailed, .namespaceLoadingFailed, .queryFailed:
@@ -243,6 +242,12 @@ final class SearchViewModel: ObservableObject {
     @Published var selectedIndex: String? = nil
     @Published var selectedNamespace: String? = nil
     @Published var indexDimension: Int? = nil
+    @Published var indexMetric: String? = nil // cosine, euclidean, or dotproduct
+
+    /// Returns true if the current index supports hybrid search (requires dotproduct metric)
+    var indexSupportsHybridSearch: Bool {
+        indexMetric?.lowercased() == "dotproduct"
+    }
     @Published var lastSearchTime: Date? = nil
     @Published var currentTheme: OCTheme = ThemeManager.shared.currentTheme
     @Published var messages: [ChatMessage] = []
@@ -253,6 +258,9 @@ final class SearchViewModel: ObservableObject {
     @Published var newFilterField: String = ""
     @Published var newFilterValue: String = ""
     @Published var filterParseError: String? = nil
+
+    // Code interpreter outputs from current search
+    @Published var codeInterpreterOutputs: [CodeInterpreterOutput] = []
 
     // Visual state properties
     @Published var searchResultsOpacity: Double = 0.0
@@ -410,12 +418,23 @@ final class SearchViewModel: ObservableObject {
             self.selectedNamespace = nil
             self.namespaces = []
             self.indexDimension = nil
+            self.indexMetric = nil
 
-            // Now describe the index to get its dimension
+            // Now describe the index to get its dimension and metric
             let indexDetails = try await pineconeService.describeIndex(name: indexName)
 
             self.indexDimension = indexDetails.dimension
-            self.logger.log(level: .info, message: "Index '\(indexName)' selected with dimension \(indexDetails.dimension)")
+            self.indexMetric = indexDetails.metric
+
+            // Sync metric to SettingsViewModel for UI binding
+            self.settingsViewModel.currentIndexMetric = indexDetails.metric
+
+            // Log index capabilities
+            let hybridSupported = indexDetails.metric.lowercased() == "dotproduct"
+            self.logger.log(
+                level: .info,
+                message: "Index '\(indexName)' selected (dimension: \(indexDetails.dimension), metric: \(indexDetails.metric), hybrid: \(hybridSupported ? "supported" : "not supported"))"
+            )
 
             preferences.recordLastIndex(indexName)
 
@@ -581,9 +600,24 @@ final class SearchViewModel: ObservableObject {
         return candidateFile.caseInsensitiveCompare(targetFile) == .orderedSame
     }
 
+    private func shouldUseCodeInterpreter(for query: String) -> Bool {
+        guard settingsViewModel.codeInterpreterEnabled else { return false }
+        let lowercased = query.lowercased()
+        let keywords = [
+            "chart", "plot", "graph", "visualize", "table", "csv", "excel", "spreadsheet",
+            "stats", "statistics", "trend", "average", "mean", "median", "sum", "total",
+            "percent", "percentage", "correlation", "regression", "histogram", "scatter",
+            "bar", "line",
+        ]
+        let hasDigit = lowercased.rangeOfCharacter(from: .decimalDigits) != nil
+        let hasKeyword = keywords.contains { lowercased.contains($0) }
+        return hasDigit || hasKeyword
+    }
+
     /// Perform a search with the current query
     func performSearch() async {
-        guard !searchQuery.isEmpty else {
+        let currentQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !currentQuery.isEmpty else { 
             handleError(SearchError.missingSelection("a query"))
             return
         }
@@ -593,7 +627,8 @@ final class SearchViewModel: ObservableObject {
         }
         resetSearchState(isPreparingForSearch: true)
         // Append user message to chat history after resetting state
-        self.messages.append(ChatMessage(role: .user, text: self.searchQuery))
+        self.messages.append(ChatMessage(role: .user, text: currentQuery))
+        self.searchQuery = ""
 
         // Trace id for this search
         let traceId = UUID().uuidString
@@ -613,20 +648,33 @@ final class SearchViewModel: ObservableObject {
 
         do {
             // Generate embedding for query, passing the index's dimension
-            let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: searchQuery, dimension: indexDimension)
+            let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: currentQuery, dimension: indexDimension)
 
-            // Search Pinecone - use hybrid search if enabled
+            // Search Pinecone - use hybrid search if enabled AND index supports it
             let filterPayload = buildMetadataFilterPayload()
-            let queryResults: QueryResponse
+            var queryResults: QueryResponse
 
-            if settingsViewModel.hybridSearchEnabled {
+            // Check if hybrid search is enabled and supported by this index
+            let useHybridSearch = settingsViewModel.hybridSearchEnabled && indexSupportsHybridSearch
+
+            if settingsViewModel.hybridSearchEnabled, !indexSupportsHybridSearch {
+                // User wants hybrid but index doesn't support it
+                logger.log(
+                    level: .warning,
+                    message: "Hybrid search requires dotproduct metric (index uses \(indexMetric ?? "unknown")), using dense-only",
+                    context: "traceId=\(traceId)"
+                )
+            }
+
+            if useHybridSearch { 
                 // Generate sparse embedding for hybrid search
                 logger.log(level: .info, message: "Generating sparse embedding for hybrid search", context: "traceId=\(traceId)")
-                let sparseVector = try await pineconeService.generateSparseEmbedding(for: searchQuery)
+                let sparseVector = try await pineconeService.generateSparseEmbedding(for: currentQuery)
 
                 // Perform hybrid query with alpha weighting
                 let alpha = Float(settingsViewModel.hybridSearchAlpha)
                 logger.log(level: .info, message: "Performing hybrid search", context: "alpha=\(alpha); traceId=\(traceId)")
+
                 queryResults = try await pineconeService.hybridQuery(
                     denseVector: queryEmbedding,
                     sparseVector: sparseVector,
@@ -646,16 +694,21 @@ final class SearchViewModel: ObservableObject {
             }
 
             // Map results to search result models (metadata may contain non-string values)
+            var loggedMetadataKeysOnce = false
             let results = queryResults.matches.map { match in
 #if DEBUG
-                if let metadata = match.metadata {
-                    Logger.shared.log(level: .info, message: "Pinecone match metadata keys", context: metadata.keys.joined(separator: ", "))
+                // Log metadata keys only once per query to reduce verbosity
+                if !loggedMetadataKeysOnce, let metadata = match.metadata {
+                    Logger.shared.log(level: .debug, message: "Pinecone metadata keys", context: metadata.keys.sorted().joined(separator: ", "))
+                    loggedMetadataKeysOnce = true
                 }
 #endif
 
-                // Extract content - _node_content might be JSON that needs parsing
+                // Extract content - try multiple common field names
+                // Priority: _node_content (LlamaIndex), text, content, transcript_preview, body, description
                 var content = "No content"
                 if let nodeContent = match.metadata?["_node_content"]?.string {
+                    // LlamaIndex format - might be JSON that needs parsing
                     if let jsonData = nodeContent.data(using: .utf8),
                        let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                        let textContent = json["text"] as? String {
@@ -665,11 +718,17 @@ final class SearchViewModel: ObservableObject {
                     }
                 } else if let textContent = match.metadata?["text"]?.string {
                     content = textContent
+                } else if let textContent = match.metadata?["content"]?.string {
+                    content = textContent
+                } else if let textContent = match.metadata?["transcript_preview"]?.string {
+                    content = textContent
+                } else if let textContent = match.metadata?["body"]?.string {
+                    content = textContent
+                } else if let textContent = match.metadata?["description"]?.string {
+                    content = textContent
+                } else if let textContent = match.metadata?["chunk_text"]?.string {
+                    content = textContent
                 }
-
-#if DEBUG
-                Logger.shared.log(level: .info, message: "Extracted content", context: "length=\(content.count), preview=\(String(content.prefix(200)))")
-#endif
 
                 // Try multiple possible source fields
                 let source = match.metadata?["title"]?.string ??
@@ -703,7 +762,7 @@ final class SearchViewModel: ObservableObject {
 
                     // Call rerank API
                     let rerankResponse = try await pineconeService.rerank(
-                        query: searchQuery,
+                        query: currentQuery,
                         documents: documents,
                         model: rerankModel,
                         topN: topN
@@ -748,10 +807,20 @@ final class SearchViewModel: ObservableObject {
             }
 
             // Prepare context and citations
-            let context = finalResults.prefix(5).map { result in
-                "Source: \(result.sourceDocument)\n\(result.content)"
+            let useCodeInterpreter = shouldUseCodeInterpreter(for: currentQuery)
+            let maxSources = useCodeInterpreter ? 3 : 5
+            let maxContentChars = useCodeInterpreter ? 1200 : 4000
+            let context = finalResults.prefix(maxSources).map { result in
+                let trimmed = String(result.content.prefix(maxContentChars))
+                return "Source: \(result.sourceDocument)\n\(trimmed)"
             }.joined(separator: "\n\n")
-            let citations = finalResults.prefix(5).map { $0.sourceDocument }
+            let citations = finalResults.prefix(maxSources).map { $0.sourceDocument }
+
+            if useCodeInterpreter {
+                logger.log(level: .info, message: "Code interpreter context capped", context: "sources=\(maxSources); maxChars=\(maxContentChars)")
+            } else if settingsViewModel.codeInterpreterEnabled {
+                logger.log(level: .info, message: "Code interpreter skipped", context: "reason=heuristic; traceId=\(traceId)")
+            }
 
             // Prepare streaming assistant message
             let assistantMessageId = UUID()
@@ -784,7 +853,7 @@ final class SearchViewModel: ObservableObject {
                     // Run fallback in a separate unlinked task so cancellation doesn't propagate
                     Task.detached { [weak self] in
                         guard let self = self else { return }
-                        let query = await MainActor.run { self.searchQuery }
+                        let query = currentQuery
                         let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
                         let fallbackConversationId: String? = useServer ? nil : convIdArg
                         do {
@@ -800,7 +869,8 @@ final class SearchViewModel: ObservableObject {
                                         self.conversationId = conv
                                         self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
                                     }
-                                }
+                                },
+                                allowCodeInterpreter: false
                             )
                             await MainActor.run {
                                 if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
@@ -835,9 +905,12 @@ final class SearchViewModel: ObservableObject {
             self.currentStreamTask = Task {
                 do {
                     var deltaCount = 0
+                    // Clear previous code interpreter outputs
+                    await MainActor.run { self.codeInterpreterOutputs = [] }
+
                     try await openAIService.streamCompletion(
                         systemPrompt: self.effectiveSystemPrompt,
-                        userMessage: searchQuery,
+                        userMessage: currentQuery,
                         context: context,
                         history: historyArg,
                         conversationId: convIdArg,
@@ -859,6 +932,25 @@ final class SearchViewModel: ObservableObject {
                                 }
                             }
                         },
+                        allowCodeInterpreter: useCodeInterpreter,
+                        onCodeInterpreterOutput: { output in
+                                Task { @MainActor in
+                                    let maxOutputs = 8
+                                    let maxImageChars = 1_000_000
+
+                                    if output.type == .image, output.content.count > maxImageChars {
+                                        self.logger.log(level: .warning, message: "Code interpreter image dropped (too large)", context: "size=\(output.content.count)")
+                                        return
+                                    }
+
+                                    if self.codeInterpreterOutputs.count >= maxOutputs {
+                                        self.codeInterpreterOutputs.removeFirst(self.codeInterpreterOutputs.count - (maxOutputs - 1))
+                                    }
+
+                                    self.codeInterpreterOutputs.append(output)
+                                    self.logger.log(level: .info, message: "Code interpreter output received", context: "type=\(output.type.rawValue); total=\(self.codeInterpreterOutputs.count)")
+                                }
+                            },
                         onCompleted: {
                             // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
                             Task {
@@ -868,7 +960,7 @@ final class SearchViewModel: ObservableObject {
                                         do {
                                             let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
                                             let fallbackConversationId: String? = useServer ? nil : convIdArg
-                                            let fallbackQuery = await MainActor.run { self.searchQuery }
+                                            let fallbackQuery = currentQuery
                                             let fallback = try await self.openAIService.generateCompletion(
                                                 systemPrompt: self.effectiveSystemPrompt,
                                                 userMessage: fallbackQuery,
@@ -881,7 +973,8 @@ final class SearchViewModel: ObservableObject {
                                                         self.conversationId = conv
                                                         self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
                                                     }
-                                                }
+                                                },
+                                                allowCodeInterpreter: false
                                             )
                                             await MainActor.run {
                                                 if self.messages.indices.contains(index) {
@@ -958,7 +1051,8 @@ final class SearchViewModel: ObservableObject {
             handleError(SearchError.missingSelection("at least one source document"))
             return
         }
-        guard !searchQuery.isEmpty else {
+        let currentQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !currentQuery.isEmpty else { 
             handleError(SearchError.missingSelection("a query"))
             return
         }
@@ -966,15 +1060,27 @@ final class SearchViewModel: ObservableObject {
         self.isSearching = true
         self.generatedAnswer = ""
         self.errorMessage = nil
+        self.searchQuery = ""
 
         let traceId = UUID().uuidString
         self.logger.log(level: .info, message: "Generate from selected started", context: "traceId=\(traceId)")
 
         // Build context and citations
-        let context = self.selectedResults.map { result in
-            "Source: \(result.sourceDocument)\n\(result.content)"
+        let useCodeInterpreter = shouldUseCodeInterpreter(for: currentQuery)
+        let maxSources = useCodeInterpreter ? 3 : selectedResults.count
+        let maxContentChars = useCodeInterpreter ? 1200 : 4000
+        let cappedResults = Array(self.selectedResults.prefix(maxSources))
+        let context = cappedResults.map { result in
+            let trimmed = String(result.content.prefix(maxContentChars))
+            return "Source: \(result.sourceDocument)\n\(trimmed)"
         }.joined(separator: "\n\n")
-        let citations = self.selectedResults.map { $0.sourceDocument }
+        let citations = cappedResults.map { $0.sourceDocument }
+
+        if useCodeInterpreter {
+            logger.log(level: .info, message: "Code interpreter context capped", context: "sources=\(maxSources); maxChars=\(maxContentChars)")
+        } else if settingsViewModel.codeInterpreterEnabled {
+            logger.log(level: .info, message: "Code interpreter skipped", context: "reason=heuristic; traceId=\(traceId)")
+        }
 
         let assistantMessageId = UUID()
         self.generatedAnswer = ""
@@ -1001,7 +1107,7 @@ final class SearchViewModel: ObservableObject {
                 self.currentStreamTask = nil
                 Task.detached { [weak self] in
                     guard let self = self else { return }
-                    let query = await MainActor.run { self.searchQuery }
+                    let query = currentQuery
                     let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
                     let fallbackConversationId: String? = useServer ? nil : convIdArg
                     do {
@@ -1017,7 +1123,8 @@ final class SearchViewModel: ObservableObject {
                                     self.conversationId = conv
                                     self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
                                 }
-                            }
+                            },
+                            allowCodeInterpreter: false
                         )
                         await MainActor.run {
                             if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
@@ -1052,9 +1159,12 @@ final class SearchViewModel: ObservableObject {
         self.currentStreamTask = Task {
             do {
                 var deltaCount = 0
+                // Clear previous code interpreter outputs for regeneration
+                await MainActor.run { self.codeInterpreterOutputs = [] }
+
                 try await openAIService.streamCompletion(
                     systemPrompt: self.effectiveSystemPrompt,
-                    userMessage: searchQuery,
+                    userMessage: currentQuery,
                     context: context,
                     history: historyArg,
                     conversationId: convIdArg,
@@ -1079,6 +1189,25 @@ final class SearchViewModel: ObservableObject {
                             }
                         }
                     },
+                    allowCodeInterpreter: useCodeInterpreter,
+                    onCodeInterpreterOutput: { output in
+                            Task { @MainActor in
+                                let maxOutputs = 8
+                                let maxImageChars = 1_000_000
+
+                                if output.type == .image, output.content.count > maxImageChars {
+                                    self.logger.log(level: .warning, message: "Code interpreter image dropped (too large)", context: "size=\(output.content.count)")
+                                    return
+                                }
+
+                                if self.codeInterpreterOutputs.count >= maxOutputs {
+                                    self.codeInterpreterOutputs.removeFirst(self.codeInterpreterOutputs.count - (maxOutputs - 1))
+                                }
+
+                                self.codeInterpreterOutputs.append(output)
+                                self.logger.log(level: .info, message: "Code interpreter output received", context: "type=\(output.type.rawValue); total=\(self.codeInterpreterOutputs.count)")
+                            }
+                        },
                     onCompleted: {
                         // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
                         Task {
@@ -1088,7 +1217,7 @@ final class SearchViewModel: ObservableObject {
                                     do {
                                         let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
                                         let fallbackConversationId: String? = useServer ? nil : convIdArg
-                                        let fallbackQuery = await MainActor.run { self.searchQuery }
+                                        let fallbackQuery = currentQuery
                                         let fallback = try await self.openAIService.generateCompletion(
                                             systemPrompt: self.effectiveSystemPrompt,
                                             userMessage: fallbackQuery,
@@ -1101,7 +1230,8 @@ final class SearchViewModel: ObservableObject {
                                                     self.conversationId = conv
                                                     self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
                                                 }
-                                            }
+                                            },
+                                            allowCodeInterpreter: false
                                         )
                                             await MainActor.run {
                                                 if self.messages.indices.contains(index) {

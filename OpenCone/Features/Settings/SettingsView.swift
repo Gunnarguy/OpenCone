@@ -100,7 +100,7 @@ struct SettingsView: View {
                             SettingsRow(
                                 icon: "paintpalette.fill",
                                 iconColor: theme.primaryColor,
-                                title: "Appearance", 
+                                title: "Appearance",
                                 subtitle: theme.name,
                                 showChevron: true,
                                 accessory: {
@@ -316,11 +316,13 @@ struct SettingsView: View {
                     title: "Hybrid Search",
                     subtitle: "Combine semantic + keyword search",
                     isOn: $viewModel.hybridSearchEnabled,
-                    theme: theme
+                    theme: theme,
+                    isDisabled: !viewModel.indexSupportsHybridSearch,
+                    disabledReason: viewModel.hybridSearchDisabledReason
                 )
 
-                // Alpha Slider (only shown when hybrid is enabled)
-                if viewModel.hybridSearchEnabled {
+                // Alpha Slider (only shown when hybrid is enabled AND index supports it)
+                if viewModel.hybridSearchEnabled, viewModel.indexSupportsHybridSearch { 
                     VStack(spacing: 8) {
                         HStack {
                             Text("Search Balance")
@@ -1894,34 +1896,53 @@ struct ToolToggleRow: View {
     let subtitle: String
     @Binding var isOn: Bool
     let theme: OCTheme
+    var isDisabled: Bool = false
+    var disabledReason: String?
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(theme.primaryColor.opacity(0.15))
-                    .frame(width: 36, height: 36)
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(theme.primaryColor)
+        VStack(alignment: .leading, spacing: 0) { 
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+.fill(theme.primaryColor.opacity(isDisabled ? 0.08 : 0.15))
+    .frame(width: 36, height: 36)
+Image(systemName: icon)
+    .font(.system(size: 16))
+.foregroundColor(isDisabled ? theme.textSecondaryColor : theme.primaryColor)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+.foregroundColor(isDisabled ? theme.textSecondaryColor : theme.textPrimaryColor)
+Text(subtitle)
+    .font(.caption)
+    .foregroundColor(theme.textSecondaryColor)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $isOn)
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle(tint: theme.primaryColor))
+.disabled(isDisabled)
             }
+            .padding(12)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(theme.textPrimaryColor)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(theme.textSecondaryColor)
+            // Show disabled reason if provided
+            if isDisabled, let reason = disabledReason {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                    Text(reason)
+                        .font(.caption2)
+                }
+                .foregroundColor(theme.textSecondaryColor)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .padding(.leading, 48) // Align with text after icon
             }
-
-            Spacer()
-
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(SwitchToggleStyle(tint: theme.primaryColor))
         }
-        .padding(12)
         .background(theme.cardBackgroundColor)
     }
 }

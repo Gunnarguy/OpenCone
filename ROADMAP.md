@@ -47,4 +47,42 @@
 - [ ] **Batch document import** — Folder picker for bulk ingestion with queue visualization
 - [ ] **Widget / Spotlight integration** — iOS widget for quick search; Spotlight indexing of ingested documents
 - [ ] **Multi-index search** — Query across multiple Pinecone indexes simultaneously
-- [ ] **Custom system prompts** — User-configurable RAG system prompt per index/namespace
+- [x] **Custom system prompts** — User-configurable RAG system prompt per index/namespace
+
+## 4. API Feature Gaps
+
+### OpenAI Responses API (Priority Order)
+
+- [ ] **Structured Outputs** — JSON schema in `text.format` for consistent citation/answer format; guarantees type-safe responses
+- [ ] **Input token counting** — `POST /v1/responses/input_tokens` for pre-flight validation before incurring cost
+- [x] **Web search source extraction** — Add `include: ["web_search_call.action.sources"]` to surface where web info came from
+- [x] **Code interpreter output extraction** — Add `include: ["code_interpreter_call.outputs"]` to display executed code/charts; requires `container` parameter
+- [ ] **Function calling** — Define custom tools for agentic behavior (e.g., let model decide when to query Pinecone)
+- [ ] **Prompt caching** — `prompt_cache_key` + `prompt_cache_retention: "24h"` for cost reduction on repeated context
+- [ ] **Background processing** — `background: true` for heavy reasoning tasks; poll with `GET /v1/responses/{id}`
+- [ ] **Conversation compaction** — `POST /v1/responses/compact` to compress long chats within context window
+- [ ] **File Search tool** — `type: "file_search"` for OpenAI-hosted document search (alternative to Pinecone)
+- [ ] **Image inputs** — Direct multimodal via `input_image` without local OCR pre-processing
+- [ ] **MCP connectors** — Google Drive, SharePoint integration via `type: "mcp"`
+- [ ] **Truncation strategy** — `truncation: "auto"` for graceful degradation instead of hard 400 errors
+- [ ] **Parallel tool calls control** — `parallel_tool_calls: false` when ordering matters
+- [ ] **Safety identifiers** — `safety_identifier` with hashed user ID for abuse detection
+- [ ] **Service tier control** — `service_tier: "flex"` (cheaper) vs `"priority"` (faster)
+
+### Pinecone API
+
+- [ ] **Collections** — `POST /collections` for backup/restore snapshots of index data
+- [ ] **Bulk import** — `POST /bulk/imports` from S3/GCS for enterprise onboarding
+- [ ] **Parallel queries** — Multiple queries in single request for compound questions
+- [ ] **Record-level sparse vectors** — Store `sparse_values` per-record for more accurate hybrid search
+- [ ] **Metadata index configuration** — Configure which fields are indexed for faster filtering
+
+### Quality of Life
+
+- [ ] **Token usage display** — Parse and show `usage.input_tokens`, `usage.output_tokens` in UI
+- [ ] **Cached tokens indicator** — Show when `usage.input_tokens_details.cached_tokens > 0`
+- [ ] **Cost estimation** — Calculate approximate $/query based on token counts and model pricing
+- [ ] **Response ID persistence** — Store `response_id` for later retrieval via `GET /v1/responses/{id}`
+- [ ] **Annotations extraction** — Parse `annotations` array from responses for inline citations
+- [ ] **Logprobs display** — Add `include: ["message.output_text.logprobs"]` for confidence scoring
+- [ ] **OpenAI retry with backoff** — Mirror Pinecone's retry pattern for OpenAI transient failures

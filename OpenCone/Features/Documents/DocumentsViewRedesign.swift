@@ -214,7 +214,7 @@ private extension DocumentsViewRedesign {
                     }
                 } label: {
                     HStack {
-                        Image(systemName: "database")
+                        Image(systemName: "externaldrive")
                             .foregroundColor(theme.primaryColor)
                         Text(viewModel.selectedIndex ?? "Choose Index")
                             .foregroundColor(theme.textPrimaryColor)
