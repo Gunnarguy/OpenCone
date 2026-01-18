@@ -21,19 +21,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Xcode
+      - name: Setup Xcode 26
         run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1 || echo "/Applications/Xcode.app")
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-          echo "Using: $(xcodebuild -version | head -1)"
+          # Use Xcode 26.2 to match local development (iOS 26 / Xcode 26)
+          sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+          echo "Using: $(xcodebuild -version)"
 
       - name: Get Simulator
         id: sim
         run: |
-          DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9]+ Pro' | head -1 | xargs)
-          [ -z "$DEVICE" ] && DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [^(]+' | head -1 | xargs)
+          # List available iOS simulators and pick the best one
+          echo "Available iPhone simulators:"
+          xcrun simctl list devices available | grep "iPhone" | head -10
+
+          # Prefer iPhone 17 Pro Max (iOS 26), fall back to iPhone 16
+          DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 17 Pro Max" | head -1 | sed 's/(.*//' | xargs || true)
+          if [ -z "$DEVICE" ]; then
+            DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 17 Pro[^M]" | head -1 | sed 's/(.*//' | xargs || true)
+          fi
+          if [ -z "$DEVICE" ]; then
+            DEVICE=$(xcrun simctl list devices available | grep -E "iPhone 16 Pro Max" | head -1 | sed 's/(.*//' | xargs || true)
+          fi
+          if [ -z "$DEVICE" ]; then
+            DEVICE="iPhone 16"
+          fi
+
           echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
-          echo "Using simulator: $DEVICE"
+          echo "✅ Using simulator: $DEVICE"
 
       - name: Run preflight checks
         env:

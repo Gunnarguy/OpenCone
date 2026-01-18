@@ -43,15 +43,39 @@ function require_phrase() {
 require_phrase "${REPO_ROOT}/PRIVACY.md" "Last updated"
 require_phrase "${REPO_ROOT}/APP_STORE.md" "Last updated"
 
-# 4. Run unit tests unless explicitly skipped. Customize the destination via
-#    OPEN_CONE_TEST_DESTINATION if your simulator list differs.
+# 4. Run unit tests unless explicitly skipped.
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
-  DESTINATION=${OPEN_CONE_TEST_DESTINATION:-'platform=iOS Simulator,name=iPhone 17'}
+  # Use provided destination or auto-detect an available simulator
+  if [[ -n "${OPEN_CONE_TEST_DESTINATION:-}" ]]; then
+    DESTINATION="${OPEN_CONE_TEST_DESTINATION}"
+  else
+    # Auto-detect: prefer iPhone 17 Pro Max, then iPhone 16 Pro, then any iPhone
+    print -- "🔎 Auto-detecting available iOS simulator..."
+    AVAILABLE_SIMS=$(xcrun simctl list devices available 2>/dev/null | grep -E "iPhone" || true)
+
+    DEVICE=""
+    for pattern in "iPhone 17 Pro Max" "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro Max" "iPhone 16 Pro" "iPhone 16"; do
+      if echo "$AVAILABLE_SIMS" | grep -q "$pattern"; then
+        DEVICE="$pattern"
+        break
+      fi
+    done
+
+    if [[ -z "$DEVICE" ]]; then
+      # Last resort: grab the first iPhone simulator name
+      DEVICE=$(echo "$AVAILABLE_SIMS" | head -1 | sed 's/(.*//' | xargs || echo "iPhone 16")
+    fi
+
+    DESTINATION="platform=iOS Simulator,name=${DEVICE}"
+  fi
+
   print -- "🧪 Running unit tests on ${DESTINATION}"
   xcodebuild test \
     -project "${REPO_ROOT}/OpenCone.xcodeproj" \
     -scheme OpenCone \
-    -destination "${DESTINATION}"
+    -destination "${DESTINATION}" \
+    -quiet \
+    || { print -- "❌ Tests failed"; exit 1; }
 else
   print -- "⚠️ Skipping unit tests (SKIP_TESTS=1)"
 fi

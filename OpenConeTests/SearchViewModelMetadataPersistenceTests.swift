@@ -1,6 +1,7 @@
 import XCTest
 @testable import OpenCone
 
+@MainActor
 final class SearchViewModelMetadataPersistenceTests: XCTestCase {
     private var originalPresetData: Data?
     private let presetsKey = SettingsStorageKeys.searchMetadataPresets
