@@ -61,11 +61,13 @@ platform :ios do
       api_key: api_key,
       skip_binary_upload: true,
       skip_screenshots: ENV["DELIVER_SCREENSHOTS"] != "1",
+      skip_app_version_update: false,
       force: true,
       metadata_path: "fastlane/metadata",
       screenshots_path: "fastlane/screenshots",
       run_precheck_before_submit: false,
-      precheck_include_in_app_purchases: false
+      precheck_include_in_app_purchases: false,
+      overwrite_screenshots: false
     )
   end
 

@@ -2,37 +2,74 @@
 
 ## 1. Completed Features (The Foundation)
 
+### Core Infrastructure
+
 - [x] **App lifecycle & onboarding** — `AppState` enum with loading→welcome→main→error transitions; `WelcomeView` with API key validation
 - [x] **Keychain-backed secrets** — `SecureSettingsStore` for OpenAI/Pinecone credentials; env-var seeding for dev; release build guard against bundled secrets
+- [x] **Structured logging** — `Logger.shared` with `@Published logEntries`; Logs tab with export; configurable minimum level
+- [x] **Design system** — `OCButton`, `OCCard`, `OCBadge`; `ThemeManager` with light/dark themes; `@Environment(\.theme)` accessor
+- [x] **Preflight automation** — `preflight_check.sh` (secret scan, Info.plist validation, privacy doc checks, unit tests)
+
+### Document Processing
+
 - [x] **Multi-format document ingestion** — PDF (PDFKit), DOCX, plain text, HTML, CSV, Markdown, JSON, code files
 - [x] **Vision OCR pipeline** — Image-to-text extraction via `VNRecognizeTextRequest` for PNG/JPEG/TIFF
 - [x] **Security-scoped bookmarks** — Persistent file access with consent banner (`needsSecurityConsent`)
 - [x] **Semantic chunking** — `RecursiveTextSplitter` with MIME-specific separators; configurable chunk size/overlap
 - [x] **OpenAI embeddings** — Batched embedding generation (50/batch); dimension validation; `text-embedding-3-large` (3072 dim)
-- [x] **Pinecone integration** — Index CRUD; namespace management; upsert/query/delete; host caching; retry with exponential backoff; circuit breaker
-- [x] **Streaming chat completion** — OpenAI Responses API with SSE parsing; token-by-token UI updates
-- [x] **Conversation memory** — Server-managed (`conversationId`) and client-managed (bounded history) modes
-- [x] **Metadata filters** — `PineconeMetadataFilter` enum with operators ($eq, $in, $gte, $lte, $contains); presets in Settings
-- [x] **Live processing dashboard** — Document progress tracking; dashboard metrics (processed/pending/failed counts, vector totals)
-- [x] **Structured logging** — `Logger.shared` with `@Published logEntries`; Logs tab with export; configurable minimum level
-- [x] **Design system** — `OCButton`, `OCCard`, `OCBadge`; `ThemeManager` with light/dark themes; `@Environment(\.theme)` accessor
-- [x] **Index insights** — `IndexStatsResponse` with namespace vector counts; refresh after ingest/delete
-- [x] **Search result selection** — Multi-select sources; regenerate answer from selection
 - [x] **Duplicate rejection** — `DocumentIdentifierBuilder` with content hash; 100MB size limit
-- [x] **Preflight automation** — `preflight_check.sh` (secret scan, Info.plist validation, privacy doc checks, unit tests)
+- [x] **Live processing dashboard** — Document progress tracking; dashboard metrics (processed/pending/failed counts, vector totals)
+- [x] **Documents tab redesign** — Clean card-based UI; floating bulk action bar; filter by status; advanced options in sheet
+
+### Pinecone Integration
+
+- [x] **Full Pinecone integration** — Index CRUD; namespace management; upsert/query/delete; host caching; retry with exponential backoff; circuit breaker
+- [x] **Index insights** — `IndexStatsResponse` with namespace vector counts; refresh after ingest/delete
+- [x] **Idempotent index selection** — `setCurrentIndex` returns early if already on requested index, reducing redundant API calls
+- [x] **Multi-field content extraction** — Supports `_node_content`, `text`, `content`, `transcript_preview`, `body`, `description`, `chunk_text` metadata fields
 - [x] **Hybrid search** — Combine dense (semantic) + sparse (keyword) vectors via Pinecone's `hybridQuery`; alpha weighting (0.0 = keyword, 1.0 = semantic); Settings UI with slider
 - [x] **Reranking** — Two-stage retrieval using `bge-reranker-v2-m3`, `cohere-rerank-3.5`, or `pinecone-rerank-v0`; configurable top-N; Settings UI with model picker
-- [x] **Documents tab redesign** — Clean card-based UI; floating bulk action bar; filter by status; advanced options in sheet; reduced from 1541 to ~650 lines
-- [x] **Voice input fix** — `SpeechRecognitionService` now triggers permission prompt on first tap (was incorrectly blocking `.notDetermined` state)
+- [x] **Metadata filters** — `PineconeMetadataFilter` enum with operators ($eq, $in, $gte, $lte, $contains); presets in Settings
+
+### Search & Chat
+
+- [x] **Streaming chat completion** — OpenAI Responses API with SSE parsing; token-by-token UI updates
+- [x] **Conversation memory** — Server-managed (`conversationId`) and client-managed (bounded history) modes
+- [x] **Search result selection** — Multi-select sources; regenerate answer from selection
+- [x] **Input clearing after send** — Search input clears immediately when message is sent (captured to local variable for async flow)
+- [x] **Custom system prompts** — User-configurable RAG system prompt per index/namespace
+
+### AI Tools (OpenAI Responses API)
+
+- [x] **Web search tool** — `type: "web_search"` with `include: ["web_search_call.action.sources"]` for source extraction
+- [x] **Code interpreter tool** — `type: "code_interpreter"` with `container: { type: "auto" }` parameter; charts, calculations, data visualization
+- [x] **Code interpreter efficiency** — Heuristic activation (only for queries with digits or keywords like "chart", "plot", "statistics"); context caps (3 sources, 1200 chars when active); output limits (max 8 outputs, 1MB images)
+- [x] **Code interpreter UI** — `CodeInterpreterOutputsView` displays logs, charts, and errors inline; collapsible output cards
+- [x] **Smart example prompts** — Contextual prompts based on index/namespace and enabled tools; categories: Discover, Analyze, Extract, Compare
+
+### Quick Settings & UX
+
+- [x] **Quick Settings panel** — Popover with model picker, temperature/reasoning slider, top-K, response length, AI tools toggles
+- [x] **Presets** — Precise, Balanced, Creative, Research one-tap configurations
+- [x] **Theme switcher** — Quick theme change from Quick Settings popover
+- [x] **Voice input** — `SpeechRecognitionService` with permission prompt on first tap (fixed `.notDetermined` blocking issue)
+
+### GPT-5 & Reasoning Models
+
+- [x] **GPT-5.2 support** — Full support with 400K context and 128K output tokens
+- [x] **Reasoning effort control** — Off, Low, Med, High, Max (xhigh) levels for reasoning models
+- [x] **Dynamic parameter switching** — Shows reasoning effort for GPT-5/o-series, temperature/topP for standard models
 
 ## 2. Technical Debt (The Cracks)
 
-- [ ] **No TODO/FIXME comments found** — Codebase is clean of inline debt markers
+- [x] **Orphaned DocumentsView.swift** — Old 1541-line view replaced by `DocumentsViewRedesign.swift` but file still exists; can be deleted
+- [ ] **Web search tool value unclear** — `web_search` tool enabled but not integrated with Pinecone; consider removing or clarifying use case
 - [ ] **Test coverage gaps** — Only `SearchViewModelMetadataPersistenceTests` exists; missing coverage for:
   - Document ingestion pipeline
   - Pinecone retry/circuit breaker logic
   - Streaming completion parsing
   - Embedding batch processing
+  - Code interpreter heuristics
 - [ ] **Error recovery UX** — Circuit breaker opens silently; consider surfacing "service degraded" banner to user
 - [ ] **Memory pressure handling** — Large document processing uses `autoreleasepool` but no explicit low-memory observer
 - [ ] **Accessibility** — Limited `accessibilityLabel` usage; missing VoiceOver optimization for chat timeline

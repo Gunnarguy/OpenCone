@@ -1,25 +1,36 @@
-Version 2.4 brings GPT-5.2 support, smart prompts, and powerful data visualization.
+Version 2.2 is a ground-up redesign with a completely rebuilt UI, advanced AI capabilities, and enterprise-grade search features.
 
-GPT-5.2 REASONING MODEL
-• Full GPT-5.2 support with 400K context and 128K output tokens
-• New reasoning effort levels: Off, Low, Med, High, and Max (xhigh)
-• Updated token limits for modern AI capabilities
+COMPLETE UI OVERHAUL
+• Redesigned Documents tab with modern card-based layout
+• New floating bulk action bar for multi-document operations
+• Quick Settings popover with model picker, sliders, and presets
+• Smart example prompts that adapt to your selected index and enabled tools
+• Refined search experience with inline source cards and streaming indicators
+• Theme system with light/dark modes and consistent design language
 
-SMART EXAMPLE PROMPTS
-• Contextual prompts based on your selected index and namespace
-• Four categories: Discover, Analyze, Extract, Compare
-• Tap any suggestion to instantly search
-• Prompts adapt when Charts & Calculations is enabled
+GPT-5.2 & REASONING MODELS
+• Full GPT-5.2 support with 400K context window
+• Reasoning effort control: Off, Low, Med, High, Max
+• Dynamic UI switches between temperature (standard) and reasoning (GPT-5/o-series)
+• 128K output token support for detailed responses
 
-CHARTS & CALCULATIONS (Code Interpreter)
-• Visualize data from your documents as charts
-• Calculate totals, averages, and trends
-• Extract structured tables and export to CSV/JSON
-• Create timelines and comparison visualizations
+AI TOOLS INTEGRATION
+• Code Interpreter for charts, calculations, and data visualization
+• Smart activation heuristics detect when visualization is needed
+• Web Search tool for current information beyond your documents
+• Collapsible output cards display charts, logs, and results inline
 
-PREVIOUS IN 2.3
-• Web Search for current information
-• Quick Settings panel with sliders and presets
-• Haptic feedback and custom system prompts
+ADVANCED SEARCH
+• Hybrid search combines semantic + keyword matching with alpha weighting
+• Reranking with BGE, Cohere, or Pinecone models for precision
+• Metadata filters with operators ($eq, $in, $gte, $lte, $contains)
+• Custom system prompts per index/namespace
+• Conversation memory (server-managed or local history)
 
-Ask OpenCone to "chart quarterly revenue" or "compare pricing across vendors."
+INFRASTRUCTURE
+• Idempotent index selection reduces redundant API calls
+• Circuit breaker and retry logic for Pinecone resilience
+• Voice input with proper permission handling
+• Structured logging throughout for debugging
+
+This release represents months of refinement. Enjoy!
