@@ -6,7 +6,7 @@ This guide outlines our development workflow, coding standards, branch conventio
 
 ## 1. Project Status
 
-OpenCone is a portfolio-grade iOS/AI demonstration app showcasing on-device RAG. While we welcome community contributions, our priority is maintaining consistency in architecture patterns, security boundaries, and logging practices.
+OpenCone is an iOS application designed for on-device RAG. While we welcome community contributions, our priority is maintaining consistency in architecture patterns, security boundaries, and logging practices.
 
 ---
 

@@ -68,7 +68,7 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 
 ## Outcome
 
-OpenCone successfully demonstrates a production-grade, local-first RAG architecture on iOS:
+OpenCone implements a production-grade, local-first RAG architecture on iOS with the following metrics:
 
 - **APIs Integrated**: 3 major external systems (OpenAI completions, OpenAI embeddings, Pinecone serverless DB) and 3 native Apple frameworks (Vision OCR, PDFKit parsing, SFSpeechRecognizer).
 - **Supported Formats**: 12 MIME types (PDF, DOCX, TXT, HTML, CSS, Markdown, JSON, XML, CSV, TSV, RTF, PNG, JPEG, TIFF).

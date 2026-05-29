@@ -1,18 +1,21 @@
 # OpenCone
 
 <p align="center">
-  <img src="Screenshots/search.png" width="300" alt="OpenCone Interface"/>
+  <img src="OpenCone/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" alt="OpenCone app icon" width="128" height="128">
 </p>
 
 <p align="center">
-  <strong>On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, async/await, and first-class OpenAI + Pinecone integrations.</strong>
+  <strong>On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, async/await, and OpenAI + Pinecone integrations.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Swift-5.10-orange.svg" alt="Swift"/>
-  <img src="https://img.shields.io/badge/iOS-17.0%2B-blue.svg" alt="iOS"/>
-  <img src="https://img.shields.io/badge/Xcode-16.0%2B-blue.svg" alt="Xcode"/>
-  <img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="License"/>
+  <a href="#">
+    <!-- TODO: Add actual App Store URL here when available -->
+    <img alt="Download on the App Store" src="https://img.shields.io/badge/App%20Store-Download-0D96F6?style=for-the-badge&logo=appstore&logoColor=white">
+  </a>
+  <img alt="Swift" src="https://img.shields.io/badge/Swift-5.10-F05138?style=for-the-badge&logo=swift&logoColor=white">
+  <img alt="iOS" src="https://img.shields.io/badge/iOS-17%2B-111827?style=for-the-badge&logo=apple&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge">
 </p>
 
 ---
@@ -20,7 +23,7 @@
 ## Overview
 OpenCone is a local-first, native Swift/iOS application designed to transform personal documents (PDFs, Word docs, plain text, code scripts, and images) into an on-device searchable knowledge base. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors securely inside a serverless Pinecone database. 
 
-During queries, OpenCone executes semantic vector lookup, performs high-efficiency reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. OpenCone is distinguished in this portfolio as the core **RAG Sandbox**, showcasing advanced document processing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
+During queries, OpenCone executes semantic vector lookup, performs high-efficiency reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as an on-device RAG reference implementation, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
 ---
 
@@ -28,19 +31,19 @@ During queries, OpenCone executes semantic vector lookup, performs high-efficien
 
 | Dimension | Detail |
 |---|---|
-| Platform | iOS 17.0+ / iPadOS 17.0+ / macOS Catalyst 14.0+ |
-| Language | Swift 5.10+ |
-| UI | SwiftUI (Modern declarative, custom style sheets) |
-| Architecture | MVVM-S (Model-View-ViewModel-Service) with focused App State Machine |
-| Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API (Control & Data Plane), Apple Speech/Vision |
-| Storage | Secure Enclave Keychain (`SecureSettingsStore`), `UserDefaults`, and local Sandboxed files |
-| Status | Shipped / Portfolio Showcase |
-| App Store | [Not published] |
+| Platform | iOS / iPadOS / macOS Catalyst |
+| Language | Swift |
+| UI | SwiftUI |
+| Architecture | MVVM-S |
+| Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API, Apple Speech/Vision |
+| Storage | Secure Enclave Keychain (`SecureSettingsStore`), `UserDefaults`, Sandbox Files |
+| App Store | <!-- TODO: Add actual App Store URL here when available --> Needs App Store URL |
+| Status | Active |
 | License | [MIT](LICENSE) |
 
 ---
 
-## What This App Demonstrates
+## Key Capabilities
 
 - **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages and Apple's native `Vision` OCR framework for images.
 - **On-Device Security-Scoped Access**: Employs sandboxed bookmarks (`startAccessingSecurityScopedResource`) to retain file read permissions across system relaunches without prompts.
@@ -52,9 +55,9 @@ During queries, OpenCone executes semantic vector lookup, performs high-efficien
 
 ---
 
-## End-to-End User Journey
+## How It Works
 
-Below is the user path showing credential checks, onboarding validation, local file processing, vector upsert, and subsequent semantic search querying.
+OpenCone handles checking API credentials, onboarding validation, local file processing, vector upsert, and subsequent semantic search querying.
 
 ```mermaid
 flowchart TD
@@ -76,105 +79,64 @@ flowchart TD
 
 ---
 
-## System Architecture
+## Architecture
 
-OpenCone adheres to an MVVM-S architecture. The view layer binds to observable models, which coordinate complex actions by invoking highly decoupled services.
+OpenCone adheres to an MVVM-S architecture. The view layer binds to view models, which coordinate backend actions through specialized services. For detailed file-level relationships and dependency mappings, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```mermaid
 flowchart TD
-    subgraph UI["User Interface (SwiftUI)"]
-        W[WelcomeView]
-        M[MainView]
-        DV[DocumentsViewRedesign]
-        SV[SearchView]
-        SetV[SettingsView]
-        LV[ProcessingView]
+    subgraph Device["On-Device Application"]
+        UI[SwiftUI Views] --> VM[ViewModels]
+        VM --> SVC[Services Layer]
+        SVC --> Store[(Keychain / Sandbox)]
     end
-
-    subgraph ViewModels["ViewModels"]
-        DVM[DocumentsViewModel]
-        SVM[SearchViewModel]
-        SetVM[SettingsViewModel]
-        LVM[ProcessingViewModel]
+    subgraph Cloud["External Services"]
+        SVC --> OAI[OpenAI APIs]
+        SVC --> PCN[Pinecone API]
+        SVC --> APL[Apple Speech]
     end
-
-    subgraph Services["Services Layer"]
-        FP[FileProcessorService]
-        TP[TextProcessorService]
-        ES[EmbeddingService]
-        OA[OpenAIService]
-        PC[PineconeService]
-        SR[SpeechRecognitionService]
-    end
-
-    subgraph Storage["Storage & Security"]
-        KEY[Keychain SecureSettingsStore]
-        UD[UserDefaults]
-        FILE[Sandbox Documents]
-    end
-
-    subgraph External["External APIs"]
-        OpenAI[OpenAI Endpoints]
-        Pinecone[Pinecone Clusters]
-        AppleSpeech[Apple Speech API]
-    end
-
-    %% Wiring
-    M --> DV & SV & SetV & LV
-    W --> SetVM
-    DV --> DVM
-    SV --> SVM
-    SetV --> SetVM
-    LV --> LVM
-
-    DVM --> FP & TP & ES & PC
-    SVM --> ES & PC & OA & SR
-    SetVM --> KEY & UD
-    LVM --> Logger
-
-    FP --> FILE
-    SR --> AppleSpeech
-    ES --> OA
-    OA --> OpenAI
-    PC --> Pinecone
-    KEY -.-> OA & PC
 ```
+
+### Key Technical Decisions
+
+| Decision | Rationale | Tradeoff |
+|---|---|---|
+| **Keychain for Keys** | Prevents developers or users from writing credentials to plain text configs. | Restricts automated simulator testing unless environment scheme overrides are supplied. |
+| **Circuit Breaker** | Opens automatically after N network failures to prevent UI locks and API rate exhaustion. | Requires index switches or cooldown timers to reset. |
+| **MIME-Aware Splitter** | Preserves logical structures (Markdown headers, JSON nodes) in chunks. | Increased parsing complexity per document type. |
+| **Security Bookmarks** | Stores file references so documents can be re-accessed securely across launches. | Requires user storage provider permission consent. |
+| **Autoreleasepool for OCR** | Manages high heap overhead of image recognition frames on memory-restricted iOS devices. | Slightly increases execution duration during serial processing. |
+| **Speech Audio Tap** | Uses `AVAudioEngine` for low-latency voice streaming. | Demands microphone and speech recognition permissions. |
+| **Host/Stats Caching** | Caches Pinecone cluster endpoints and namespace stats with short TTLs. | Brief delays (10s-30s) in reflecting out-of-band index changes. |
 
 ---
 
-## Core Pipeline
+## Core Workflows
 
-This diagram shows the complete sequence of text extraction, semantic chunking, batch embeddings, similarity search, reranking, and generation with sources.
+OpenCone coordinates file ingestion (extracting text locally, generating embeddings, and upserting vectors) and Retrieval-Augmented Generation (querying vector databases and streaming answers).
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion["Ingestion & Vector Sync"]
-        A[File Picked] --> B[Security-Scoped Sandbox Access]
-        B --> C{File Type?}
-        C -->|PDF| D[PDFKit Parser]
-        C -->|Images| E[Vision OCR Engine]
-        C -->|Text/Code| F[Raw String Read]
-        D & E & F --> G[RecursiveTextSplitter]
-        G --> H[MIME-Aware Chunks]
-        H --> I[SHA256 Fingerprint Check]
-        I -->|Unique| J[Batch Chunks of 50]
-        J --> K[OpenAI Embeddings /v1/embeddings]
-        K --> L[Upsert Vectors to Pinecone Namespace]
-    end
-
-    subgraph QueryRAG["Retrieval & Generation"]
-        M[Query Input] --> N[Speech Transcription/Text]
-        N --> O[Generate Query Vector]
-        O --> P[Query Pinecone Index]
-        P --> Q{Rerank Enabled?}
-        Q -->|Yes| R[Pinecone Rerank API]
-        Q -->|No| S[Retained top-K Chunks]
-        R --> S
-        S --> T[Context Packing & System Prompts]
-        T --> U[OpenAI Responses SSE Stream]
-        U --> V[Stream Grounded Answer with Citations]
-    end
+    A[Import file] --> B[Extract text]
+    B --> C[Chunk content]
+    C --> D[Create embeddings]
+    D --> E[Store vectors]
+    F[User query] --> G[Retrieve matches]
+    G --> H[Build context]
+    H --> I[Stream answer]
 ```
+
+### 1. Ingestion & Processing Details
+- **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, DOCX, TXT, HTML, CSS, Markdown, JSON, XML, CSV, TSV, RTF, and images.
+- **Extraction**: Text is extracted locally using `PDFKit` page extraction or `Vision` framework OCR. Large processing loops run inside `autoreleasepool` to prevent memory leaks during image OCR.
+- **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
+- **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
+
+### 2. Retrieval & Generation Details
+- **Query Embedding**: User prompt texts or voice transcription tokens are converted into embeddings matching the dimension of document vectors (3072 by default).
+- **Vector Search**: Performs similarity searches against Pinecone index namespaces, supporting custom metadata filters ($eq, $in, $gte, $lte, $contains).
+- **Hybrid Search & Reranking**: Combines dense semantic search and sparse keyword lists using a simple alpha slider. Matches can be refined using BGE, Cohere, or Pinecone inference models.
+- **Answer Streaming**: Grounded context is formatted and submitted to the OpenAI Responses API. Tokens stream into the chat view in real time via Server-Sent Events (SSE). OpenAI `web_search` and `code_interpreter` tools are conditionally activated using text-based heuristics.
 
 ---
 
@@ -217,42 +179,6 @@ flowchart LR
 
 ---
 
-## Ingestion / Processing / Retrieval Details
-
-### Ingestion
-OpenCone ingests documents via the iOS system document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include standard office documents (`application/pdf`, `.docx`), data tables (`.csv`, `.json`), web layouts (`.html`, `.css`), markdown (`.md`), code scripts (`.py`, `.js`), and popular images (`.png`, `.jpeg`, `.tiff`).
-
-### Processing
-1. **Extraction**: Text is extracted locally using `PDFKit` page extraction or `Vision` framework OCR. Large processing loops are wrapped inside `autoreleasepool` to prevent memory leaks during mobile image OCR operations.
-2. **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
-3. **Hashing**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Files exceeding 100MB are rejected.
-4. **Batching**: Vectors are created in batches of 50 to avoid API thread exhaustion.
-
-### Retrieval / Querying
-Search executes vector comparisons using the configured embedding model output. 
-- **Hybrid Search**: Fuses dense query embeddings with sparse keyword vectors inside Pinecone using a configurable weighting slider (`alpha` from `0.0` to `1.0`).
-- **Metadata Filters**: Restricts searches to namespaces, filenames, or custom tag structures using $eq, $in, $gte, $lte, and $contains operators.
-- **Rerank**: Intercepts matches to run reranking (`bge-reranker-v2-m3` or Cohere) before context integration.
-
-### Generation / Output
-The grounded chunks are formatted as JSON text input and submitted to the OpenAI Responses API. Tokens stream into the chat view in real time via Server-Sent Events. The OpenAI `web_search` and `code_interpreter` tools are invoked conditionally using smart heuristics. Short-term dialogue context is maintained locally (client mode) or managed via OpenAI's server session states (server mode).
-
----
-
-## Key Technical Decisions
-
-| Decision | Rationale | Tradeoff |
-|---|---|---|
-| **Keychain for Keys** | Prevents developers or users from writing credentials to plain text configs. | Restricts automated simulator testing unless environment scheme overrides are supplied. |
-| **Circuit Breaker** | Opens automatically after N network failures to prevent UI locks and API rate exhaustion. | Requires index switches or cooldown timers to reset. |
-| **MIME-Aware Splitter** | Preserves logical structures (Markdown headers, JSON nodes) in chunks. | Increased parsing complexity per document type. |
-| **Security Bookmarks** | Stores file references so documents can be re-accessed securely across launches. | Requires user storage provider permission consent. |
-| **Autoreleasepool for OCR** | Manages high heap overhead of image recognition frames on memory-restricted iOS devices. | Slightly increases execution duration during serial processing. |
-| **Speech Audio Tap** | Uses `AVAudioEngine` for low-latency voice streaming. | Demands microphone and speech recognition permissions. |
-| **Host/Stats Caching** | Caches Pinecone cluster endpoints and namespace stats with short TTLs. | Brief delays (10s-30s) in reflecting out-of-band index changes. |
-
----
-
 ## File Entry Points
 
 | Concern | Files | Responsibility |
@@ -286,7 +212,7 @@ The grounded chunks are formatted as JSON text input and submitted to the OpenAI
 
 ---
 
-## Getting Started
+## Build & Run
 
 ### Prerequisites
 - macOS Sonoma or Sequoia
@@ -294,7 +220,7 @@ The grounded chunks are formatted as JSON text input and submitted to the OpenAI
 - iOS 17.0+ Simulator or physical device
 - Active OpenAI and Pinecone Accounts
 
-### Developer Configuration Setup
+### Setup
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/Gunnarguy/OpenCone.git
@@ -315,7 +241,7 @@ The grounded chunks are formatted as JSON text input and submitted to the OpenAI
 
 ---
 
-## Testing and QA
+## Testing
 
 | Validation | Command / Procedure | Expected Result |
 |---|---|---|
@@ -328,7 +254,7 @@ The grounded chunks are formatted as JSON text input and submitted to the OpenAI
 
 ---
 
-## Privacy and Security
+## Privacy & Security
 - **Local Sandbox**: Documents, bookmark descriptions, extraction steps, and logging occur strictly in the app sandbox.
 - **Network Boundaries**: Only chunk strings are sent to OpenAI (embeddings API) and matching metadata is uploaded to Pinecone (DB API).
 - **Credentials Enclave**: Keys reside in the Enclave Keychain. Release builds throw a `fatalError` if secrets are hardcoded in variables.
@@ -338,18 +264,16 @@ The grounded chunks are formatted as JSON text input and submitted to the OpenAI
 
 ---
 
-## Documentation Index
+## Documentation
 
 | Document | Purpose |
 |---|---|
-| [README.md](README.md) | Main project overview, features, architecture overview, and onboarding instructions. |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | In-depth technical systems design, service lifecycle description, and networking models. |
-| [ROADMAP.md](ROADMAP.md) | Current project trajectory, known technical debt, and pending milestones. |
-| [SECURITY.md](SECURITY.md) | Secure Settings Store Keychain mappings and production archive protection policies. |
-| [PRIVACY.md](PRIVACY.md) | Privacy guidelines, on-device boundaries, and external APIs data disclosures. |
-| [APP_STORE.md](APP_STORE.md) | App Store descriptions, screenshots staging guide, and App Review test credentials. |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Engineering guides, coding standards, branch conventions, and agent instructions. |
-| [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Technical case study highlighting architecture trade-offs, solutions, and outcomes. |
+| [Architecture](ARCHITECTURE.md) | System design, data flow, and service boundaries |
+| [Security](SECURITY.md) | Secret handling, local storage, and release checks |
+| [Privacy](PRIVACY.md) | Data storage, API transmission, and user controls |
+| [Roadmap](ROADMAP.md) | Current status, planned work, and known gaps |
+| [App Store Notes](APP_STORE.md) | App Store metadata, review notes, and release checklist |
+| [Case Study](docs/CASE_STUDY.md) | Engineering retrospective and implementation notes |
 
 ---
 
