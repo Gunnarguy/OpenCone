@@ -1,120 +1,104 @@
 # OpenCone
 
-On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, async/await, and first-class OpenAI + Pinecone integrations.
+<p align="center">
+  <img src="Screenshots/search.png" width="300" alt="OpenCone Interface"/>
+</p>
 
-![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-blue.svg) ![Swift](https://img.shields.io/badge/Swift-5.10-orange.svg) ![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
+<p align="center">
+  <strong>On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, async/await, and first-class OpenAI + Pinecone integrations.</strong>
+</p>
 
----
-
-## Table of Contents
-- [Overview](#overview)
-- [End-to-End User Journey (App Open to Grounded Response)](#end-to-end-user-journey-app-open-to-grounded-response)
-- [Feature Highlights](#feature-highlights)
-- [System Architecture](#system-architecture)
-- [Document Ingestion Pipeline](#document-ingestion-pipeline)
-- [Search, Conversation, and RAG](#search-conversation-and-rag)
-- [Key Modules](#key-modules)
-- [Design System](#design-system)
-- [Developer Workflow](#developer-workflow)
-- [Privacy & Compliance](#privacy--compliance)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [Manual QA Guide](#manual-qa-guide)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+<p align="center">
+  <img src="https://img.shields.io/badge/Swift-5.10-orange.svg" alt="Swift"/>
+  <img src="https://img.shields.io/badge/iOS-17.0%2B-blue.svg" alt="iOS"/>
+  <img src="https://img.shields.io/badge/Xcode-16.0%2B-blue.svg" alt="Xcode"/>
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="License"/>
+</p>
 
 ---
 
 ## Overview
+OpenCone is a local-first, native Swift/iOS application designed to transform personal documents (PDFs, Word docs, plain text, code scripts, and images) into an on-device searchable knowledge base. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors securely inside a serverless Pinecone database. 
 
-OpenCone turns personal documents into a device-native knowledge base. Users ingest PDFs, Office files, plain text, code snippets, or images, and the app extracts text (with OCR support), chunks content, generates OpenAI embeddings, and stores vectors in Pinecone. Searches embed the user's query, retrieve matching chunks from Pinecone, and stream grounded answers back through OpenAI's Responses API. The entire experience is delivered through a custom SwiftUI tab interface that runs on iPhone, iPad, and macOS via Catalyst.
+During queries, OpenCone executes semantic vector lookup, performs high-efficiency reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. OpenCone is distinguished in this portfolio as the core **RAG Sandbox**, showcasing advanced document processing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
 ---
 
-## End-to-End User Journey (App Open to Grounded Response)
+## Product Snapshot
 
-Below is the complete sequence of actions executed from the moment the user launches OpenCone to the delivery of an AI-generated, source-cited response.
+| Dimension | Detail |
+|---|---|
+| Platform | iOS 17.0+ / iPadOS 17.0+ / macOS Catalyst 14.0+ |
+| Language | Swift 5.10+ |
+| UI | SwiftUI (Modern declarative, custom style sheets) |
+| Architecture | MVVM-S (Model-View-ViewModel-Service) with focused App State Machine |
+| Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API (Control & Data Plane), Apple Speech/Vision |
+| Storage | Secure Enclave Keychain (`SecureSettingsStore`), `UserDefaults`, and local Sandboxed files |
+| Status | Shipped / Portfolio Showcase |
+| App Store | [Not published] |
+| License | [MIT](LICENSE) |
+
+---
+
+## What This App Demonstrates
+
+- **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages and Apple's native `Vision` OCR framework for images.
+- **On-Device Security-Scoped Access**: Employs sandboxed bookmarks (`startAccessingSecurityScopedResource`) to retain file read permissions across system relaunches without prompts.
+- **Resilient Pinecone & OpenAI Client**: Coordinates exponential backoff retries, request rate limiting (100ms pauses), and an automatic circuit-breaker to gracefully handle vector-store throttling or region failures.
+- **Advanced RAG Capabilities**: Orchestrates hybrid searches (combining dense embeddings and sparse keyword vectors), custom metadata presets, and multi-model rerankers (`bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`).
+- **Real-Time Token Streaming**: Implements Server-Sent Events (SSE) parsing to fetch incremental response deltas directly from OpenAI's chat completions.
+- **Speech-to-Text Transcription**: Connects `AVAudioEngine` input taps and Apple's Speech Recognition API to transcribe microphone audio with responsive UI waveform animation.
+- **Bespoke Theme System**: Centralizes look-and-feel variables under a theme environment manager, supplying customized Light and Dark color palettes.
+
+---
+
+## End-to-End User Journey
+
+Below is the user path showing credential checks, onboarding validation, local file processing, vector upsert, and subsequent semantic search querying.
 
 ```mermaid
 flowchart TD
-    subgraph Launch["1. App Initialization"]
-        Start([App Launched]) --> KeysCheck{Credentials in Keychain?}
-        KeysCheck -->|No| Welcome[Onboarding: WelcomeView]
-        KeysCheck -->|Yes| Main[Main Workspace: MainView]
-        Welcome -->|User inputs keys| Validate[Validate with APIs]
-        Validate -->|Success| SaveKeys[Store in Secure Enclave Keychain] --> Main
-    end
-
-    subgraph Ingestion["2. Local Ingestion & Vector Sync"]
-        Main -->|User imports file| DocPicker[Document Picker]
-        DocPicker --> Sandbox[Copy to Sandbox & Create Bookmark]
-        Sandbox --> Extract[Vision OCR & Text Extraction]
-        Extract --> Chunk[MIME-Aware Text Chunking]
-        Chunk --> EmbedDocs[Generate OpenAI Embeddings /v1/embeddings]
-        EmbedDocs --> PineconeUpsert[Upsert Chunks to Pinecone Namespace]
-        PineconeUpsert --> StatsRefresh[Refresh Index & Namespace Stats]
-    end
-
-    subgraph Query["3. Search & Grounded Generation"]
-        StatsRefresh --> SearchPrompt[User Search Input]
-        SearchPrompt -->|Voice| Speech[SpeechRecognitionService Transcription] --> QueryEmbed
-        SearchPrompt -->|Text| QueryEmbed[Embed Query Vector via OpenAI]
-        QueryEmbed --> VectorSearch[Query Pinecone Namespace]
-        VectorSearch --> Rerank[Pinecone Inference Reranking]
-        Rerank --> Context[Assemble Top Chunks as Context]
-        Context --> Completions[Stream OpenAI Responses API completed tokens]
-        Completions --> UIUpdate[UI: Grounded Answer with Citations & Sources]
-    end
-
-    style Start fill:#4CAF50,color:#fff
-    style UIUpdate fill:#2196F3,color:#fff
+    A[Launch App] --> B{Credentials configured?}
+    B -->|No| C[Onboarding / Settings]
+    B -->|Yes| D[Main Workspace]
+    C --> E[Validate and store credentials]
+    E --> D
+    D --> F[User Action: Ingest or Query]
+    F -->|Ingest File| G[Processing pipeline]
+    F -->|Submit Query| J[Search Pipeline]
+    G --> H[External OpenAI / Pinecone service]
+    H --> I[Refresh Index Stats]
+    I --> D
+    J --> K[Retrieve & Generate answers]
+    K --> L[Render Results & Citations]
+    L --> D
 ```
-
----
-
-## Feature Highlights
-
-- **Guided onboarding** - Welcome flow validates OpenAI and Pinecone credentials before unlocking the main app.
-- **Multi-format ingestion** - Handles PDF, DOCX, plain text, HTML, CSV, Markdown, JSON, common image types, and code documents.
-- **Security-scoped persistence** - Copies documents into the sandbox and keeps bookmarks so files remain accessible across launches.
-- **Chunk-aware processing** - MIME-specific chunking with configurable size/overlap keeps semantic context intact.
-- **Observability-first logs** - All pipeline stages emit structured logs to the Logs tab for instant diagnosis.
-- **Search + conversation** - Runs top-k semantic search, supports server-managed and local chat history, and streams token deltas into the UI.
-- **Index control** - Lists Pinecone indexes/namespaces, records recent selections, and exposes namespace stats.
-- **Design system** - Theme manager, reusable components, and typography modifiers keep the UI consistent and brandable.
 
 ---
 
 ## System Architecture
 
-OpenCone follows MVVM with a focused service layer:
-
-- **App shell** (`OpenConeApp`) orchestrates onboarding, dependency wiring, and top-level `AppState` transitions (loading -> welcome -> main).
-- **Views** (SwiftUI) subscribe to their `ObservableObject` view models and never communicate with services directly.
-- **View models** coordinate user intent, call into services, and publish state updates (e.g., `DocumentsViewModel`, `SearchViewModel`, `SettingsViewModel`, `ProcessingViewModel`).
-- **Services** encapsulate external interactions and heavy lifting:
-  - `FileProcessorService` for text extraction (PDFKit/Vision OCR) and MIME detection.
-  - `TextProcessorService` for chunk segmentation, token metrics, and hashing.
-  - `EmbeddingService` for batching requests to `OpenAIService` and normalising vectors.
-  - `OpenAIService` for embedding + Responses API streaming.
-  - `PineconeService` for index discovery, vector upsert/query/delete, retries, and circuit breaking.
-  - `SpeechRecognitionService` for transcribing user voice query input using Apple's Speech Recognition framework.
-- **Shared infrastructure** includes `Logger.shared` for structured logging, `SecureSettingsStore` for Keychain-backed secrets, and `PineconePreferenceResolver` for persisting last-used index and namespace.
+OpenCone adheres to an MVVM-S architecture. The view layer binds to observable models, which coordinate complex actions by invoking highly decoupled services.
 
 ```mermaid
-flowchart LR
-    subgraph UI
+flowchart TD
+    subgraph UI["User Interface (SwiftUI)"]
         W[WelcomeView]
-        M[MainView Tabs]
+        M[MainView]
+        DV[DocumentsViewRedesign]
+        SV[SearchView]
+        SetV[SettingsView]
+        LV[ProcessingView]
     end
-    subgraph ViewModels
-        SV[SettingsViewModel]
-        DV[DocumentsViewModel]
-        QV[SearchViewModel]
-        LV[ProcessingViewModel]
+
+    subgraph ViewModels["ViewModels"]
+        DVM[DocumentsViewModel]
+        SVM[SearchViewModel]
+        SetVM[SettingsViewModel]
+        LVM[ProcessingViewModel]
     end
-    subgraph Services
+
+    subgraph Services["Services Layer"]
         FP[FileProcessorService]
         TP[TextProcessorService]
         ES[EmbeddingService]
@@ -122,346 +106,272 @@ flowchart LR
         PC[PineconeService]
         SR[SpeechRecognitionService]
     end
-    subgraph External
-        Files[Filesystem + OCR]
-        OpenAI[OpenAI API]
-        Pinecone[Pinecone API]
+
+    subgraph Storage["Storage & Security"]
+        KEY[Keychain SecureSettingsStore]
+        UD[UserDefaults]
+        FILE[Sandbox Documents]
+    end
+
+    subgraph External["External APIs"]
+        OpenAI[OpenAI Endpoints]
+        Pinecone[Pinecone Clusters]
         AppleSpeech[Apple Speech API]
     end
 
-    W --> SV
-    M --> DV
-    M --> QV
-    M --> LV
-    DV --> FP --> Files
-    DV --> TP
-    DV --> ES --> OA --> OpenAI
-    DV --> PC --> Pinecone
-    QV --> ES
-    QV --> PC
-    QV --> OA
-    QV --> SR --> AppleSpeech
-    SV --> PC
-    LV --> Logger
+    %% Wiring
+    M --> DV & SV & SetV & LV
+    W --> SetVM
+    DV --> DVM
+    SV --> SVM
+    SetV --> SetVM
+    LV --> LVM
+
+    DVM --> FP & TP & ES & PC
+    SVM --> ES & PC & OA & SR
+    SetVM --> KEY & UD
+    LVM --> Logger
+
+    FP --> FILE
+    SR --> AppleSpeech
+    ES --> OA
+    OA --> OpenAI
+    PC --> Pinecone
+    KEY -.-> OA & PC
 ```
 
 ---
 
-## Document Ingestion Pipeline
+## Core Pipeline
 
-`DocumentsViewModel` runs a multi-stage workflow and reports granular progress for each document:
+This diagram shows the complete sequence of text extraction, semantic chunking, batch embeddings, similarity search, reranking, and generation with sources.
 
 ```mermaid
 flowchart TD
-    subgraph Input["Document Input"]
-        DP[📁 Document Picker] --> SSA[Security-Scoped Access]
-        SSA --> |startAccessingSecurityScopedResource| PDC[persistDocumentCopy]
+    subgraph Ingestion["Ingestion & Vector Sync"]
+        A[File Picked] --> B[Security-Scoped Sandbox Access]
+        B --> C{File Type?}
+        C -->|PDF| D[PDFKit Parser]
+        C -->|Images| E[Vision OCR Engine]
+        C -->|Text/Code| F[Raw String Read]
+        D & E & F --> G[RecursiveTextSplitter]
+        G --> H[MIME-Aware Chunks]
+        H --> I[SHA256 Fingerprint Check]
+        I -->|Unique| J[Batch Chunks of 50]
+        J --> K[OpenAI Embeddings /v1/embeddings]
+        K --> L[Upsert Vectors to Pinecone Namespace]
     end
 
-    subgraph Extract["Text Extraction"]
-        PDC --> FPS[FileProcessorService]
-        FPS --> |PDF| PDFK[PDFKit]
-        FPS --> |Images| VIS[Vision OCR]
-        FPS --> |Text/Code| RAW[Raw Text]
-        PDFK & VIS & RAW --> TPS[TextProcessorService]
+    subgraph QueryRAG["Retrieval & Generation"]
+        M[Query Input] --> N[Speech Transcription/Text]
+        N --> O[Generate Query Vector]
+        O --> P[Query Pinecone Index]
+        P --> Q{Rerank Enabled?}
+        Q -->|Yes| R[Pinecone Rerank API]
+        Q -->|No| S[Retained top-K Chunks]
+        R --> S
+        S --> T[Context Packing & System Prompts]
+        T --> U[OpenAI Responses SSE Stream]
+        U --> V[Stream Grounded Answer with Citations]
     end
-
-    subgraph Process["Chunking & Hashing"]
-        TPS --> RTS[RecursiveTextSplitter]
-        RTS --> |MIME-aware separators| CHUNKS[Text Chunks]
-        CHUNKS --> HASH[SHA256 Hash]
-        HASH --> |Deduplication check| DUP{Duplicate?}
-        DUP -->|Yes| SKIP[Skip Document]
-        DUP -->|No| EMB[EmbeddingService]
-    end
-
-    subgraph Embed["Embedding Generation"]
-        EMB --> |50 chunks/batch| BATCH[Batch Processor]
-        BATCH --> OAI[OpenAI /v1/embeddings]
-        OAI --> |3072-dim vectors| VECS[Embedding Vectors]
-    end
-
-    subgraph Store["Vector Storage"]
-        VECS --> PS[PineconeService]
-        PS --> |withRetries| RETRY{Success?}
-        RETRY -->|No, < 3 attempts| PS
-        RETRY -->|No, >= 3 attempts| CB[Circuit Breaker Opens]
-        RETRY -->|Yes| UPS[Upsert Vectors]
-        UPS --> STATS[Refresh IndexStats]
-        STATS --> UI[📊 Update Dashboard]
-    end
-
-    style DP fill:#4CAF50,color:#fff
-    style UI fill:#2196F3,color:#fff
-    style CB fill:#f44336,color:#fff
 ```
-
-1. **Pick** - Users select files via `DocumentPicker`. URLs are secured with `startAccessingSecurityScopedResource()`.
-2. **Persist** - Files copy into the sandbox (`persistDocumentCopy`) and receive a minimal bookmark for future access.
-3. **Deduplicate & validate** - `makeDocumentIdentifier` combines path, size, and timestamps; duplicates or 100 MB+ files are rejected early.
-4. **Extract** - `FileProcessorService` turns PDFs and images into text (PDFKit + Vision OCR) and passes through plain text/code types.
-5. **Chunk** - `TextProcessorService` generates MIME-aware chunks, calculates token counts, and keeps overlap metadata.
-6. **Embed** - `EmbeddingService` batches chunk text into OpenAI embedding requests, aligns with the configured dimension (3072 by default), and handles rate limits.
-7. **Upsert** - `PineconeService` writes vectors with metadata (`doc_id`, chunk ranges, MIME) into the selected index/namespace.
-8. **Report** - `ProcessingStats` capture phase durations and counts; logs stream to the Logs tab for transparency.
-
-Phase weights (`phaseWeightExtraction`, `phaseWeightChunking`, `phaseWeightEmbedding`, `phaseWeightUploading`) drive the progress bar; adjust them if you insert new phases so dashboards remain accurate.
 
 ---
 
-## Search, Conversation, and RAG
+## Data Flow
 
-`SearchViewModel` delivers the full RAG experience:
+This chart defines the boundaries between local device memory, Keychain credentials, the network payload transport layer, and external cloud APIs.
 
 ```mermaid
-flowchart TD
-    subgraph Query["User Query"]
-        UQ[🔍 Search Input] --> |Text| QT[Query Text]
-        UQ --> |Voice| SRS[SpeechRecognitionService]
-        SRS --> |Transcription| QT
-        QT --> SVM[SearchViewModel]
+flowchart LR
+    subgraph LocalDevice["On-Device boundary"]
+        subgraph SafeStorage["Secure Storage"]
+            KC[(Secure Enclave Keychain)]
+        end
+        subgraph PlainStorage["Unencrypted Space"]
+            UD[(UserDefaults)]
+            SB[(Sandbox Files)]
+        end
+        subgraph LogicMemory["Processing Memory"]
+            MEM[OCR Autoreleasepool]
+        end
     end
 
-    subgraph Embed["Query Embedding"]
-        QT --> ES[EmbeddingService]
-        ES --> OAI[OpenAI /v1/embeddings]
-        OAI --> QV[Query Vector 3072-dim]
+    subgraph Net["Network transport"]
+        HTTPS[HTTPS REST / SSE Streams]
     end
 
-    subgraph Search["Vector Search"]
-        QV --> PS[PineconeService]
-        MF[Metadata Filters] --> PS
-        PS --> |Hybrid Search?| HS{Mode}
-        HS -->|Dense Only| DQ[Dense Query]
-        HS -->|Hybrid| HQ[Dense + Sparse Query]
-        DQ & HQ --> |top-k results| RR[Raw Results]
+    subgraph Cloud["External APIs"]
+        OAI[OpenAI Cloud]
+        PCN[Pinecone Cluster]
+        APL[Apple Services]
     end
 
-    subgraph Rerank["Optional Reranking"]
-        RR --> RK{Rerank Enabled?}
-        RK -->|Yes| RKS[Pinecone Rerank API]
-        RKS --> |bge/cohere/pinecone| RANKED[Reranked Results]
-        RK -->|No| RANKED
-    end
-
-    subgraph Generate["Answer Generation"]
-        RANKED --> CTX[Context Assembly]
-        CTX --> |System prompt + chunks| OAS[OpenAIService]
-        OAS --> |SSE Stream| STREAM[Token-by-Token]
-        STREAM --> |response.output_text.delta| ANS[Generated Answer]
-    end
-
-    subgraph Display["UI Update"]
-        RANKED --> SRC[📎 Sources Panel]
-        ANS --> CHAT[💬 Chat Timeline]
-        SRC & CHAT --> UI[Search Results View]
-    end
-
-    style UQ fill:#4CAF50,color:#fff
-    style UI fill:#2196F3,color:#fff
+    %% Flows
+    KC -->|Retrieve Keys| HTTPS
+    UD -->|Read Preferences| LogicMemory
+    SB -->|Load Documents| LogicMemory
+    LogicMemory -->|Payload| HTTPS
+    HTTPS -->|POST/GET| OAI & PCN & APL
 ```
 
-- **Index bootstrap** - On launch, both Documents and Search view models call `PineconeService.listIndexes()`. `PineconePreferenceResolver` selects the best candidate based on history and user defaults.
-- **Query embedding** - User prompts embed via `EmbeddingService`, matching the document embedding model to keep cosine similarity meaningful.
-- **Vector search** - Pinecone is queried with configurable top-k (stored in `SettingsStorageKeys.searchTopK`). Metadata filters can be defined in Settings and are parsed with `PineconeMetadataFilter.parse` before each query.
-- **Answer generation** - Retrieved chunks become prompt context for `OpenAIService.streamCompletion`, which streams tokens over SSE. The UI updates `messages`, `generatedAnswer`, and `answerGenerationProgress` as deltas arrive.
-- **Conversation modes** - `SettingsViewModel.conversationMode` toggles between OpenAI's server-managed conversation (`conversationId` persisted in `UserDefaults`) and a client-managed short history. Both paths must continue to operate when evolving the experience.
-- **Watchdogs & cancellation** - A watchdog (`Constants.watchdogDelayNanoseconds`) guards long-running streams. `currentStreamTask` is cancelled when navigating away to avoid orphaned network calls.
+---
+
+## Ingestion / Processing / Retrieval Details
+
+### Ingestion
+OpenCone ingests documents via the iOS system document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include standard office documents (`application/pdf`, `.docx`), data tables (`.csv`, `.json`), web layouts (`.html`, `.css`), markdown (`.md`), code scripts (`.py`, `.js`), and popular images (`.png`, `.jpeg`, `.tiff`).
+
+### Processing
+1. **Extraction**: Text is extracted locally using `PDFKit` page extraction or `Vision` framework OCR. Large processing loops are wrapped inside `autoreleasepool` to prevent memory leaks during mobile image OCR operations.
+2. **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
+3. **Hashing**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Files exceeding 100MB are rejected.
+4. **Batching**: Vectors are created in batches of 50 to avoid API thread exhaustion.
+
+### Retrieval / Querying
+Search executes vector comparisons using the configured embedding model output. 
+- **Hybrid Search**: Fuses dense query embeddings with sparse keyword vectors inside Pinecone using a configurable weighting slider (`alpha` from `0.0` to `1.0`).
+- **Metadata Filters**: Restricts searches to namespaces, filenames, or custom tag structures using $eq, $in, $gte, $lte, and $contains operators.
+- **Rerank**: Intercepts matches to run reranking (`bge-reranker-v2-m3` or Cohere) before context integration.
+
+### Generation / Output
+The grounded chunks are formatted as JSON text input and submitted to the OpenAI Responses API. Tokens stream into the chat view in real time via Server-Sent Events. The OpenAI `web_search` and `code_interpreter` tools are invoked conditionally using smart heuristics. Short-term dialogue context is maintained locally (client mode) or managed via OpenAI's server session states (server mode).
 
 ---
 
-## Key Modules
+## Key Technical Decisions
 
-- **App/** - Entry point (`OpenConeApp`), tab router (`MainView`), onboarding (`WelcomeView`), plus loading/error states.
-- **Core/** - Configuration, logging, shared extensions, and the `OCDesignSystem` theme infrastructure.
-- **Features/Documents/** - Document list/detail views, bookmark-aware persistence, dashboard metrics, and processing charts.
-- **Features/Search/** - RAG UI, metadata filter editor, search result cards, and conversation transcript handling.
-- **Features/ProcessingLog/** - Log viewer with filtering tied to `Logger.shared`.
-- **Features/Settings/** - Credential management, model selection, search defaults, metadata preset editor, logging preferences, and validation flows.
-- **Services/** - Pinecone/OpenAI clients, embedding orchestrator, file processing, text chunking, and speech-to-text transcription. All network calls go through `PineconeService` and `OpenAIService` wrappers rather than ad-hoc `URLSession` usage.
-- **Preview Content/** - Sample data/assets for SwiftUI previews.
-- **OpenConeTests/** - Currently focused on metadata preset persistence (`SearchViewModelMetadataPersistenceTests`); extend this target when adjusting settings persistence logic.
-
----
-
-## Design System
-
-OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
-
-- `OCTheme`, `ThemeManager`, and `ThemeEnvironment` expose theme colors, typography, and gradients through `@Environment(\.theme)`.
-- Components like `OCButton`, `OCCard`, `OCBadge`, input fields, and layout helpers provide consistent styling. Use them when building new surfaces.
-- `ThemeManager.shared` is the single source of truth; subscribe to its `@Published` state instead of hardcoding color literals.
-- `withTheme()` modifier applies theming globally from `OpenConeApp`.
+| Decision | Rationale | Tradeoff |
+|---|---|---|
+| **Keychain for Keys** | Prevents developers or users from writing credentials to plain text configs. | Restricts automated simulator testing unless environment scheme overrides are supplied. |
+| **Circuit Breaker** | Opens automatically after N network failures to prevent UI locks and API rate exhaustion. | Requires index switches or cooldown timers to reset. |
+| **MIME-Aware Splitter** | Preserves logical structures (Markdown headers, JSON nodes) in chunks. | Increased parsing complexity per document type. |
+| **Security Bookmarks** | Stores file references so documents can be re-accessed securely across launches. | Requires user storage provider permission consent. |
+| **Autoreleasepool for OCR** | Manages high heap overhead of image recognition frames on memory-restricted iOS devices. | Slightly increases execution duration during serial processing. |
+| **Speech Audio Tap** | Uses `AVAudioEngine` for low-latency voice streaming. | Demands microphone and speech recognition permissions. |
+| **Host/Stats Caching** | Caches Pinecone cluster endpoints and namespace stats with short TTLs. | Brief delays (10s-30s) in reflecting out-of-band index changes. |
 
 ---
 
-## Developer Workflow
+## File Entry Points
 
-- **Build target** - Open `OpenCone.xcodeproj` in Xcode 16.0 or later. The project supports iOS 17+ and macOS 14+ (Catalyst).
-- **Secrets** - Credentials live in `SecureSettingsStore` (Keychain). The welcome flow can store keys, or you can set environment variables in your Run scheme (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_PROJECT_ID`).
-- **Settings sync** - `SettingsViewModel` mirrors user input into `UserDefaults` and Keychain. Use `saveSettings()` after changing defaults in code so the UI reflects updates.
-- **Logging** - Always log significant events via `Logger.shared.log(level:message:context:)`. The Logs tab is the canonical place to debug ingestion/search behaviour.
-- **Index insights** - After upserting or deleting vectors, call `refreshIndexInsights()` to update the namespace list and index stats used by both Documents and Search tabs.
-- **Background safety** - Long-running work should execute inside `Task {}`. Use `await MainActor.run {}` before mutating published state to avoid cross-actor violations.
-- **Release guard** - Release builds fatal-error if `OPENAI_API_KEY`, `PINECONE_API_KEY`, or `PINECONE_PROJECT_ID` are injected via scheme overrides; clear those environment variables before archiving for TestFlight/App Store.
-- **Icon generation** - Maintain `AppIcon.appiconset` by running `scripts/generate_app_icons.sh` (derives all required sizes from the 1024px marketing source).
-- **Screenshot capture** - Use `scripts/capture_screenshots.sh` for guided simulator captures (prompts you to stage each screen then saves a PNG into the provided directory).
-- **VS Code Setup** - Run `scripts/setup_vscode.sh` to install core iOS development extensions, generate the local build server configuration for SweetPad/LSP, and configure standard tools.
-
----
-
-## Privacy & Compliance
-
-- **Canonical docs** — [PRIVACY.md](PRIVACY.md) explains on-device vs cloud processing; [APP_STORE.md](APP_STORE.md) provides App Store copy and reviewer walkthrough.
-- **Secret handling** — [SECURITY.md](SECURITY.md) outlines Keychain storage, the Release fatal guard, and the `preflight_check.sh`/`secret_scan.py` workflow.
-- **Data & Privacy controls** — Settings exposes a "Reset Stored Keys & Preferences" action that clears Keychain secrets, conversation history, and bookmark consent.
-- **Preflight script** — Run `scripts/preflight_check.sh` before TestFlight upload; it executes `secret_scan.py`, validates Info.plist usage descriptions, confirms privacy docs include a timestamp, and runs `xcodebuild test`. Override the simulator with `OPEN_CONE_TEST_DESTINATION="platform=<custom destination>"` or skip tests with `SKIP_TESTS=1`.
-- **CI guardrail** — GitHub Actions workflow `.github/workflows/preflight.yml` runs the same preflight script on macOS runners.
-
----
-
-## Documentation
-
-| Document                                                     | Purpose                                     |
-| ------------------------------------------------------------ | ------------------------------------------- |
-| [README.md](README.md)                                       | Project overview, setup, and usage          |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                           | Technical architecture and data flows       |
-| [ROADMAP.md](ROADMAP.md)                                     | Feature status and future plans             |
-| [PRIVACY.md](PRIVACY.md)                                     | Privacy policy and data handling            |
-| [SECURITY.md](SECURITY.md)                                   | Secret management and compliance            |
-| [APP_STORE.md](APP_STORE.md)                                 | App Store copy, reviewer notes, screenshots |
-| [docs/CASE_STUDY.md](docs/CASE_STUDY.md)                     | Marketing case study                        |
-| [docs/reference/PineconeDocs/](docs/reference/PineconeDocs/) | Pinecone API reference (external)           |
-
----
-
-## Getting Started
-
-1. **Clone and open**
-
-    ```bash
-    git clone https://github.com/Gunnarguy/OpenCone.git
-    cd OpenCone
-    open OpenCone.xcodeproj
-    ```
-
-2. **Configure environment variables (optional but recommended for debugging)**
-
-    - In Xcode, choose **Product > Scheme > Edit Scheme...**
-    - Under **Run > Arguments**, add environment variables:
-        - `OPENAI_API_KEY`
-        - `PINECONE_API_KEY`
-        - `PINECONE_PROJECT_ID`
-
-3. **Run the app**
-
-    - Select an iOS 17+ simulator or connect a device.
-    - Press **Command+R**. The welcome flow will prompt for any missing credentials and validate them in real time.
+| Concern | Files | Responsibility |
+|---|---|---|
+| **App Entry** | [OpenConeApp.swift](OpenCone/App/OpenConeApp.swift) | Bootstrapping, AppState machine, and Release credential check. |
+| **Main UI** | [MainView.swift](OpenCone/App/MainView.swift) | Tab routing (Search, Documents, Logs, Settings) and view-model synchronization. |
+| **Ingestion View** | [DocumentsViewRedesign.swift](OpenCone/Features/Documents/DocumentsViewRedesign.swift) | Document list, dashboards, and bulk action triggers. |
+| **Ingestion Engine** | [DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift) | Pipeline scheduling, progress tracking, and bookmarks updates. |
+| **API Clients** | [PineconeService.swift](OpenCone/Services/PineconeService.swift), [OpenAIService.swift](OpenCone/Services/OpenAIService.swift) | Low-level REST connections, retry logic, SSE parsing, and circuit breakers. |
+| **Text Splitter** | [TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift) | Content tokenization, recursive chunking, and hashing. |
+| **Audio Capture** | [SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift) | Speech-to-text translation and real-time amplitude tracking. |
+| **Security Store** | [SecureSettingsStore.swift](OpenCone/Core/Security/SecureSettingsStore.swift) | Keychain storage for OpenAI/Pinecone keys and version settings. |
+| **Unit Tests** | [SearchViewModelMetadataPersistenceTests.swift](OpenConeTests/SearchViewModelMetadataPersistenceTests.swift) | Validates filter settings storage and JSON parsing. |
 
 ---
 
 ## Configuration
 
-OpenCone provides a highly customizable experience through its Settings and Quick Settings interfaces. Below is the complete catalog of configuration options, categorized by area:
-
-### 1. API Credentials & Cloud Infrastructure
-| Setting | Storage | Validation | Purpose & Notes |
-|:---|:---|:---|:---|
-| **OpenAI API Key** | Keychain (`SecureSettingsStore`) | Debounced `CredentialValidator` checks | Used for text embeddings and streaming completions. Can be overridden in Dev by the `OPENAI_API_KEY` env variable. |
-| **Pinecone API Key** | Keychain (`SecureSettingsStore`) | Debounced format & connectivity check | Must start with `pcsk_`. Credentials can be overridden in Dev by the `PINECONE_API_KEY` env variable. |
-| **Pinecone Project ID** | Keychain (`SecureSettingsStore`) | Debounced connectivity check | Required to locate your indexes. Can be overridden in Dev by `PINECONE_PROJECT_ID`. |
-| **Pinecone Cloud** | Keychain (`SecureSettingsStore`) | Automatic list refresh | Selected cloud provider (`aws` or `gcp`). Controls the available region list. |
-| **Pinecone Region** | Keychain (`SecureSettingsStore`) | Automatic check against cloud | Preferred region (e.g., `us-east-1` or `us-central1`) for deploying new index resources. |
-
-### 2. Document Processing Configuration
-| Setting | Storage | Default | Purpose & Notes |
-|:---|:---|:---|:---|
-| **Chunk Size** | `UserDefaults` | `1024` characters | Maximum size of each text block parsed by `TextProcessorService`. |
-| **Chunk Overlap** | `UserDefaults` | `256` characters | Semantic redundancy overlap between contiguous chunks. Must be smaller than Chunk Size. |
-| **Embedding Model** | `UserDefaults` | `text-embedding-3-large` | Standard model options include `ada-002`, `3-small`, and `3-large`. |
-| **Embedding Dimension** | `UserDefaults` | `3072` | Vector length. Must match the Pinecone index configuration. |
-| **Batch Size** | `UserDefaults` | `50` chunks | Number of text chunks submitted to OpenAI per embedding API request. |
-
-### 3. Retrieval & Search (RAG) Settings
-| Setting | Storage | Default | Purpose & Notes |
-|:---|:---|:---|:---|
-| **Default Top K** | `UserDefaults` | `10` matches | The number of nearest-neighbor text chunks retrieved from Pinecone. |
-| **Min Similarity Score** | `UserDefaults` | `0.0` (Disabled) | Similarity threshold filter (0.0 to 0.9). Drops matches below this score. |
-| **Max Context Tokens** | `UserDefaults` | `32,000` tokens | Total token budget allocated for context chunks inside the generation prompt. |
-| **Metadata Presets** | `UserDefaults` (JSON) | None | Active filtering presets parsed by `PineconeMetadataFilter` (e.g., `doc_id = Policy.pdf`). |
-| **Hybrid Search** | `UserDefaults` | `False` (Dense Only) | Toggles hybrid retrieval. Requires index to use the `dotproduct` metric. |
-| **Hybrid Alpha** | `UserDefaults` | `0.5` | Weights dense vs sparse retrieval (`1.0` = pure semantic, `0.0` = pure keyword). |
-| **Reranking** | `UserDefaults` | `False` | Toggles two-stage retrieval using Pinecone's inference services. |
-| **Rerank Model** | `UserDefaults` | `bge-reranker-v2-m3` | Reranker choices: `bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`. |
-| **Rerank Top N** | `UserDefaults` | `5` matches | Number of top-ranked results preserved after applying the reranking model. |
-
-### 4. Completion & Generation Parameters
-| Setting | Storage | Default | Purpose & Notes |
-|:---|:---|:---|:---|
-| **Completion Model** | `UserDefaults` | `gpt-4o` | Standard models or reasoning models like `gpt-5`, `o3`, `o1`. |
-| **Use Custom Model** | `UserDefaults` | `False` | Toggles override to target any OpenAI-compatible base model name. |
-| **Custom Model Name** | `UserDefaults` | None | String identifier for custom endpoints (e.g., fine-tuned models). |
-| **Temperature** | `UserDefaults` | `0.3` | Controls randomness (0.0 = precise, 2.0 = creative). Disabled for reasoning models. |
-| **Top-P** | `UserDefaults` | `0.95` | Nucleus sampling parameter. Disabled for reasoning models. |
-| **Reasoning Effort** | `UserDefaults` | `none` | Effort level (`none`, `low`, `medium`, `high`, `xhigh`) for reasoning models. |
-| **Streaming Response** | `UserDefaults` | `True` | Streams response delta packages via SSE. |
-| **Max Output Tokens** | `UserDefaults` | `4000` tokens | Limit on the number of generated tokens returned by the LLM. |
-| **Conversation Mode** | `UserDefaults` | `server` | `server` uses OpenAI conversation IDs; `client` keeps a local bounded history. |
-| **Max Turns** | `UserDefaults` | `10` turns | Limit on history context turns preserved when using `client` conversation mode. |
-| **Web Search Tool** | `UserDefaults` | `False` | Toggles OpenAI Responses API `web_search` tool for online updates. |
-| **Code Interpreter** | `UserDefaults` | `False` | Toggles `code_interpreter` tool for charts, calculations, and data visualization. |
-| **Custom Instructions** | `UserDefaults` | None | System prompt overrides injected during RAG context assembly. |
-
-### 5. Advanced System & Debug Preferences
-| Setting | Storage | Default | Purpose & Notes |
-|:---|:---|:---|:---|
-| **Control Plane Version** | Keychain (`SecureSettingsStore`) | `2024-07` | Custom `X-Pinecone-API-Version` header value for Pinecone index administration. |
-| **Data Plane Version** | Keychain (`SecureSettingsStore`) | `2024-07` | Custom header for vector queries, upserts, and deletes. |
-| **Namespace Version** | Keychain (`SecureSettingsStore`) | `2025-10` | Custom header for fetching namespace listings and stats. |
-| **Metadata Fetch Version** | Keychain (`SecureSettingsStore`) | `2025-10` | Custom header for Pinecone metadata inspection. |
-| **Request Timeout** | `UserDefaults` | `30` seconds | Network timeout threshold for OpenAI and Pinecone API calls. |
-| **Max Retries** | `UserDefaults` | `3` attempts | Number of exponential backoff retry attempts for transient network faults. |
-| **Verbose Logging** | `UserDefaults` | `False` | Emits internal network request structures and delta payloads to the Logs tab. |
-| **Show Debug Info** | `UserDefaults` | `False` | Displays advanced index metrics and metadata structures in the settings UI. |
-| **Appearance Theme** | `UserDefaults` | Modern Light/Dark | Propagated via `ThemeManager.shared` and environment bindings. |
-
-Document processing accepts the MIME types defined in `Configuration.acceptedMimeTypes`. Unsupported files surface a user-facing warning through `Logger` + `errorMessage` binding.
+| Setting | Storage | Default | Required | Purpose |
+|---|---|---|---|---|
+| `OPENAI_API_KEY` | Keychain | None | Yes | OpenAI API requests (embeddings & completions). |
+| `PINECONE_API_KEY` | Keychain | None | Yes | Pinecone database request authorization. |
+| `PINECONE_PROJECT_ID` | Keychain | None | Yes | Targets Pinecone host resolutions. |
+| `PINECONE_CLOUD` | Keychain | `aws` | No | Target host environment configuration. |
+| `PINECONE_REGION` | Keychain | `us-east-1` | No | Targets serverless regions. |
+| `defaultChunkSize` | UserDefaults | `1024` | No | Character count limit for text segmentation. |
+| `defaultChunkOverlap`| UserDefaults | `256` | No | Chunk duplication boundary. |
+| `completionModel` | UserDefaults | `gpt-4o` | No | Model ID used for text completion. |
+| `searchTopK` | UserDefaults | `10` | No | Nearest-neighbor vector counts retrieved. |
+| `hybridAlpha` | UserDefaults | `0.5` | No | Sparse vs dense search weighting (`1.0`=semantic, `0.0`=keyword). |
 
 ---
 
-## Manual QA Guide
+## Getting Started
 
-Run this sequence after significant changes:
+### Prerequisites
+- macOS Sonoma or Sequoia
+- Xcode 16.0+
+- iOS 17.0+ Simulator or physical device
+- Active OpenAI and Pinecone Accounts
 
-1. **Fresh launch** - Delete the app, run again, walk through the welcome flow, and ensure credential validation messages appear.
-2. **Ingest PDF** - Add a medium-size PDF; confirm extraction, chunking, embedding, and upsert logs appear and the namespace vector count increases.
-3. **OCR path** - Import an image with text to verify Vision OCR extraction.
-4. **Duplicate guard** - Add the same file twice; the second attempt should warn that the document already exists.
-5. **Search** - Run a query that hits the ingested document. Observe streaming answer updates and relevance badges.
-6. **Metadata filters** - Add a preset in Settings (e.g., `doc_id = MyDoc.pdf`), then search to confirm requests include the filter.
-7. **Namespace cleanup** - Delete the processed document and verify Pinecone vectors are removed and Logs report success.
-8. **Theme switch** - Toggle themes and ensure all tabs adhere to the design system colors.
-9. **Consent & reset** - Visit Settings → Data & Privacy, follow the Privacy Overview link, and trigger the reset control to confirm credentials are cleared and the welcome flow returns on relaunch.
+### Developer Configuration Setup
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Gunnarguy/OpenCone.git
+   cd OpenCone
+   open OpenCone.xcodeproj
+   ```
+2. **Configure schemes (optional for debug)**:
+   Select **Product > Scheme > Edit Scheme... > Run > Arguments**. Add these environment variables:
+   - `OPENAI_API_KEY`
+   - `PINECONE_API_KEY`
+   - `PINECONE_PROJECT_ID`
+
+3. **Install Dependencies**:
+   OpenCone relies on Apple's standard native frameworks (PDFKit, Vision, SFSpeechRecognizer) and integrates standard packages via Swift Package Manager (managed directly by Xcode). No Cocoapods or Carthage setups are necessary.
+
+4. **Build and Run**:
+   Press **Cmd+R** to build. If keys are missing, the guided welcome flow validation will assist with Keychain entries.
 
 ---
 
-## Testing
+## Testing and QA
 
-- **Unit tests** - Execute from Xcode (**Command+U**) or via `xcodebuild test`. Current coverage focuses on metadata preset persistence (`OpenConeTests/SearchViewModelMetadataPersistenceTests`). Add new tests alongside changes to `SettingsViewModel` or filter parsing; the preflight script invokes the same command to guard submissions.
-- **Integration tests** - Not yet automated; rely on the Manual QA Guide until more UI tests are introduced.
+| Validation | Command / Procedure | Expected Result |
+|---|---|---|
+| **Build Project** | `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=iPhone 16" build` | Compilation completes with no errors. |
+| **Unit Tests** | `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=iPhone 16" -quiet` | All unit tests pass successfully. |
+| **Secret Scan** | `python3 scripts/secret_scan.py` | Prints `✅ No secret patterns detected.` and exits with code 0. |
+| **Preflight check** | `scripts/preflight_check.sh` | Performs all scans, Plist verification, and runs tests. |
+| **Manual Ingestion** | Run app, pick a PDF/image, inspect logs in Logs tab | Ingestion log shows success and vector counts update on dashboard. |
+| **Manual RAG Search** | Enter query matching ingested file, inspect citations | Streams completion citing source names and chunks. |
 
 ---
 
-## Troubleshooting
+## Privacy and Security
+- **Local Sandbox**: Documents, bookmark descriptions, extraction steps, and logging occur strictly in the app sandbox.
+- **Network Boundaries**: Only chunk strings are sent to OpenAI (embeddings API) and matching metadata is uploaded to Pinecone (DB API).
+- **Credentials Enclave**: Keys reside in the Enclave Keychain. Release builds throw a `fatalError` if secrets are hardcoded in variables.
+- **Data Disposal**: Users can delete individual docs (clearing vector entries from Pinecone) or execute a full clean slate from **Settings > Data & Privacy > Reset Stored Keys & Preferences**.
 
-- **Missing API keys** - The app returns to the welcome screen if keys are absent. Re-run the setup or set environment variables.
-- **Pinecone errors** - Check the Logs tab for detailed error messages. `PineconeService` will trip its circuit breaker (`isCircuitOpen`) after repeated failures; switching indexes resets the circuit.
-- **Embedding dimension mismatch** - Ensure Pinecone index dimension equals the selected embedding model's output (3072 for `text-embedding-3-large`). `DocumentsViewModel.dashboardMetrics` will show zero vectors if uploads fail.
-- **Filesystem access issues** - If Files app permissions are denied, `DocumentsViewModel` surfaces `Unable to access ...` warnings. Re-select the document to regain security scope access.
-- **Long-running uploads** - Streaming completions can time out; `SearchViewModel` watchdog cancels the stream and sets an error. Adjust network conditions or retry.
+*For more details, see [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).*
+
+---
+
+## Documentation Index
+
+| Document | Purpose |
+|---|---|
+| [README.md](README.md) | Main project overview, features, architecture overview, and onboarding instructions. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | In-depth technical systems design, service lifecycle description, and networking models. |
+| [ROADMAP.md](ROADMAP.md) | Current project trajectory, known technical debt, and pending milestones. |
+| [SECURITY.md](SECURITY.md) | Secure Settings Store Keychain mappings and production archive protection policies. |
+| [PRIVACY.md](PRIVACY.md) | Privacy guidelines, on-device boundaries, and external APIs data disclosures. |
+| [APP_STORE.md](APP_STORE.md) | App Store descriptions, screenshots staging guide, and App Review test credentials. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Engineering guides, coding standards, branch conventions, and agent instructions. |
+| [docs/CASE_STUDY.md](docs/CASE_STUDY.md) | Technical case study highlighting architecture trade-offs, solutions, and outcomes. |
+
+---
+
+## Roadmap
+
+### Completed
+- [x] On-device multi-format text extraction (PDF, text, images with Vision OCR).
+- [x] Secure Settings Store Keychain integration and release-build secret safeguards.
+- [x] Speech Recognition service integration with dynamic level animation.
+- [x] Circuit breaker logic, exponential backoff retries, and rate limits for Pinecone query robustness.
+- [x] Two-stage RAG queries supporting hybrid retrieval and reranking.
+
+### In Progress
+- [ ] Automated integration test coverage for streaming completions.
+- [ ] Circuit breaker user status notifications.
+
+### Planned
+- [ ] Local embedding caching to avoid redundant OpenAI API calls.
+- [ ] Bookmark-aware file update detection.
+- [ ] Spotlights indexing for ingested document records.
 
 ---
 
 ## License
-
 OpenCone is distributed under the [MIT License](LICENSE).

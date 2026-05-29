@@ -1,93 +1,84 @@
 # Case Study: OpenCone
 
-## Abstract
+On-device Retrieval-Augmented Generation (RAG) sandbox client for Apple iOS, iPadOS, and macOS via Catalyst.
 
-OpenCone is a sophisticated, native iOS application that provides a complete, on-device Retrieval Augmented Generation (RAG) pipeline. It empowers users to transform a personal collection of documents (PDFs, DOCX, TXT, and images) into a private, searchable knowledge base directly on their iPhone or iPad. By integrating with OpenAI for embedding and completion and Pinecone for vector storage, OpenCone offers a powerful semantic search experience wrapped in a modern, reactive SwiftUI interface. Its target audience is any individual who needs to query and synthesize information from a personal corpus of documents securely and efficiently.
+---
 
-## 1. The Problem: On-Device Intelligence for Personal Documents
+## Problem
 
-In an era of cloud-based AI, managing and searching personal or sensitive documents presents a significant challenge. Users often have vast collections of PDFs, research papers, notes, and contracts scattered across their devices. The core problem OpenCone addresses is the inability to perform intelligent, context-aware searches across these disparate files without uploading them to third-party services, which can raise privacy concerns and lack the nuanced understanding of semantic search.
+Modern generative AI applications are heavily dependent on cloud-based middleware (like LangChain, LlamaIndex, or cloud vector-database dashboards) to execute document extraction, semantic chunking, and similarity searches. This cloud-centric setup poses two major hurdles:
+1. **User Privacy**: Handling sensitive files (such as legal contracts, research notes, or personal correspondence) on remote servers introduces compliance and privacy concerns.
+2. **Infrastructure Costs**: Maintaining middle-tier databases, vector hosting engines, and processing workers requires continuous operational overhead and budget monitoring.
 
-The motivation for OpenCone was to create a self-contained, powerful RAG system that respects user privacy by keeping the document processing logic on the user's device. It fills the gap between simple keyword search and large-scale, cloud-based enterprise solutions by providing a tool for individuals to build and query their own personal knowledge base with the power of modern AI models.
+OpenCone was designed to prove that a **complete, high-performance RAG pipeline can be run entirely on-device** using Swift and native iOS frameworks. By keeping file ingestion, OCR extraction, text tokenization, and query coordination local, OpenCone respects privacy, reduces backend costs, and operates directly as a native mobile application.
 
-## 2. Core Architectural Decisions
+---
 
-The architecture of OpenCone was deliberately chosen to support a reactive, modular, and scalable application, centered around a robust state machine that manages the user journey from launch to full functionality.
+## Constraints
 
-### Application Lifecycle & State Management
+Building an on-device RAG system on iOS presented severe engineering constraints:
+- **Restricted Sandbox Permissions**: iOS sandboxing strictly limits file access. If a user imports a document, those access privileges expire when the app process is terminated unless specific security protocols are implemented.
+- **Hardware Resource Limits**: Apple mobile devices have restricted CPU cores and volatile memory (RAM) budgets compared to cloud servers. Running OCR extraction models or serial embedding requests on thousands of pages can lead to system memory termination.
+- **Network Unreliability**: Mobile network connections drop frequently. Embedding vectors or streaming answers over a volatile connection can cause UI freezes, API timeout failures, or duplicate vector upserts.
 
-At its core, `OpenConeApp.swift` operates as a state machine, governing the application's lifecycle through the `AppState` enum (`.loading`, `.welcome`, `.main`, `.error`).
+---
 
-1.  **Launch & Initialization**: On launch, the app enters the `.loading` state. It checks `UserDefaults` for a `hasLaunchedBefore` flag.
+## Architecture
 
-    - If it's the first launch, the state immediately transitions to `.welcome`, presenting the `WelcomeView` to guide the user through API key setup.
-    - On subsequent launches, it attempts to initialize the core services by calling `initializeServices()`.
+OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architecture, driven by a central App State Machine:
 
-2.  **Service Initialization & Dependency Injection**: The `initializeServices()` function is a critical gatekeeper. It first validates that API keys exist in the `SettingsViewModel`.
+- **App State Machine**: Transition logic inside `OpenConeApp` coordinates app startup, onboard validations, the main workspace, and error views.
+- **Decoupled ViewModels**: Features (Search, Ingestion, Settings, and Logs) have isolated ViewModels that manage state properties (using Combine `@Published` syntax).
+- **Stateless Services Layer**:
+  - `FileProcessorService` uses local native libraries (`PDFKit`, `Vision` OCR) to parse document types.
+  - `TextProcessorService` tokenizes and chunkifies raw text recursively using MIME boundary rules.
+  - `EmbeddingService` coordinates batch vectors creation via OpenAI API clients.
+  - `PineconeService` runs index CRUD, similarity queries, and deletion requests.
+  - `SpeechRecognitionService` connects native Apple Speech audio taps with responsive visual waveforms.
+  - `SecureSettingsStore` isolates sensitive keys in the Keychain, separating configurations from `UserDefaults`.
 
-    - If keys are missing, the state reverts to `.welcome`, forcing the setup flow.
-    - If keys are present, it creates singleton instances of `OpenAIService`, `PineconeService`, and `EmbeddingService`. These services are then injected as dependencies into the `DocumentsViewModel` and `SearchViewModel`. This use of dependency injection is crucial for decoupling components and enabling testability.
+---
 
-3.  **Transition to Main**: Upon successful creation of all services and view models, the app state transitions to `.main`, and the `MainView` is displayed, granting the user access to the app's full feature set.
+## Key Technical Challenges
 
-### Frameworks & Patterns: SwiftUI and MVVM-S
+### 1. Persistent Sandbox Permissions
+**Challenge**: When users import files, sandbox URLs lose read rights once the application process terminates. The app cannot re-parse or sync documents without asking the user for manual permission again.
+**Solution**: OpenCone implements security-scoped bookmarks. The app copies documents into its own sandbox folder and builds bookmark datas. These bookmark structures are saved in the database model and re-activated (`startAccessingSecurityScopedResource`) during index synchronization or file re-extraction.
 
-- **SwiftUI**: The decision to use SwiftUI was driven by the desire for a modern, declarative, and cross-platform (iPhone and iPad) user interface. SwiftUI's state-driven rendering model integrates seamlessly with the reactive patterns used for data flow, leading to a more maintainable and less error-prone UI codebase compared to traditional UIKit.
+### 2. OCR Memory Overhead
+**Challenge**: Processing large images or scanned PDFs on iOS using `VNRecognizeTextRequest` generates native buffer allocations, creating high heap spikes that trigger iOS Out-Of-Memory (OOM) app crashes.
+**Solution**: The `FileProcessorService` wraps individual page extractions inside serial `autoreleasepool` blocks. This ensures native memory buffers and recognized text frames are freed immediately after page parsing completes rather than waiting for the entire loop to finish.
 
-- **MVVM-S (Model-View-ViewModel-Service)**: OpenCone is built upon a strict MVVM pattern, augmented with a dedicated Service layer.
-  - **Model**: Plain Swift `structs` (`DocumentModel`, `ProcessingLogEntry`) ensure data immutability and clear representation.
-  - **View**: SwiftUI views are kept lightweight, responsible only for presentation and delegating all logic to the ViewModel.
-  - **ViewModel**: `ObservableObject` classes (`DocumentsViewModel`, `SettingsViewModel`) serve as the engine for each feature, managing state, handling user input, and orchestrating business logic.
-  - **Service**: The Service layer (`FileProcessorService`, `OpenAIService`, `PineconeService`, `SpeechRecognitionService`) is the most critical architectural choice. It abstracts all complex business logic—API communication, file processing, database interactions, voice input translation—away from the ViewModels and Views. This separation makes the components independently testable, reusable, and easier to maintain. For example, the `DocumentsViewModel` doesn't know how to talk to the Pinecone API; it simply calls `pineconeService.listIndexes()`, and `SearchView` delegates mic recording details to `SpeechRecognitionService`.
+### 3. API Throttling & Connection Interruptions
+**Challenge**: Sending hundreds of vectors to Pinecone or requesting streaming answers can fail due to rate limits (429 status codes) or connection dropouts, causing UI hangs or vector store corruption.
+**Solution**: OpenCone integrates:
+1. **Exponential Backoff**: Up to 3 retry loops with sleeping intervals for transient faults.
+2. **Circuit Breaker**: Trips the network connection state to open in `PineconeService` when consecutive errors exceed limits, preventing server flooding.
+3. **SSE Watchdog**: Monitors OpenAI response stream tokens. If no token delta is received within 30 seconds, it cancels the task to save battery and shows a recovery prompt.
 
-### Data Flow: Combine and Modern Concurrency
+---
 
-- **Combine & `@Published`**: The application leverages the Combine framework for its reactive data flow. ViewModels and services expose their state using `@Published` properties. This creates a declarative binding where the UI automatically updates whenever state changes. A prime example is the `ProcessingViewModel`, which subscribes to the shared `Logger`'s `@Published` array of log entries, and the `VoiceInputButton` / `ListeningOverlay`, which bind reactively to `SpeechRecognitionService`'s `@Published` values like `isListening`, `audioLevel`, and `transcribedText`.
-- **`async/await`**: For all asynchronous operations, such as network requests and file processing, OpenCone uses Swift's modern concurrency features. The use of `async/await` simplifies complex asynchronous code, making it more readable and manageable than nested completion handlers or complex Combine chains. This is particularly evident in the multi-step document processing pipeline.
+## Tradeoffs
 
-### Persistence: UserDefaults and Security-Scoped Bookmarks
+- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. We prioritized user privacy over high-speed throughput.
+- **No Offline Embeddings**: The app relies on OpenAI's remote Embeddings API, meaning it requires an internet connection to ingest new documents or query indexes. This tradeoff was made to keep the bundle size small (avoiding bundling massive on-device transformer models).
+- **Unencrypted Local Sandbox Cache**: While files are isolated within the sandbox, the raw text is cached in the app folder. We rely on the device-level passcode encryption framework to secure these caches, requiring users to enforce password lockouts.
 
-- **`UserDefaults` & Keychain Persistence**: The application uses a hybrid approach to persistence. Non-sensitive configurations—such as theme selections, model parameters, chunk dimensions, and UI toggles—are persisted in `UserDefaults` via the `SettingsViewModel`. Sensitive credentials (OpenAI API keys, Pinecone API keys, and Pinecone Project IDs) are stored securely in the iOS Keychain via `SecureSettingsStore`, ensuring user secrets are never written to plain-text settings files.
-- **Security-Scoped Bookmarks**: To maintain persistent access to user-selected files across app launches—a requirement of the iOS sandbox security model—the application uses security-scoped bookmarks. When a user picks a document, the app generates and stores bookmark data within the `DocumentModel`. This allows the app to securely re-access the file URL later without having to ask the user for permission repeatedly, which is crucial for a seamless user experience.
+---
 
-## 3. Deep Dive: Tackling Complexity
+## Outcome
 
-### Feature 1: The Asynchronous Document Processing Pipeline
+OpenCone successfully demonstrates a production-grade, local-first RAG architecture on iOS:
 
-- **The Challenge**: The core value of OpenCone lies in its ability to ingest diverse document formats, process them, and make them searchable. This pipeline is inherently complex: it must handle different file types (PDF, DOCX, TXT, images with OCR), extract text, split it into meaningful chunks, generate vector embeddings via a network call, and finally upsert those vectors into a database. The entire process must run asynchronously in the background without freezing the UI, provide real-time progress feedback, and handle errors gracefully at each step.
+- **APIs Integrated**: 3 major external systems (OpenAI completions, OpenAI embeddings, Pinecone serverless DB) and 3 native Apple frameworks (Vision OCR, PDFKit parsing, SFSpeechRecognizer).
+- **Supported Formats**: 12 MIME types (PDF, DOCX, TXT, HTML, CSS, Markdown, JSON, XML, CSV, TSV, RTF, PNG, JPEG, TIFF).
+- **Architecture Layers**: 4 decoupled layers (UI presentation, ViewModel coordinators, Service utility engines, and Enclave Keychain storage).
+- **Resilience Controls**: Circuit breaker limits, exponential retry backoff delays, rate-limit sleep thresholds, and SSE timeout watchdogs.
 
-- **The Solution**: The `DocumentsViewModel` orchestrates this pipeline by coordinating several specialized services.
+---
 
-  1.  **File Ingestion**: The `FileProcessorService` is responsible for the initial I/O. It uses `PDFKit` to extract text from PDFs and Apple's `VisionKit` to perform OCR on images, abstracting the format-specific logic away from the rest of the app.
-  2.  **Chunking Strategy**: The `TextProcessorService` takes the raw text and applies a MIME-type aware chunking strategy. It uses a recursive character-based splitter to ensure that text is divided into semantically coherent chunks of a configurable size with overlap, which is critical for effective retrieval.
-  3.  **Embedding Generation**: The `EmbeddingService` manages the interaction with the `OpenAIService`. It batches the text chunks and sends them to the OpenAI API to generate vector embeddings, handling API-specific request/response models.
-  4.  **Vector Upsert**: Finally, the `PineconeService` takes the generated vectors and upserts them into the selected Pinecone index and namespace. This service includes logic for handling Pinecone's specific data structures and API requirements.
+## What I Would Improve Next
 
-  The entire workflow is wrapped in a single `async` function within the `DocumentsViewModel`, with progress updates published to the UI via `@Published` properties. This provides a responsive user experience while handling a long-running, multi-stage background task.
-
-### Feature 2: Retrieval Augmented Generation (RAG) and Source-Referenced Answers
-
-- **The Challenge**: Simply finding similar documents is not enough. The goal of the search feature is to provide a concise, synthesized answer to a user's natural language question, with clear references to the source documents. This requires implementing a full RAG pipeline: the user's query must be converted into a vector, used to find relevant context from Pinecone, and that context must then be intelligently passed to a completion model to generate a final answer.
-
-- **The Solution**: The `SearchViewModel` implements the RAG logic.
-  1.  **Query Transcription & Embedding**: When the user submits a query (either typed or transcribed via `SpeechRecognitionService`), the `SearchViewModel` sends the query text to the `OpenAIService` to generate its vector embedding.
-  2.  **Context Retrieval**: This query vector is then passed to the `PineconeService`, which performs a similarity search against the active index. It retrieves the `topK` most relevant text chunks from the user's documents.
-  3.  **Prompt Engineering**: The retrieved chunks are assembled into a carefully crafted prompt. The `SearchViewModel` constructs a system message and a user message that includes the original question along with the retrieved context, instructing the AI model to answer the question based _only_ on the provided text.
-  4.  **Answer Synthesis**: This prompt is sent to the `OpenAIService`'s chat completion endpoint (e.g., `gpt-4o`). The model synthesizes a coherent answer from the context. The response also includes references to the original source chunks, which are displayed to the user, providing transparency and allowing for verification.
-
-This implementation transforms a simple vector search into a powerful question-answering system, directly addressing the core user need.
-
-### Feature 3: Real-time, Reactive Logging System
-
-- **The Challenge**: In a complex application performing multiple background tasks, providing users with clear, real-time feedback is essential for transparency and debugging. A simple `print` statement is insufficient. The challenge was to create a centralized logging system that could be accessed from anywhere in the app and reflect its updates live in the UI without tight coupling between the logging mechanism and the view.
-
-- **The Solution**: This was solved with a combination of a singleton pattern and the Combine framework.
-  1.  **`Logger.swift` Singleton**: A shared `Logger` instance is created and accessible throughout the app via `Logger.shared`. This service manages an in-memory array of `ProcessingLogEntry` objects. Crucially, this array is marked with the `@Published` property wrapper.
-  2.  **`ProcessingViewModel` Subscription**: The `ProcessingViewModel`, which backs the `ProcessingView`, establishes a subscription to the logger's `@Published var logEntries` property using a Combine sink.
-  3.  **Reactive UI Updates**: Whenever any component in the app—from a `ViewModel` to a `Service`—calls `Logger.shared.log(...)`, the logger's `logEntries` array is updated. The `@Published` wrapper automatically notifies all subscribers of this change. The `ProcessingViewModel`'s sink receives the new array, updates its own state, and because the `ProcessingView` is observing the `ProcessingViewModel`, SwiftUI automatically and efficiently re-renders the list of logs. This creates a fully reactive, end-to-end logging pipeline that is both decoupled and highly efficient.
-
-## 4. Conclusion: A Foundation for On-Device AI
-
-OpenCone stands as a strong example of modern iOS development, successfully integrating complex AI workflows into a user-friendly, on-device application. Its adherence to a clean MVVM-S architecture, combined with the use of a robust state machine, SwiftUI, and modern concurrency, provides a scalable and maintainable codebase.
-
-The project's key technical achievements are the implementation of a full, asynchronous document processing pipeline and a sophisticated RAG system for question-answering. By abstracting complex logic into a dedicated service layer, the application remains modular and testable. The thoughtful handling of file persistence and state management ensures a smooth and reliable user experience. OpenCone is more than just a feature-rich application; it is a solid foundation for building powerful, private, and intelligent tools on the iOS platform.
+1. **Local Transformers**: Integrate a tiny local embedding model (like ONNX runtime or CoreML-optimized models) to allow fully offline embeddings and query encoding.
+2. **Bulk Processing Queue**: Implement a concurrent background processing worker queue to parse multiple documents in parallel safely.
+3. **Structured Vector Databases**: Add support for local vector stores (e.g. GRDB or SQLite vector extensions) to allow offline searches.

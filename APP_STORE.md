@@ -2,299 +2,110 @@
 
 **Last updated:** 2026-05-29
 
-This document consolidates all App Store submission materials: copy, reviewer notes, and screenshot guidance.
+This document details the copy assets, keywords, reviewer credentials, screenshot guidelines, and submission steps required for deploying OpenCone to the Apple App Store.
 
 ---
 
-## Table of Contents
+## 1. App Store Copy Metadata
 
-- [App Store Submission Guide](#app-store-submission-guide)
-  - [Table of Contents](#table-of-contents)
-  - [Promotional Text](#promotional-text)
-  - [Description](#description)
-  - [What's New](#whats-new)
-  - [Keywords](#keywords)
-  - [URLs](#urls)
-  - [App Review Notes](#app-review-notes)
-    - [Test Credentials](#test-credentials)
-    - [Testing Walkthrough](#testing-walkthrough)
-    - [Privacy \& Data Flow](#privacy--data-flow)
-    - [Troubleshooting](#troubleshooting)
-  - [Screenshot Capture Guide](#screenshot-capture-guide)
-    - [Prerequisites](#prerequisites)
-    - [Capture Flow](#capture-flow)
-    - [Required Screenshots](#required-screenshots)
-    - [Post-Capture](#post-capture)
-  - [Submission Checklist](#submission-checklist)
-    - [Pre-Archive](#pre-archive)
-    - [Fastlane (Recommended)](#fastlane-recommended)
-    - [App Store Connect (Manual Alternative)](#app-store-connect-manual-alternative)
-    - [Post-Submit](#post-submit)
-  - [Formatting Notes](#formatting-notes)
+### Promotional Text
+*170 characters max*
+> Turn every file on your device into a private, semantic search workspace with local text extraction, Pinecone vector indexing, and streaming OpenAI answers.
 
----
+### Description
+*4,000 characters max*
+> OpenCone is a native, privacy-first client that puts a complete Retrieval-Augmented Generation (RAG) pipeline directly on your iPhone, iPad, or Mac via Catalyst. Simply input your OpenAI and Pinecone API credentials to build a secure, searchable local knowledge base.
+> 
+> COMPLETE DOCUMENT PIPELINE
+> - Multi-Format Processing: Import PDFs, Word documents (DOCX), plain text, Markdown, HTML, JSON, CSV, and code files into a secure local sandbox.
+> - On-Device OCR: Uses Apple's Vision framework to run text recognition locally on images (PNG, JPEG, TIFF).
+> - MIME-Aware Chunking: Automatically segments text into semantically cohesive chunks using recursive splitters with custom sizes and overlaps.
+> - Sandbox Bookmarks: Stores security-scoped bookmarks to retain file read access across app launches without annoying prompts.
+> - Fingerprint Deduplication: Pre-calculates SHA256 hashes to prevent duplicate file uploads and conserve index space.
+> 
+> SEMANTIC SEARCH WITH CITATIONS
+> - Vector Lookup: Converts your queries into embeddings and runs similarity queries against Pinecone index namespaces.
+> - Hybrid Retrieval: Balance dense semantic matches and sparse keyword lists using a simple alpha slider.
+> - Advanced Reranking: Refines retrieval precision using Cohere, BGE, or Pinecone inference models.
+> - Citation Sources: Reviews the exact chunks matched, showing file names, status ranges, and metadata properties.
+> - Real-Time Streaming: Tokens stream into your chat window via Server-Sent Events (SSE) for instant, fluid answers.
+> 
+> NEXT-GEN REASONING SUPPORT
+> - GPT-5 & Reasoning Models: Full support for GPT-5.2 and OpenAI reasoning endpoints.
+> - Dynamic UI Controls: Automatically toggles between reasoning effort (Low, Medium, High) for reasoning models and temperature/top-p sliders for standard completions.
+> 
+> SECURITY & PRIVACY
+> - Credentials Enclave: API keys reside in the secure Keychain and are never written to unencrypted folders.
+> - Safe Telemetry: Logs reside in a local memory buffer and can be cleared instantly. No third-party trackers are integrated.
+> - Application Purge: A dedicated reset action wipes Keychain keys, bookmarks, and local sandbox caches.
+> 
+> POLISHED SWIFTUI EXPERIENCE
+> - Speech Recognition: Integrated voice query input using Apple's Speech Recognition framework with responsive waveform animations.
+> - Structured Logging: Track pipelines in real time via the local Logs interface.
+> - Alternate Themes: Supports clean Light and Dark modes with responsive styling.
+> - Fast UI Architectures: Reactive MVVM-S patterns keep scrolling fluid during background operations.
 
-## Promotional Text
-
-_170 characters max_
-
-Turn every file on your iPhone into a searchable, on-device RAG workspace with Pinecone-powered recall and streaming OpenAI answers.
-
----
-
-## Description
-
-_4,000 characters max_
-
-Transform your iPhone and iPad into a self-contained RAG powerhouse. Import PDFs, Word docs, code, images, and text into a secure sandbox—extraction, embedding, and semantic search happen with zero lock-in. Point the app at your OpenAI and Pinecone credentials for a private knowledge base that streams grounded, citation-backed answers in real time.
-
-COMPLETE DOCUMENT PIPELINE
-• Multi-format extraction: PDF, DOCX, TXT, HTML, Markdown, JSON, CSV, and code
-• Apple Vision OCR for on-device image text recognition
-• MIME-aware chunking with configurable size and overlap
-• Security-scoped bookmarks preserve file access across launches
-• Deduplication by path, size, and timestamp fingerprinting
-• Live progress tracking with structured logs for every phase
-
-SEMANTIC SEARCH WITH STREAMING
-• One-tap queries embed prompts and run similarity search against Pinecone
-• Server-Sent Events deliver incremental answer deltas—no blocking spinners
-• Citations reference exact chunks with document names and source metadata
-• Metadata filters scope searches to specific documents or custom tags
-• Conversation memory keeps recent turns in context for coherent follow-ups
-
-GPT-5 REASONING MODEL SUPPORT
-• Choose between standard models (GPT-4o, GPT-4o mini) or GPT-5
-• Dynamic controls: reasoning effort for GPT-5, temperature/top-p for others
-• Unified Responses API with conditional parameterization
-
-RESILIENCE & OBSERVABILITY
-• Pinecone health checks surface outages with dismissible banners
-• Circuit breaker prevents hammering unhealthy hosts
-• Watchdog timers catch stalled streams and trigger fallbacks
-• Per-search trace IDs and granular log levels make every stage inspectable
-• Error banners auto-dismiss after 8 seconds with user-friendly summaries
-
-SETTINGS & PRIVACY
-• Credentials in Keychain via SecureSettingsStore
-• Release guardrails prevent accidental key leaks
-• Model selection, chunk parameters, top-k defaults, metadata presets persist
-• Reset control wipes credentials and history without reinstalling
-• Guided onboarding validates API keys before unlocking main interface
-
-POLISHED SWIFTUI EXPERIENCE
-• Hands-free voice input via integrated speech recognition
-• Theme manager with alternate icons and dynamic color schemes
-• Reactive MVVM-S architecture decouples views from business logic
-• Async/await throughout keeps UI responsive during heavy operations
-• Design system components ensure consistency across all tabs
-
-Whether building surgical references, legal research corpora, or personal knowledge vaults, OpenCone delivers production-grade RAG without vendor dashboards or billing surprises.
+### Keywords
+*100 characters max total, comma-separated, no spaces*
+`RAG,AI,OpenAI,GPT-5,Pinecone,semantic,search,OCR,vector,database,on-device,speech,iOS,iPadOS,Catalyst`
 
 ---
 
-## What's New
-
-_4,000 characters max — Version 2.2_
-
-Version 2.2 is a ground-up redesign with a completely rebuilt UI, advanced AI capabilities, and enterprise-grade search features.
-
-COMPLETE UI OVERHAUL
-• Redesigned Documents tab with modern card-based layout
-• New floating bulk action bar for multi-document operations
-• Quick Settings popover with model picker, sliders, and presets
-• Smart example prompts that adapt to your selected index and enabled tools
-• Refined search experience with inline source cards and streaming indicators
-• Theme system with light/dark modes and consistent design language
-
-GPT-5.2 & REASONING MODELS
-• Full GPT-5.2 support with 400K context window
-• Reasoning effort control: Off, Low, Med, High, Max
-• Dynamic UI switches between temperature (standard) and reasoning (GPT-5/o-series)
-• 128K output token support for detailed responses
-
-AI TOOLS INTEGRATION
-• Code Interpreter for charts, calculations, and data visualization
-• Smart activation heuristics detect when visualization is needed
-• Web Search tool for current information beyond your documents
-• Collapsible output cards display charts, logs, and results inline
-
-ADVANCED SEARCH
-• Hybrid search combines semantic + keyword matching with alpha weighting
-• Reranking with BGE, Cohere, or Pinecone models for precision
-• Metadata filters with operators ($eq, $in, $gte, $lte, $contains)
-• Custom system prompts per index/namespace
-• Conversation memory (server-managed or local history)
-
-INFRASTRUCTURE
-• Idempotent index selection reduces redundant API calls
-• Circuit breaker and retry logic for Pinecone resilience
-• Voice input with proper permission handling
-• Structured logging throughout for debugging
-
-This release represents months of refinement. Enjoy!
-
----
-
-## Keywords
-
-_100 characters max, comma-separated_
-
-```
-RAG,AI assistant,OpenAI,GPT-5,document search,semantic search,knowledge base,OCR,data visualization
-```
-
----
-
-## URLs
-
-| Field          | URL                                                        |
-| -------------- | ---------------------------------------------------------- |
-| Support URL    | https://github.com/Gunnarguy/OpenCone                      |
-| Marketing URL  | https://github.com/Gunnarguy/OpenCone                      |
-| Privacy Policy | https://github.com/Gunnarguy/OpenCone/blob/main/PRIVACY.md |
-
----
-
-## App Review Notes
-
-_Paste this into the "Notes for Review" field in App Store Connect_
+## 2. App Review Team Notes
 
 Dear App Review Team,
 
-Thank you for reviewing OpenCone, a document-centric retrieval-augmented generation (RAG) client. The app helps users ingest their own documents, store derived embeddings in Pinecone, and ask questions answered with OpenAI responses.
+OpenCone is a document-centric retrieval-augmented generation (RAG) utility. It runs local file extraction and OCR, uploads text embeddings to the user's Pinecone database, and queries those records to stream grounded answers.
 
 ### Test Credentials
+We have provisioned sandbox environment keys for the review process:
+- **OpenAI API Key**: *[Provided in App Store Connect review credentials panel]*
+- **Pinecone API Key**: *[Provided in App Store Connect review credentials panel]*
+- **Pinecone Project ID**: *[Provided in App Store Connect review credentials panel]*
 
-We provide reviewer-specific API keys with access to sample Pinecone namespaces and a locked-down OpenAI project:
+Please paste these keys into the onboarding screen upon launching the app.
 
-- **OpenAI API Key**: _Provided in App Store Connect reviewer notes_
-- **Pinecone API Key**: _Provided in App Store Connect reviewer notes_
-- **Pinecone Project ID**: _Provided in App Store Connect reviewer notes_
-
-After launching the app you will be prompted to enter these values. No other configuration is required.
-
-### Testing Walkthrough
-
-1. Import the sample PDF attached to these review notes via the **+** button in Documents tab
-2. Wait for ingestion to complete (status updates appear in the Logs tab)
-3. Switch to Search tab and run these queries:
-   - "What are the key onboarding steps for new Pinecone indexes?"
-   - "Summarize the architecture for OpenCone ingestion."
-4. Verify streaming responses arrive and cite document snippets
-5. Remove a document and confirm it disappears from Documents and search results
-
-### Privacy & Data Flow
-
-- Imported files are copied into the app sandbox for processing
-- Text chunks are sent to OpenAI (embeddings) and Pinecone (vectors) using the reviewer keys
-- No third-party analytics or advertising SDKs are present
-- Removing a document issues a delete request to Pinecone
-
-### Troubleshooting
-
-- If ingestion stalls, tap "Refresh Index Insights" in Documents tab
-- Use Settings to reset the app and re-enter keys if needed
-- Settings → Data & Privacy has "Reset Stored Keys & Preferences" for a clean slate
-- Network access is required for embedding generation and answer streaming
-
-Thank you for your time. Contact support@opencone.app for assistance during review.
+### Verification Walkthrough
+1. Select the **Documents** tab and tap the **+** button.
+2. Ingest the sample PDF attached to this submission.
+3. Wait for the progress indicator to complete (processing states can be monitored in the **Logs** tab).
+4. Select the **Search** tab.
+5. Enter a test query such as: *"Summarize the ingested file content"*
+6. Verify that the answer streams in and lists the document source card in the citation panel.
+7. Switch to the **Settings** tab and tap **Reset Stored Keys & Preferences** to verify data is deleted.
 
 ---
 
-## Screenshot Capture Guide
+## 3. Screenshot Capture Guide
 
-### Prerequisites
+### Simulator Setup
+- target device: **iPhone 17 Pro Max** (for 6.7" App Store requirements).
+- Ensure credentials are authenticated in debug mode.
 
-- Xcode 16+ with target simulator (iPhone 17 Pro Max for 6.7" class)
-- Test API keys configured
-- Clean build passing `./scripts/preflight_check.sh`
-
-### Capture Flow
-
+### Execution
+Run the automated capture script:
 ```bash
-# Start simulator
-open -a Simulator
-
-# Run capture helper
-./scripts/capture_screenshots.sh /path/to/output
+./scripts/capture_screenshots.sh Screenshots/
 ```
-
-For each prompt, stage the UI in simulator, then press **Return** to capture.
-
-### Required Screenshots
-
-| File             | Scene                                     | Notes                                                |
-| ---------------- | ----------------------------------------- | ---------------------------------------------------- |
-| `welcome.png`    | Welcome/onboarding with credential fields | Show OpenAI & Pinecone inputs with placeholders      |
-| `documents.png`  | Documents tab with processed document     | At least one completed document tile                 |
-| `processing.png` | Logs tab during ingestion                 | Live log entries and progress badge                  |
-| `search.png`     | Search tab streaming an answer            | Sourced snippets visible, streaming indicator active |
-
-### Post-Capture
-
-1. Confirm resolution: 1290 x 2796 (6.7" device)
-2. Export additional sizes if needed via Preview or `sips`
-3. Upload to App Store Connect → iOS App → App Preview & Screenshots
-4. Maintain order: welcome → documents → processing → search
+The script prompts you to stage the simulator screens, capturing the screenshots sequentially:
+1. `welcome.png` — Onboarding screen showing credential validation.
+2. `documents.png` — Documents Redesign tab showcasing metrics and file tiles.
+3. `processing.png` — Real-time processing logs demonstrating extraction stats.
+4. `search.png` — Active streaming search view illustrating answer text and citations.
 
 ---
 
-## Submission Checklist
+## 4. Submission Checklist
 
-### Pre-Archive
+### Build & Archiving
+- [ ] Run `./scripts/preflight_check.sh` and ensure all unit tests pass.
+- [ ] Confirm no environment scheme secrets are checked in.
+- [ ] Run `scripts/generate_app_icons.sh` to compile necessary app icon sizes.
+- [ ] Build and archive the target inside Xcode.
 
-- [ ] Run `./scripts/preflight_check.sh` — must pass
-- [ ] Clear environment variables (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_PROJECT_ID`) from Run scheme
-- [ ] Verify app icon (1024px) via `./scripts/generate_app_icons.sh`
-- [ ] Capture 4 screenshots at required resolutions
-
-### Fastlane (Recommended)
-
-```bash
-# Upload metadata only (no binary)
-cd /path/to/OpenCone && fastlane metadata
-
-# Build and upload to TestFlight
-fastlane beta
-
-# Full release with metadata
-fastlane release
-```
-
-See [fastlane/README.md](fastlane/README.md) for setup and configuration.
-
-### App Store Connect (Manual Alternative)
-
-- [ ] Upload archive via Xcode Organizer
-- [ ] Fill promotional text (copy from above)
-- [ ] Fill description (copy from above)
-- [ ] Fill What's New (copy from above)
-- [ ] Add keywords (copy from above)
-- [ ] Upload screenshots in order
-- [ ] Set Support/Marketing/Privacy URLs
-- [ ] Paste App Review Notes with test credentials
-- [ ] Attach sample PDF for reviewer testing
-
-### Post-Submit
-
-- [ ] Invite 3 internal TestFlight testers
-- [ ] Monitor crash-free rate in TestFlight analytics
-- [ ] Respond to any App Review questions within 24h
-
----
-
-## Formatting Notes
-
-When copying to App Store Connect:
-
-1. **Line breaks** — App Store Connect preserves them. Use single breaks between bullets, double between sections.
-2. **Bullet points** — Use • (Option+8 on Mac). They render correctly.
-3. **Section headers** — ALL CAPS stand out without markdown.
-4. **Character limits**:
-   - Promotional text: 170 chars
-   - Description: 4,000 chars
-   - What's New: 4,000 chars
-   - Keywords: 100 chars total
-5. **Copy/paste** — Copy sections WITHOUT markdown headers, paste directly into fields.
-6. **Keywords** — Enter as comma-separated without spaces after commas for maximum count.
+### Metadata Delivery
+- [ ] Upload screenshots to App Store Connect.
+- [ ] Populate Promotional Text, Description, and Keywords.
+- [ ] Paste Support URL: `https://github.com/Gunnarguy/OpenCone`
+- [ ] Copy Privacy Policy URL: `https://github.com/Gunnarguy/OpenCone/blob/main/PRIVACY.md`
+- [ ] Attach reviewer credentials and the sample testing PDF document.
