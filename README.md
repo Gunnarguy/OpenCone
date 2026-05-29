@@ -8,6 +8,7 @@ On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, asyn
 
 ## Table of Contents
 - [Overview](#overview)
+- [End-to-End User Journey (App Open to Grounded Response)](#end-to-end-user-journey-app-open-to-grounded-response)
 - [Feature Highlights](#feature-highlights)
 - [System Architecture](#system-architecture)
 - [Document Ingestion Pipeline](#document-ingestion-pipeline)
@@ -28,6 +29,47 @@ On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, asyn
 ## Overview
 
 OpenCone turns personal documents into a device-native knowledge base. Users ingest PDFs, Office files, plain text, code snippets, or images, and the app extracts text (with OCR support), chunks content, generates OpenAI embeddings, and stores vectors in Pinecone. Searches embed the user's query, retrieve matching chunks from Pinecone, and stream grounded answers back through OpenAI's Responses API. The entire experience is delivered through a custom SwiftUI tab interface that runs on iPhone, iPad, and macOS via Catalyst.
+
+---
+
+## End-to-End User Journey (App Open to Grounded Response)
+
+Below is the complete sequence of actions executed from the moment the user launches OpenCone to the delivery of an AI-generated, source-cited response.
+
+```mermaid
+flowchart TD
+    subgraph Launch["1. App Initialization"]
+        Start([App Launched]) --> KeysCheck{Credentials in Keychain?}
+        KeysCheck -->|No| Welcome[Onboarding: WelcomeView]
+        KeysCheck -->|Yes| Main[Main Workspace: MainView]
+        Welcome -->|User inputs keys| Validate[Validate with APIs]
+        Validate -->|Success| SaveKeys[Store in Secure Enclave Keychain] --> Main
+    end
+
+    subgraph Ingestion["2. Local Ingestion & Vector Sync"]
+        Main -->|User imports file| DocPicker[Document Picker]
+        DocPicker --> Sandbox[Copy to Sandbox & Create Bookmark]
+        Sandbox --> Extract[Vision OCR & Text Extraction]
+        Extract --> Chunk[MIME-Aware Text Chunking]
+        Chunk --> EmbedDocs[Generate OpenAI Embeddings /v1/embeddings]
+        EmbedDocs --> PineconeUpsert[Upsert Chunks to Pinecone Namespace]
+        PineconeUpsert --> StatsRefresh[Refresh Index & Namespace Stats]
+    end
+
+    subgraph Query["3. Search & Grounded Generation"]
+        StatsRefresh --> SearchPrompt[User Search Input]
+        SearchPrompt -->|Voice| Speech[SpeechRecognitionService Transcription] --> QueryEmbed
+        SearchPrompt -->|Text| QueryEmbed[Embed Query Vector via OpenAI]
+        QueryEmbed --> VectorSearch[Query Pinecone Namespace]
+        VectorSearch --> Rerank[Pinecone Inference Reranking]
+        Rerank --> Context[Assemble Top Chunks as Context]
+        Context --> Completions[Stream OpenAI Responses API completed tokens]
+        Completions --> UIUpdate[UI: Grounded Answer with Citations & Sources]
+    end
+
+    style Start fill:#4CAF50,color:#fff
+    style UIUpdate fill:#2196F3,color:#fff
+```
 
 ---
 
@@ -109,6 +151,51 @@ flowchart LR
 
 `DocumentsViewModel` runs a multi-stage workflow and reports granular progress for each document:
 
+```mermaid
+flowchart TD
+    subgraph Input["Document Input"]
+        DP[📁 Document Picker] --> SSA[Security-Scoped Access]
+        SSA --> |startAccessingSecurityScopedResource| PDC[persistDocumentCopy]
+    end
+
+    subgraph Extract["Text Extraction"]
+        PDC --> FPS[FileProcessorService]
+        FPS --> |PDF| PDFK[PDFKit]
+        FPS --> |Images| VIS[Vision OCR]
+        FPS --> |Text/Code| RAW[Raw Text]
+        PDFK & VIS & RAW --> TPS[TextProcessorService]
+    end
+
+    subgraph Process["Chunking & Hashing"]
+        TPS --> RTS[RecursiveTextSplitter]
+        RTS --> |MIME-aware separators| CHUNKS[Text Chunks]
+        CHUNKS --> HASH[SHA256 Hash]
+        HASH --> |Deduplication check| DUP{Duplicate?}
+        DUP -->|Yes| SKIP[Skip Document]
+        DUP -->|No| EMB[EmbeddingService]
+    end
+
+    subgraph Embed["Embedding Generation"]
+        EMB --> |50 chunks/batch| BATCH[Batch Processor]
+        BATCH --> OAI[OpenAI /v1/embeddings]
+        OAI --> |3072-dim vectors| VECS[Embedding Vectors]
+    end
+
+    subgraph Store["Vector Storage"]
+        VECS --> PS[PineconeService]
+        PS --> |withRetries| RETRY{Success?}
+        RETRY -->|No, < 3 attempts| PS
+        RETRY -->|No, >= 3 attempts| CB[Circuit Breaker Opens]
+        RETRY -->|Yes| UPS[Upsert Vectors]
+        UPS --> STATS[Refresh IndexStats]
+        STATS --> UI[📊 Update Dashboard]
+    end
+
+    style DP fill:#4CAF50,color:#fff
+    style UI fill:#2196F3,color:#fff
+    style CB fill:#f44336,color:#fff
+```
+
 1. **Pick** - Users select files via `DocumentPicker`. URLs are secured with `startAccessingSecurityScopedResource()`.
 2. **Persist** - Files copy into the sandbox (`persistDocumentCopy`) and receive a minimal bookmark for future access.
 3. **Deduplicate & validate** - `makeDocumentIdentifier` combines path, size, and timestamps; duplicates or 100 MB+ files are rejected early.
@@ -125,6 +212,54 @@ Phase weights (`phaseWeightExtraction`, `phaseWeightChunking`, `phaseWeightEmbed
 ## Search, Conversation, and RAG
 
 `SearchViewModel` delivers the full RAG experience:
+
+```mermaid
+flowchart TD
+    subgraph Query["User Query"]
+        UQ[🔍 Search Input] --> |Text| QT[Query Text]
+        UQ --> |Voice| SRS[SpeechRecognitionService]
+        SRS --> |Transcription| QT
+        QT --> SVM[SearchViewModel]
+    end
+
+    subgraph Embed["Query Embedding"]
+        QT --> ES[EmbeddingService]
+        ES --> OAI[OpenAI /v1/embeddings]
+        OAI --> QV[Query Vector 3072-dim]
+    end
+
+    subgraph Search["Vector Search"]
+        QV --> PS[PineconeService]
+        MF[Metadata Filters] --> PS
+        PS --> |Hybrid Search?| HS{Mode}
+        HS -->|Dense Only| DQ[Dense Query]
+        HS -->|Hybrid| HQ[Dense + Sparse Query]
+        DQ & HQ --> |top-k results| RR[Raw Results]
+    end
+
+    subgraph Rerank["Optional Reranking"]
+        RR --> RK{Rerank Enabled?}
+        RK -->|Yes| RKS[Pinecone Rerank API]
+        RKS --> |bge/cohere/pinecone| RANKED[Reranked Results]
+        RK -->|No| RANKED
+    end
+
+    subgraph Generate["Answer Generation"]
+        RANKED --> CTX[Context Assembly]
+        CTX --> |System prompt + chunks| OAS[OpenAIService]
+        OAS --> |SSE Stream| STREAM[Token-by-Token]
+        STREAM --> |response.output_text.delta| ANS[Generated Answer]
+    end
+
+    subgraph Display["UI Update"]
+        RANKED --> SRC[📎 Sources Panel]
+        ANS --> CHAT[💬 Chat Timeline]
+        SRC & CHAT --> UI[Search Results View]
+    end
+
+    style UQ fill:#4CAF50,color:#fff
+    style UI fill:#2196F3,color:#fff
+```
 
 - **Index bootstrap** - On launch, both Documents and Search view models call `PineconeService.listIndexes()`. `PineconePreferenceResolver` selects the best candidate based on history and user defaults.
 - **Query embedding** - User prompts embed via `EmbeddingService`, matching the document embedding model to keep cosine similarity meaningful.
