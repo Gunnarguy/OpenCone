@@ -1,6 +1,6 @@
 # App Store Submission Guide
 
-**Last updated:** 2026-01-16
+**Last updated:** 2026-05-29
 
 This document consolidates all App Store submission materials: copy, reviewer notes, and screenshot guidance.
 
@@ -83,6 +83,7 @@ SETTINGS & PRIVACY
 • Guided onboarding validates API keys before unlocking main interface
 
 POLISHED SWIFTUI EXPERIENCE
+• Hands-free voice input via integrated speech recognition
 • Theme manager with alternate icons and dynamic color schemes
 • Reactive MVVM-S architecture decouples views from business logic
 • Async/await throughout keeps UI responsive during heavy operations

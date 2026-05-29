@@ -1,6 +1,6 @@
 # Security & Secret Handling Guide
 
-**Last updated:** 2025-11-12
+**Last updated:** 2026-05-29
 
 OpenCone keeps sensitive credentials out of source control and Production builds by combining Keychain storage, runtime validation, and repository automation. Use this document when preparing builds for TestFlight or App Store submission.
 

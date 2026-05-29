@@ -34,6 +34,7 @@ flowchart TB
         DVM --> FPS[FileProcessorService]
         DVM --> TPS[TextProcessorService]
         ES --> OAS
+        T1 --> SRS[SpeechRecognitionService]
     end
 
     subgraph External["External APIs"]
@@ -105,8 +106,10 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph Query["User Query"]
-        UQ[🔍 Search Input] --> SVM[SearchViewModel]
-        SVM --> |Voice or Text| QT[Query Text]
+        UQ[🔍 Search Input] --> |Text| QT[Query Text]
+        UQ --> |Voice| SRS[SpeechRecognitionService]
+        SRS --> |Transcription| QT
+        QT --> SVM[SearchViewModel]
     end
 
     subgraph Embed["Query Embedding"]
@@ -192,6 +195,7 @@ flowchart LR
         OAS[OpenAIService]
         FPS[FileProcessorService]
         TPS[TextProcessorService]
+        SRS[SpeechRecognitionService]
     end
 
     subgraph Core
@@ -226,6 +230,7 @@ flowchart LR
 | Completions     | OpenAI Responses API (gpt-4o, o3-mini, etc.) |
 | Secrets         | iOS Keychain via SecureSettingsStore         |
 | Theming         | Custom design system (OCTheme, ThemeManager) |
+| Speech/Audio    | SFSpeechRecognizer & AVAudioEngine (Voice input) |
 
 ## Key Components
 
@@ -255,13 +260,14 @@ flowchart LR
 | `EmbeddingService`     | Batch processing (50 chunks); dimension validation; progress callbacks                                                                                                        |
 | `FileProcessorService` | MIME detection; PDFKit page iteration; Vision `VNRecognizeTextRequest` for OCR                                                                                                |
 | `TextProcessorService` | RecursiveTextSplitter with MIME-specific separators; content hashing; token metrics                                                                                           |
+| `SpeechRecognitionService` | `SFSpeechRecognizer` integration; asynchronous authorization request; `AVAudioEngine` input tap with real-time level calculation (0.0-1.0 normalization) for UI waveform animation |
 
 ### Core Layer (`/Core`)
 
 | Module                       | Purpose                                                                                                                |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `Logger`                     | Singleton (`Logger.shared`) with `@Published logEntries` for UI binding. Levels: debug, info, success, warning, error. |
-| `SecureSettingsStore`        | Keychain wrapper for secrets (OpenAI key, Pinecone key, Project ID). Non-secrets in UserDefaults.                      |
+| `SecureSettingsStore`        | Keychain wrapper for secrets (OpenAI API key, Pinecone API key, Project ID) and custom Pinecone API plane versions. Non-secrets reside in UserDefaults. |
 | `Configuration`              | Static constants (embedding model, dimension, chunk size). Environment variable seeding for dev.                       |
 | `PineconePreferenceResolver` | Persists last-used index/namespace selections.                                                                         |
 | `DesignSystem`               | `OCButton`, `OCCard`, `OCBadge`, `OCTheme`, `ThemeManager`. Use `@Environment(\.theme)` in views.                      |
@@ -296,8 +302,9 @@ flowchart LR
 | `top_p`             | 0.0-1.0, stored in UserDefaults                       | `OpenAIService.currentTopP()`            |
 | `reasoning.effort`  | `none`/`low`/`medium`/`high`/`max` for gpt-5/o-series | `OpenAIService.currentReasoningEffort()` |
 | `tools`             | `web_search`, `code_interpreter`                      | `OpenAIService.streamCompletion()`       |
+| `include`           | Web search sources (`web_search_call.action.sources`), code interpreter outputs (`code_interpreter_call.outputs`) | `OpenAIService.streamCompletion()` |
 | `conversation`      | Server-managed conversation ID                        | `conversationId` passthrough             |
-| `store`             | Always `false` (privacy-first)                        | Hardcoded                                |
+| `store`             | Always `false` (privacy-first)                        | Hardcoded |
 
 #### SSE Events Handled
 
@@ -314,7 +321,7 @@ flowchart LR
 #### Not Yet Implemented
 
 - `text.format` (Structured Outputs with JSON schema)
-- `include` array (web search sources, code interpreter outputs, logprobs)
+- `include` array parameters like `message.output_text.logprobs` (confidence scoring)
 - `background` (async processing)
 - `prompt_cache_key` / `prompt_cache_retention`
 - `truncation` strategy

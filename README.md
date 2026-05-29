@@ -57,6 +57,7 @@ OpenCone follows MVVM with a focused service layer:
   - `EmbeddingService` for batching requests to `OpenAIService` and normalising vectors.
   - `OpenAIService` for embedding + Responses API streaming.
   - `PineconeService` for index discovery, vector upsert/query/delete, retries, and circuit breaking.
+  - `SpeechRecognitionService` for transcribing user voice query input using Apple's Speech Recognition framework.
 - **Shared infrastructure** includes `Logger.shared` for structured logging, `SecureSettingsStore` for Keychain-backed secrets, and `PineconePreferenceResolver` for persisting last-used index and namespace.
 
 ```mermaid
@@ -77,11 +78,13 @@ flowchart LR
         ES[EmbeddingService]
         OA[OpenAIService]
         PC[PineconeService]
+        SR[SpeechRecognitionService]
     end
     subgraph External
         Files[Filesystem + OCR]
         OpenAI[OpenAI API]
         Pinecone[Pinecone API]
+        AppleSpeech[Apple Speech API]
     end
 
     W --> SV
@@ -95,6 +98,7 @@ flowchart LR
     QV --> ES
     QV --> PC
     QV --> OA
+    QV --> SR --> AppleSpeech
     SV --> PC
     LV --> Logger
 ```
@@ -139,7 +143,7 @@ Phase weights (`phaseWeightExtraction`, `phaseWeightChunking`, `phaseWeightEmbed
 - **Features/Search/** - RAG UI, metadata filter editor, search result cards, and conversation transcript handling.
 - **Features/ProcessingLog/** - Log viewer with filtering tied to `Logger.shared`.
 - **Features/Settings/** - Credential management, model selection, search defaults, metadata preset editor, logging preferences, and validation flows.
-- **Services/** - Pinecone/OpenAI clients, embedding orchestrator, file processing, text chunking. All network calls go through `PineconeService` and `OpenAIService` wrappers rather than ad-hoc `URLSession` usage.
+- **Services/** - Pinecone/OpenAI clients, embedding orchestrator, file processing, text chunking, and speech-to-text transcription. All network calls go through `PineconeService` and `OpenAIService` wrappers rather than ad-hoc `URLSession` usage.
 - **Preview Content/** - Sample data/assets for SwiftUI previews.
 - **OpenConeTests/** - Currently focused on metadata preset persistence (`SearchViewModelMetadataPersistenceTests`); extend this target when adjusting settings persistence logic.
 
@@ -167,6 +171,7 @@ OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
 - **Release guard** - Release builds fatal-error if `OPENAI_API_KEY`, `PINECONE_API_KEY`, or `PINECONE_PROJECT_ID` are injected via scheme overrides; clear those environment variables before archiving for TestFlight/App Store.
 - **Icon generation** - Maintain `AppIcon.appiconset` by running `scripts/generate_app_icons.sh` (derives all required sizes from the 1024px marketing source).
 - **Screenshot capture** - Use `scripts/capture_screenshots.sh` for guided simulator captures (prompts you to stage each screen then saves a PNG into the provided directory).
+- **VS Code Setup** - Run `scripts/setup_vscode.sh` to install core iOS development extensions, generate the local build server configuration for SweetPad/LSP, and configure standard tools.
 
 ---
 
@@ -222,16 +227,68 @@ OpenCone ships with a bespoke design system located in `Core/DesignSystem`:
 
 ## Configuration
 
-| Setting                       | Where to change                      | Notes                                                                                                       |
-| ----------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| OpenAI API Key                | Settings tab or environment variable | Stored securely via `SecureSettingsStore`. Validation uses `CredentialValidator` with debounced checks.     |
-| Pinecone API Key / Project ID | Settings tab or environment variable | Keys must start with `pcsk_`; region/cloud defaults pulled from secure store.                               |
-| Embedding model               | Settings > Models                    | Defaults to `text-embedding-3-large` with dimension 3072. Keep in sync with Pinecone index dimensions.      |
-| Completion model              | Settings > Models                    | Includes GPT-5 reasoning flag. `Configuration.isReasoningModel` toggles extra parameters.                   |
-| Chunk size / overlap          | Settings > Processing                | Validate overlap < size; updates used by `TextProcessorService`.                                            |
-| Default Top K                 | Settings > Search                    | Persists to `UserDefaults` key `searchTopK`; `SearchViewModel` reads it during queries.                     |
-| Metadata presets              | Settings > Metadata Filters          | Stored as JSON presets; parsed through `PineconeMetadataFilter`. Invalid entries are skipped with warnings. |
-| Appearance                    | Theme selector (Settings)            | Theme changes propagate through `ThemeManager.shared`.                                                      |
+OpenCone provides a highly customizable experience through its Settings and Quick Settings interfaces. Below is the complete catalog of configuration options, categorized by area:
+
+### 1. API Credentials & Cloud Infrastructure
+| Setting | Storage | Validation | Purpose & Notes |
+|:---|:---|:---|:---|
+| **OpenAI API Key** | Keychain (`SecureSettingsStore`) | Debounced `CredentialValidator` checks | Used for text embeddings and streaming completions. Can be overridden in Dev by the `OPENAI_API_KEY` env variable. |
+| **Pinecone API Key** | Keychain (`SecureSettingsStore`) | Debounced format & connectivity check | Must start with `pcsk_`. Credentials can be overridden in Dev by the `PINECONE_API_KEY` env variable. |
+| **Pinecone Project ID** | Keychain (`SecureSettingsStore`) | Debounced connectivity check | Required to locate your indexes. Can be overridden in Dev by `PINECONE_PROJECT_ID`. |
+| **Pinecone Cloud** | Keychain (`SecureSettingsStore`) | Automatic list refresh | Selected cloud provider (`aws` or `gcp`). Controls the available region list. |
+| **Pinecone Region** | Keychain (`SecureSettingsStore`) | Automatic check against cloud | Preferred region (e.g., `us-east-1` or `us-central1`) for deploying new index resources. |
+
+### 2. Document Processing Configuration
+| Setting | Storage | Default | Purpose & Notes |
+|:---|:---|:---|:---|
+| **Chunk Size** | `UserDefaults` | `1024` characters | Maximum size of each text block parsed by `TextProcessorService`. |
+| **Chunk Overlap** | `UserDefaults` | `256` characters | Semantic redundancy overlap between contiguous chunks. Must be smaller than Chunk Size. |
+| **Embedding Model** | `UserDefaults` | `text-embedding-3-large` | Standard model options include `ada-002`, `3-small`, and `3-large`. |
+| **Embedding Dimension** | `UserDefaults` | `3072` | Vector length. Must match the Pinecone index configuration. |
+| **Batch Size** | `UserDefaults` | `50` chunks | Number of text chunks submitted to OpenAI per embedding API request. |
+
+### 3. Retrieval & Search (RAG) Settings
+| Setting | Storage | Default | Purpose & Notes |
+|:---|:---|:---|:---|
+| **Default Top K** | `UserDefaults` | `10` matches | The number of nearest-neighbor text chunks retrieved from Pinecone. |
+| **Min Similarity Score** | `UserDefaults` | `0.0` (Disabled) | Similarity threshold filter (0.0 to 0.9). Drops matches below this score. |
+| **Max Context Tokens** | `UserDefaults` | `32,000` tokens | Total token budget allocated for context chunks inside the generation prompt. |
+| **Metadata Presets** | `UserDefaults` (JSON) | None | Active filtering presets parsed by `PineconeMetadataFilter` (e.g., `doc_id = Policy.pdf`). |
+| **Hybrid Search** | `UserDefaults` | `False` (Dense Only) | Toggles hybrid retrieval. Requires index to use the `dotproduct` metric. |
+| **Hybrid Alpha** | `UserDefaults` | `0.5` | Weights dense vs sparse retrieval (`1.0` = pure semantic, `0.0` = pure keyword). |
+| **Reranking** | `UserDefaults` | `False` | Toggles two-stage retrieval using Pinecone's inference services. |
+| **Rerank Model** | `UserDefaults` | `bge-reranker-v2-m3` | Reranker choices: `bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`. |
+| **Rerank Top N** | `UserDefaults` | `5` matches | Number of top-ranked results preserved after applying the reranking model. |
+
+### 4. Completion & Generation Parameters
+| Setting | Storage | Default | Purpose & Notes |
+|:---|:---|:---|:---|
+| **Completion Model** | `UserDefaults` | `gpt-4o` | Standard models or reasoning models like `gpt-5`, `o3`, `o1`. |
+| **Use Custom Model** | `UserDefaults` | `False` | Toggles override to target any OpenAI-compatible base model name. |
+| **Custom Model Name** | `UserDefaults` | None | String identifier for custom endpoints (e.g., fine-tuned models). |
+| **Temperature** | `UserDefaults` | `0.3` | Controls randomness (0.0 = precise, 2.0 = creative). Disabled for reasoning models. |
+| **Top-P** | `UserDefaults` | `0.95` | Nucleus sampling parameter. Disabled for reasoning models. |
+| **Reasoning Effort** | `UserDefaults` | `none` | Effort level (`none`, `low`, `medium`, `high`, `xhigh`) for reasoning models. |
+| **Streaming Response** | `UserDefaults` | `True` | Streams response delta packages via SSE. |
+| **Max Output Tokens** | `UserDefaults` | `4000` tokens | Limit on the number of generated tokens returned by the LLM. |
+| **Conversation Mode** | `UserDefaults` | `server` | `server` uses OpenAI conversation IDs; `client` keeps a local bounded history. |
+| **Max Turns** | `UserDefaults` | `10` turns | Limit on history context turns preserved when using `client` conversation mode. |
+| **Web Search Tool** | `UserDefaults` | `False` | Toggles OpenAI Responses API `web_search` tool for online updates. |
+| **Code Interpreter** | `UserDefaults` | `False` | Toggles `code_interpreter` tool for charts, calculations, and data visualization. |
+| **Custom Instructions** | `UserDefaults` | None | System prompt overrides injected during RAG context assembly. |
+
+### 5. Advanced System & Debug Preferences
+| Setting | Storage | Default | Purpose & Notes |
+|:---|:---|:---|:---|
+| **Control Plane Version** | Keychain (`SecureSettingsStore`) | `2024-07` | Custom `X-Pinecone-API-Version` header value for Pinecone index administration. |
+| **Data Plane Version** | Keychain (`SecureSettingsStore`) | `2024-07` | Custom header for vector queries, upserts, and deletes. |
+| **Namespace Version** | Keychain (`SecureSettingsStore`) | `2025-10` | Custom header for fetching namespace listings and stats. |
+| **Metadata Fetch Version** | Keychain (`SecureSettingsStore`) | `2025-10` | Custom header for Pinecone metadata inspection. |
+| **Request Timeout** | `UserDefaults` | `30` seconds | Network timeout threshold for OpenAI and Pinecone API calls. |
+| **Max Retries** | `UserDefaults` | `3` attempts | Number of exponential backoff retry attempts for transient network faults. |
+| **Verbose Logging** | `UserDefaults` | `False` | Emits internal network request structures and delta payloads to the Logs tab. |
+| **Show Debug Info** | `UserDefaults` | `False` | Displays advanced index metrics and metadata structures in the settings UI. |
+| **Appearance Theme** | `UserDefaults` | Modern Light/Dark | Propagated via `ThemeManager.shared` and environment bindings. |
 
 Document processing accepts the MIME types defined in `Configuration.acceptedMimeTypes`. Unsupported files surface a user-facing warning through `Logger` + `errorMessage` binding.
 

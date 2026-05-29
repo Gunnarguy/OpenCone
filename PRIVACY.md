@@ -1,6 +1,6 @@
 # OpenCone Privacy Overview
 
-**Last updated:** 2025-11-12
+**Last updated:** 2026-05-29
 
 OpenCone is a retrieval-augmented generation (RAG) client that lets you search your own documents using OpenAI completions and Pinecone vector search. This document describes the data flows involved so you can answer the App Store privacy questionnaire and inform reviewers and end users.
 
@@ -18,6 +18,7 @@ OpenCone is a retrieval-augmented generation (RAG) client that lets you search y
 | OpenAI Responses API | Conversation history (user prompt + retrieved snippets) | Generate natural-language answers | Transmitted over HTTPS; no data stored by OpenCone after the request completes. |
 | OpenAI Embeddings API | Chunked text generated from your documents | Produce vector embeddings for Pinecone | Only the text chunks being embedded are sent. |
 | Pinecone Vector DB | Embedding vectors and metadata (document identifier, file name, up to 200-char preview) | Similarity search | Encrypted in transit; metadata excludes raw document bodies. |
+| Apple Speech API | Voice audio recording data from search inputs | Transcribe voice queries into text | Transmitted to Apple for speech-to-text conversion. The transcription process runs locally when possible, but may use Apple's servers for higher accuracy. Can be disabled anytime by denying Microphone/Speech Recognition permissions. |
 
 ## Keys & Authentication
 

@@ -62,7 +62,7 @@
 
 ## 2. Technical Debt (The Cracks)
 
-- [x] **Orphaned DocumentsView.swift** — Old 1541-line view replaced by `DocumentsViewRedesign.swift` but file still exists; can be deleted
+- [ ] **Orphaned DocumentsView.swift** — Old 1541-line view replaced by `DocumentsViewRedesign.swift` but file still exists; can be deleted
 - [ ] **Web search tool value unclear** — `web_search` tool enabled but not integrated with Pinecone; consider removing or clarifying use case
 - [ ] **Test coverage gaps** — Only `SearchViewModelMetadataPersistenceTests` exists; missing coverage for:
   - Document ingestion pipeline
@@ -84,7 +84,7 @@
 - [ ] **Batch document import** — Folder picker for bulk ingestion with queue visualization
 - [ ] **Widget / Spotlight integration** — iOS widget for quick search; Spotlight indexing of ingested documents
 - [ ] **Multi-index search** — Query across multiple Pinecone indexes simultaneously
-- [x] **Custom system prompts** — User-configurable RAG system prompt per index/namespace
+
 
 ## 4. API Feature Gaps
 
