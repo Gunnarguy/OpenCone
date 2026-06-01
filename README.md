@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>On-device Retrieval Augmented Generation (RAG) for iOS, built with SwiftUI, async/await, and OpenAI + Pinecone integrations.</strong>
+    <strong>Cloud-hybrid Retrieval Augmented Generation (RAG) client for Apple platforms, built with SwiftUI, local document processing, OpenAI, and Pinecone.</strong>
 </p>
 
 <p align="center">
@@ -20,9 +20,9 @@
 ---
 
 ## Overview
-OpenCone is a local-first, native Swift/iOS application designed to transform personal documents (PDFs, Word docs, plain text, code scripts, and images) into an on-device searchable knowledge base. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors securely inside a serverless Pinecone database. 
+OpenCone is a local-first front end and cloud-hybrid RAG client designed to transform personal documents (PDFs, Word docs, plain text, code scripts, and images) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
 
-During queries, OpenCone executes semantic vector lookup, performs high-efficiency reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as an on-device RAG reference implementation, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
+During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
 ---
 
@@ -44,11 +44,11 @@ During queries, OpenCone executes semantic vector lookup, performs high-efficien
 
 ## Key Capabilities
 
-- **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages and Apple's native `Vision` OCR framework for images.
+- **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages and Apple's native `Vision` OCR framework for images before cloud indexing begins.
 - **On-Device Security-Scoped Access**: Employs sandboxed bookmarks (`startAccessingSecurityScopedResource`) to retain file read permissions across system relaunches without prompts.
 - **Resilient Pinecone & OpenAI Client**: Coordinates exponential backoff retries, request rate limiting (100ms pauses), and an automatic circuit-breaker to gracefully handle vector-store throttling or region failures.
 - **Advanced RAG Capabilities**: Orchestrates hybrid searches (combining dense embeddings and sparse keyword vectors), custom metadata presets, and multi-model rerankers (`bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`).
-- **Real-Time Token Streaming**: Implements Server-Sent Events (SSE) parsing to fetch incremental response deltas directly from OpenAI's chat completions.
+- **Real-Time Token Streaming**: Implements Server-Sent Events (SSE) parsing to fetch incremental response deltas directly from OpenAI's Responses API.
 - **Speech-to-Text Transcription**: Connects `AVAudioEngine` input taps and Apple's Speech Recognition API to transcribe microphone audio with responsive UI waveform animation.
 - **Bespoke Theme System**: Centralizes look-and-feel variables under a theme environment manager, supplying customized Light and Dark color palettes.
 
@@ -255,7 +255,7 @@ flowchart LR
 
 ## Privacy & Security
 - **Local Sandbox**: Documents, bookmark descriptions, extraction steps, and logging occur strictly in the app sandbox.
-- **Network Boundaries**: Only chunk strings are sent to OpenAI (embeddings API) and matching metadata is uploaded to Pinecone (DB API).
+- **Network Boundaries**: Chunked document content and related metadata are sent to OpenAI and Pinecone for embeddings, vector storage, search, and answer generation. OpenCone is not a fully offline RAG system.
 - **Credentials Enclave**: Keys reside in the Enclave Keychain. Release builds throw a `fatalError` if secrets are hardcoded in variables.
 - **Data Disposal**: Users can delete individual docs (clearing vector entries from Pinecone) or execute a full clean slate from **Settings > Data & Privacy > Reset Stored Keys & Preferences**.
 

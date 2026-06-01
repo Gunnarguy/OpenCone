@@ -1,6 +1,6 @@
 # Case Study: OpenCone
 
-On-device Retrieval-Augmented Generation (RAG) sandbox client for Apple iOS, iPadOS, and macOS via Catalyst.
+Cloud-hybrid Retrieval-Augmented Generation (RAG) client for Apple iOS, iPadOS, and macOS via Catalyst.
 
 ---
 
@@ -10,16 +10,16 @@ Modern generative AI applications are heavily dependent on cloud-based middlewar
 1. **User Privacy**: Handling sensitive files (such as legal contracts, research notes, or personal correspondence) on remote servers introduces compliance and privacy concerns.
 2. **Infrastructure Costs**: Maintaining middle-tier databases, vector hosting engines, and processing workers requires continuous operational overhead and budget monitoring.
 
-OpenCone was designed to prove that a **complete, high-performance RAG pipeline can be run entirely on-device** using Swift and native iOS frameworks. By keeping file ingestion, OCR extraction, text tokenization, and query coordination local, OpenCone respects privacy, reduces backend costs, and operates directly as a native mobile application.
+OpenCone was designed to prove that a **native Apple client can own file ingestion, OCR extraction, and query coordination locally while still talking directly to OpenAI and Pinecone for the cloud execution path**. By keeping document preparation local and avoiding a custom middleware layer, OpenCone respects privacy, reduces product-surface complexity, and operates directly as a native mobile application.
 
 ---
 
 ## Constraints
 
-Building an on-device RAG system on iOS presented severe engineering constraints:
+Building a cloud-hybrid RAG client on iOS presented severe engineering constraints:
 - **Restricted Sandbox Permissions**: iOS sandboxing strictly limits file access. If a user imports a document, those access privileges expire when the app process is terminated unless specific security protocols are implemented.
 - **Hardware Resource Limits**: Apple mobile devices have restricted CPU cores and volatile memory (RAM) budgets compared to cloud servers. Running OCR extraction models or serial embedding requests on thousands of pages can lead to system memory termination.
-- **Network Unreliability**: Mobile network connections drop frequently. Embedding vectors or streaming answers over a volatile connection can cause UI freezes, API timeout failures, or duplicate vector upserts.
+- **Network Unreliability**: Mobile network connections drop frequently. Because embeddings, vector search, and answer generation still depend on OpenAI and Pinecone, connection instability can cause UI freezes, API timeout failures, or duplicate vector upserts.
 
 ---
 
@@ -60,8 +60,8 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 
 ## Tradeoffs
 
-- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. We prioritized user privacy over high-speed throughput.
-- **No Offline Embeddings**: The app relies on OpenAI's remote Embeddings API, meaning it requires an internet connection to ingest new documents or query indexes. This tradeoff was made to keep the bundle size small (avoiding bundling massive on-device transformer models).
+- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. We prioritized keeping raw file preparation local over maximum throughput.
+- **No Offline Embeddings**: The app relies on OpenAI's remote Embeddings API, meaning it requires an internet connection to ingest new documents or query indexes. This is the central tradeoff in OpenCone's architecture and the reason it should not be described as a fully offline RAG system.
 - **Unencrypted Local Sandbox Cache**: While files are isolated within the sandbox, the raw text is cached in the app folder. We rely on the device-level passcode encryption framework to secure these caches, requiring users to enforce password lockouts.
 
 ---

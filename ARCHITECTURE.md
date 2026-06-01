@@ -6,14 +6,14 @@ This document provides a detailed technical breakdown of the OpenCone codebase, 
 
 ## 1. Architectural Thesis
 
-OpenCone is engineered as a **local-first, sandboxed RAG (Retrieval-Augmented Generation) client** for Apple platforms. Rather than relying on cloud middleware or proprietary web endpoints to orchestrate document ingestion and vector retrieval, OpenCone manages the entire sequence on-device. 
+OpenCone is engineered as a **local-first front end and cloud-hybrid RAG (Retrieval-Augmented Generation) client** for Apple platforms. Rather than relying on custom middleware or a proprietary web dashboard, OpenCone performs document preparation on device and then talks directly to OpenAI and Pinecone for embeddings, vector retrieval, and answer generation.
 
 The architecture is built upon the **MVVM-S (Model-View-ViewModel-Service)** design pattern. It enforces strict separation of concerns:
 - **Views** are declarative SwiftUI structures that only render published state and bind user interactions.
 - **ViewModels** manage interface-specific workflows, coordinate task concurrency, and dispatch actions to the service layer.
 - **Services** are stateless utility managers or stateful singletons (e.g. Keychain access, Speech, network client layers) that wrap third-party API payloads, run local processing algorithms (OCR, tokenization), and handle network failures.
 
-By leveraging Swift's modern concurrency (`async/await`, Task structures) and reactive publishing (Combine frameworks), OpenCone delivers a high-performance RAG pipeline on restricted mobile device hardware while respecting sandboxed security boundaries.
+By leveraging Swift's modern concurrency (`async/await`, Task structures) and reactive publishing (Combine frameworks), OpenCone delivers a high-performance native client for a cloud-backed RAG pipeline while respecting sandboxed security boundaries.
 
 ---
 
@@ -97,7 +97,7 @@ flowchart TD
 
 ### Services Layer
 - **[PineconeService.swift](OpenCone/Services/PineconeService.swift)**: Implements REST operations for index control (list, create, delete) and vector data actions (upsert, query, delete). Features stateful region/host discovery and circuit-breaking error protection.
-- **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and chat completions (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
+- **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
 - **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, resolves sandboxed security-scoped URLs, reads plaintext/docx data, and uses native `VNRecognizeTextRequest` OCR on image uploads.
 - **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively using boundary separators (such as JSON tags, markdown hashes, or newlines) and computes SHA256 hashes.
 - **[SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift)**: Listens to the device microphone, performs speech-to-text conversion via Apple's Speech API, and publishes normalize audio amplitudes (0.0 - 1.0) for UI waveforms.
@@ -165,7 +165,7 @@ OpenCone connects to serverless Pinecone indexes using designated versions confi
 
 ## 8. Architectural Tradeoffs
 
-- **On-Device vs Cloud Orchestration**: Processing files locally on iPhones limits throughput and increases processing duration for massive PDFs compared to server-based OCR. However, it guarantees user data privacy and eliminates backend hosting costs.
+- **On-Device vs Cloud Orchestration**: File preparation happens locally, but embeddings, vector persistence, vector search, and answer synthesis still depend on OpenAI and Pinecone. This keeps the client native and direct, but it is not a fully offline architecture.
 - **Unencrypted Sandbox Cache**: The application copies files to local sandbox storage to generate persistent bookmarks. While sandboxed from other iOS apps, it requires device-level passcode enforcement for data safety.
 - **Stateless Services**: Services do not retain state (except configurations). This requires ViewModels to keep track of query history and document status tables, increasing ViewModel state complexity.
 
