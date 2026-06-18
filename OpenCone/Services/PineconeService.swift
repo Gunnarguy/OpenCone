@@ -493,6 +493,7 @@ final class PineconeService {
         cfg.timeoutIntervalForRequest = 5.0
         cfg.timeoutIntervalForResource = 5.0
         cfg.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        cfg.protocolClasses = self.session.configuration.protocolClasses
         let shortSession = URLSession(configuration: cfg)
 
         do {
