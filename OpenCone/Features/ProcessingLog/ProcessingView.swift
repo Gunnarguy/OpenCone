@@ -233,9 +233,6 @@ struct LogExportView: View {
 }
 
 #Preview {
-    // Use PreviewData to create the sample view model
-    // let viewModel = PreviewData.sampleProcessingViewModel // Remove this line
-
     // No explicit return needed
     NavigationView {
         ProcessingView()  // Use the default initializer
