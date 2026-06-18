@@ -108,25 +108,22 @@ struct Configuration {
         return SecureSettingsStore.shared.getPineconeProjectId()
     }
 
-    /// Saves the OpenAI API key. (Placeholder - Prints confirmation).
+    /// Saves the OpenAI API key. (Placeholder).
     /// - Parameter key: The OpenAI API key to save.
     static func saveOpenAIAPIKey(_ key: String) {
         // Production implementation: Save securely to Keychain.
-        print("Placeholder: OpenAI API key saved (should use Keychain)")
     }
 
-    /// Saves the Pinecone API key. (Placeholder - Prints confirmation).
+    /// Saves the Pinecone API key. (Placeholder).
     /// - Parameter key: The Pinecone API key to save.
     static func savePineconeAPIKey(_ key: String) {
         // Production implementation: Save securely to Keychain.
-        print("Placeholder: Pinecone API key saved (should use Keychain)")
     }
 
-    /// Saves the Pinecone Project ID. (Placeholder - Prints confirmation).
+    /// Saves the Pinecone Project ID. (Placeholder).
     /// - Parameter id: The Pinecone Project ID to save.
     static func savePineconeProjectId(_ id: String) {
         // Production implementation: Save securely to Keychain.
-        print("Placeholder: Pinecone project ID saved (should use Keychain)")
     }
 
     // MARK: - Pinecone Location (Cloud/Region)
