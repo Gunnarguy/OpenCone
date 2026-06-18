@@ -77,9 +77,6 @@ struct SettingsNavigationRow_Previews: PreviewProvider {
     }
 
     static var previews: some View {
-        // Example destination view for preview - Removed from here
-        // struct SampleDestination: View { ... }
-
         NavigationView {
             OCCard(style: .standard) {
                 VStack(spacing: 0) {
