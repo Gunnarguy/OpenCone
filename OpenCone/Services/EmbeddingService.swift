@@ -44,11 +44,12 @@ final class EmbeddingService: Sendable {
         // Process in a single batch for smaller input
         await log(level: .info, message: "Generating embeddings for \(chunks.count) chunks")
 
-    let texts = chunks.map { $0.content }
+        let texts = chunks.map { $0.content }
         let targetDimension = dimension ?? Configuration.embeddingDimension
         let embeddings = try await openAIService.createEmbeddings(texts: texts, dimension: targetDimension)
 
-        if let actualDimension = embeddings.first?.count, actualDimension != targetDimension {
+        let actualDimension = embeddings.first?.count ?? targetDimension
+        guard actualDimension == targetDimension else {
             await log(level: .error, message: "Embedding dimension mismatch: expected \(targetDimension), received \(actualDimension)")
             throw EmbeddingError.dimensionMismatch
         }
@@ -102,49 +103,73 @@ final class EmbeddingService: Sendable {
         }
 
         for (index, batch) in batches.enumerated() {
-            do {
-                await log(level: .info, message: "Processing batch \(index + 1)/\(totalBatches) with \(batch.count) chunks")
-
-                // Get embeddings for this batch
-                let texts = batch.map { $0.content }
-                let targetDimension = dimension ?? Configuration.embeddingDimension
-                let embeddings = try await openAIService.createEmbeddings(texts: texts, dimension: targetDimension)
-
-                if let actualDimension = embeddings.first?.count, actualDimension != targetDimension {
-                    await log(level: .error, message: "Embedding dimension mismatch in batch: expected \(targetDimension), received \(actualDimension)")
-                    throw EmbeddingError.dimensionMismatch
-                }
-
-                guard embeddings.count == batch.count else {
-                    await log(level: .error, message: "Batch embedding count mismatch: \(embeddings.count) embeddings for \(batch.count) chunks")
-                    throw EmbeddingError.countMismatch
-                }
-
-                autoreleasepool {
-                    for (idx, vector) in embeddings.enumerated() {
-                        let chunk = batch[idx]
-                        let absoluteIndex = index * batchSize + idx
-                        let model = makeEmbeddingModel(for: chunk, vector: vector, absoluteIndex: absoluteIndex)
-                        embeddingModels.append(model)
-                    }
-                }
-
-                // Report progress after processing the batch
-                await progressCallback?(index, totalBatches)
-
-                // Small delay between batches to allow memory cleanup
-                if index < totalBatches - 1 {
-                    try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                }
-
-            } catch {
-                await log(level: .error, message: "Error processing batch \(index + 1): \(error.localizedDescription)")
-                throw error
-            }
+            let processedModels = try await processBatch(
+                batch: batch,
+                index: index,
+                totalBatches: totalBatches,
+                batchSize: batchSize,
+                dimension: dimension,
+                progressCallback: progressCallback
+            )
+            embeddingModels.append(contentsOf: processedModels)
         }
 
         await log(level: .info, message: "Successfully generated \(embeddingModels.count) embeddings in batches")
         return embeddingModels
+    }
+
+    private func processBatch(
+        batch: [ChunkModel],
+        index: Int,
+        totalBatches: Int,
+        batchSize: Int,
+        dimension: Int?,
+        progressCallback: (@Sendable (Int, Int) async -> Void)? = nil
+    ) async throws -> [EmbeddingModel] {
+        var processedModels: [EmbeddingModel] = []
+        processedModels.reserveCapacity(batch.count)
+
+        do {
+            await log(level: .info, message: "Processing batch \(index + 1)/\(totalBatches) with \(batch.count) chunks")
+
+            // Get embeddings for this batch
+            let texts = batch.map { $0.content }
+            let targetDimension = dimension ?? Configuration.embeddingDimension
+            let embeddings = try await openAIService.createEmbeddings(texts: texts, dimension: targetDimension)
+
+            let actualDimension = embeddings.first?.count ?? targetDimension
+            guard actualDimension == targetDimension else {
+                await log(level: .error, message: "Embedding dimension mismatch in batch: expected \(targetDimension), received \(actualDimension)")
+                throw EmbeddingError.dimensionMismatch
+            }
+
+            guard embeddings.count == batch.count else {
+                await log(level: .error, message: "Batch embedding count mismatch: \(embeddings.count) embeddings for \(batch.count) chunks")
+                throw EmbeddingError.countMismatch
+            }
+
+            autoreleasepool {
+                for (idx, vector) in embeddings.enumerated() {
+                    let chunk = batch[idx]
+                    let absoluteIndex = index * batchSize + idx
+                    let model = makeEmbeddingModel(for: chunk, vector: vector, absoluteIndex: absoluteIndex)
+                    processedModels.append(model)
+                }
+            }
+
+            // Report progress after processing the batch
+            await progressCallback?(index, totalBatches)
+
+            // Small delay between batches to allow memory cleanup
+            if index < totalBatches - 1 {
+                try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            }
+
+            return processedModels
+        } catch {
+            await log(level: .error, message: "Error processing batch \(index + 1): \(error.localizedDescription)")
+            throw error
+        }
     }
 
     /// Generate a single embedding for a query text, optionally with a specific dimension
