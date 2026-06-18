@@ -721,7 +721,7 @@ struct AdvancedOptionsSheet: View {
             .navigationTitle("Advanced Options")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }

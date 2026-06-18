@@ -1023,7 +1023,11 @@ Text("Show document metadata (filename, chunk info) in search results.")
                 Spacer()
             }
             .padding()
-.navigationBarItems(trailing: Button("Done") { showExportSheet = false })
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showExportSheet = false }
+                }
+            }
         }
     }
 
@@ -1078,7 +1082,11 @@ Text("Show document metadata (filename, chunk info) in search results.")
                 Spacer()
             }
 .padding()
-    .navigationBarItems(trailing: Button("Cancel") { showImportSheet = false })
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showImportSheet = false }
+                }
+            }
         }
     }
 
