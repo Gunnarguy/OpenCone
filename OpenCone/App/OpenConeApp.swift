@@ -251,9 +251,12 @@ struct OpenConeApp: App {
     @MainActor
     private func enforceNoBundledSecrets() {
         #if !DEBUG
-        if !Configuration.openAIAPIKey.isEmpty ||
-            !Configuration.pineconeAPIKey.isEmpty ||
-            !Configuration.pineconeProjectId.isEmpty {
+        let env = ProcessInfo.processInfo.environment
+        let hasOpenAI = env["OPENAI_API_KEY"]?.isEmpty == false
+        let hasPinecone = env["PINECONE_API_KEY"]?.isEmpty == false
+        let hasProjectId = env["PINECONE_PROJECT_ID"]?.isEmpty == false
+
+        if hasOpenAI || hasPinecone || hasProjectId {
             fatalError("OpenCone Release builds must not include default API keys. Clear scheme environment overrides before archiving.")
         }
         #endif
