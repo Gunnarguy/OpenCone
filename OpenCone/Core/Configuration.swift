@@ -112,7 +112,6 @@ struct Configuration {
     /// - Parameter key: The OpenAI API key to save.
     static func saveOpenAIAPIKey(_ key: String) {
         // Production implementation: Save securely to Keychain.
-        print("Placeholder: OpenAI API key saved (should use Keychain)")
     }
 
     /// Saves the Pinecone API key. (Placeholder - Prints confirmation).
