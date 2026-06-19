@@ -75,7 +75,7 @@ final class PineconeService {
         let namespaceNames: [String]
     }
 
-    init(apiKey: String, projectId: String, configuration: PineconeServiceConfiguration = .default) {
+    init(apiKey: String, projectId: String, configuration: PineconeServiceConfiguration = .default, sessionConfiguration: URLSessionConfiguration = .default) {
         self.apiKey = apiKey
         self.projectId = projectId
         self.apiConfiguration = configuration
@@ -86,7 +86,7 @@ final class PineconeService {
         self.region = store.getPineconeRegion()
 
         // Configure session with better timeout and caching policies
-        let sessionConfiguration = URLSessionConfiguration.default
+        // let sessionConfiguration = URLSessionConfiguration.default
         sessionConfiguration.timeoutIntervalForRequest = 30.0
         sessionConfiguration.timeoutIntervalForResource = 60.0
         sessionConfiguration.requestCachePolicy = .reloadRevalidatingCacheData

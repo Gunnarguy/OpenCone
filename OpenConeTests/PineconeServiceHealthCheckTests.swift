@@ -50,7 +50,9 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     }
 
     func testHealthCheck_NoIndexSelected() async {
-        let sut = PineconeService(apiKey: "test", projectId: "test")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
         // indexHost and currentIndex are nil by default
 
         let result = await sut.healthCheck()
@@ -60,10 +62,10 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     }
 
     func testHealthCheck_Success() async throws {
-        let config = URLSessionConfiguration.default
-        config.protocolClasses = [MockURLProtocol.self]
 
-        let sut = PineconeService(apiKey: "test", projectId: "test")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
         // Setup handler to mock the index describe response so indexHost is set
         MockURLProtocol.requestHandler = { request in
@@ -104,7 +106,9 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     }
 
     func testHealthCheck_ServerError() async throws {
-        let sut = PineconeService(apiKey: "test", projectId: "test")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
         MockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
@@ -142,7 +146,9 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     }
 
     func testHealthCheck_CircuitOpen() async throws {
-        let sut = PineconeService(apiKey: "test", projectId: "test")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
         MockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
