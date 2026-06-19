@@ -351,41 +351,68 @@ final class DocumentsViewModel: ObservableObject {
             let defaultNamespace = await MainActor.run { self.selectedNamespace }
             var activeIndex = originalIndex
 
-            for document in documentsToRemove {
-                var vectorsRemoved = !document.isProcessed
-                var fileRemoved = false
+            struct TargetLocation: Hashable {
+                let indexName: String
+                let namespace: String?
+            }
 
-                let targetIndex = document.lastIndexedIndexName ?? originalIndex
-                let targetNamespace = document.lastIndexedNamespace ?? defaultNamespace
+            var groupedDocuments: [TargetLocation: [DocumentModel]] = [:]
+            var vectorsRemovedMap: [UUID: Bool] = [:]
+
+            for document in documentsToRemove {
+                vectorsRemovedMap[document.id] = !document.isProcessed
 
                 if document.isProcessed {
-                    do {
-                        if let indexName = targetIndex {
-                            if activeIndex != indexName {
-                                try await pineconeService.setCurrentIndex(indexName)
-                                activeIndex = indexName
-                            }
-                            let response = try await pineconeService.deleteVectors(
-                                ids: nil,
-                                filter: ["doc_id": ["$eq": document.documentId]],
-                                namespace: targetNamespace
-                            )
-                            if let deleted = response.deletedCount {
-                                logger.log(level: .info, message: "Deleted \(deleted) vectors", context: document.fileName)
-                            }
-                            vectorsRemoved = true
-                        } else {
-                            vectorsRemoved = false
-                            removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
-                        }
-                    } catch PineconeError.namespaceNotFound {
-                        vectorsRemoved = true
-                        logger.log(level: .warning, message: "Namespace not found during deletion; treating as already removed", context: document.fileName)
-                    } catch {
-                        vectorsRemoved = false
-                        removalErrors.append("Failed to delete vectors for \(document.fileName): \(error.localizedDescription)")
+                    let targetIndex = document.lastIndexedIndexName ?? originalIndex
+                    let targetNamespace = document.lastIndexedNamespace ?? defaultNamespace
+
+                    if let indexName = targetIndex {
+                        let location = TargetLocation(indexName: indexName, namespace: targetNamespace)
+                        groupedDocuments[location, default: []].append(document)
+                    } else {
+                        vectorsRemovedMap[document.id] = false
+                        removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
                     }
                 }
+            }
+
+            for (location, docs) in groupedDocuments {
+                do {
+                    if activeIndex != location.indexName {
+                        try await pineconeService.setCurrentIndex(location.indexName)
+                        activeIndex = location.indexName
+                    }
+
+                    let docIds = docs.map { $0.documentId }
+                    let response = try await pineconeService.deleteVectors(
+                        ids: nil,
+                        filter: ["doc_id": ["$in": docIds]],
+                        namespace: location.namespace
+                    )
+
+                    if let deleted = response.deletedCount {
+                        logger.log(level: .info, message: "Batch deleted \(deleted) vectors for \(docs.count) documents")
+                    }
+
+                    for doc in docs {
+                        vectorsRemovedMap[doc.id] = true
+                    }
+                } catch PineconeError.namespaceNotFound {
+                    for doc in docs {
+                        vectorsRemovedMap[doc.id] = true
+                        logger.log(level: .warning, message: "Namespace not found during deletion; treating as already removed", context: doc.fileName)
+                    }
+                } catch {
+                    for doc in docs {
+                        vectorsRemovedMap[doc.id] = false
+                        removalErrors.append("Failed to delete vectors for \(doc.fileName): \(error.localizedDescription)")
+                    }
+                }
+            }
+
+            for document in documentsToRemove {
+                let vectorsRemoved = vectorsRemovedMap[document.id] ?? false
+                var fileRemoved = false
 
                 if vectorsRemoved {
                     do {
