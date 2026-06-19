@@ -140,18 +140,18 @@ final class SecureSettingsStore: @unchecked Sendable {
 
         if let legacyOpenAI, !legacyOpenAI.isEmpty, loadKeychainString(forKey: Key.openAIKey) == nil {
             _ = saveKeychainString(legacyOpenAI, forKey: Key.openAIKey)
-            UserDefaults.standard.removeObject(forKey: "openAIAPIKey")
         }
+        UserDefaults.standard.removeObject(forKey: "openAIAPIKey")
 
         if let legacyPineconeKey, !legacyPineconeKey.isEmpty, loadKeychainString(forKey: Key.pineconeKey) == nil {
             _ = saveKeychainString(legacyPineconeKey, forKey: Key.pineconeKey)
-            UserDefaults.standard.removeObject(forKey: "pineconeAPIKey")
         }
+        UserDefaults.standard.removeObject(forKey: "pineconeAPIKey")
 
         if let legacyProjectId, !legacyProjectId.isEmpty, loadKeychainString(forKey: Key.pineconeProjectId) == nil {
             _ = saveKeychainString(legacyProjectId, forKey: Key.pineconeProjectId)
-            UserDefaults.standard.removeObject(forKey: "pineconeProjectId")
         }
+        UserDefaults.standard.removeObject(forKey: "pineconeProjectId")
     }
 
     // MARK: - Keychain helpers
