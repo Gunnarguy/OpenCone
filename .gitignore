@@ -43,3 +43,5 @@ secrets.json
 *.swp
 *.swo
 *~
+pr_summary.txt
+update_pbxproj.rb

@@ -289,6 +289,16 @@ final class SearchViewModel: ObservableObject {
             .store(in: &cancellables)
 
         loadDefaultMetadataFilters()
+        
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("PineconeIndexListDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.loadIndexes()
+            }
+        }
     }
 
     private func loadDefaultMetadataFilters() {
@@ -834,7 +844,8 @@ final class SearchViewModel: ObservableObject {
             let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
 
             // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
-            let watchdogTask = Task {
+            let watchdogTask = Task { [weak self] in
+                guard let self = self else { return }
                 try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
                 // Check if assistant message is still streaming and empty
                 let shouldFallback = await MainActor.run { () -> Bool in
@@ -1091,7 +1102,8 @@ final class SearchViewModel: ObservableObject {
         let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
 
         // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
-        let watchdogTask = Task {
+        let watchdogTask = Task { [weak self] in
+            guard let self = self else { return }
             try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
             let shouldFallback = await MainActor.run { () -> Bool in
                 if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {

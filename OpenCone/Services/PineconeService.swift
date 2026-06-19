@@ -86,7 +86,7 @@ final class PineconeService {
         self.region = store.getPineconeRegion()
 
         // Configure session with better timeout and caching policies
-        // let sessionConfiguration = URLSessionConfiguration.default
+        // Configure session with better timeout and caching policies
         sessionConfiguration.timeoutIntervalForRequest = 30.0
         sessionConfiguration.timeoutIntervalForResource = 60.0
         sessionConfiguration.requestCachePolicy = .reloadRevalidatingCacheData
@@ -299,7 +299,10 @@ final class PineconeService {
             throw PineconeError.requestFailed(statusCode: 0, message: "Failed to list indexes: Unknown error")
         }
 
-        let indexNames = indexList.indexes.map { $0.name }
+        // Filter out any indexes that are in the process of being deleted
+        let indexNames = indexList.indexes
+            .filter { $0.status?.state != "Deleting" }
+            .map { $0.name }
 
         // Cache the result in memory
         indexListCache = (indexes: indexNames, ts: Date())
@@ -313,6 +316,10 @@ final class PineconeService {
     /// Invalidate the index list cache (call after creating/deleting indexes)
     func invalidateIndexListCache() {
         indexListCache = nil
+        // Notify other ViewModels to refresh their index lists
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: NSNotification.Name("PineconeIndexListDidChange"), object: nil)
+        }
     }
 
     /// Create a new Pinecone index
@@ -320,17 +327,20 @@ final class PineconeService {
     ///   - name: Name of the index
     ///   - dimension: Dimension of the vectors
     /// - Returns: Response from the Pinecone API
-    func createIndex(name: String, dimension: Int) async throws -> IndexCreateResponse {
+    func createIndex(name: String, dimension: Int, metric: String = "cosine", cloud: String? = nil, region: String? = nil) async throws -> IndexCreateResponse {
         let endpoint = "\(baseURL)/indexes"
+
+        let targetCloud = cloud ?? self.cloud
+        let targetRegion = region ?? self.region
 
         let body: [String: Any] = [
             "name": name,
             "dimension": dimension,
-            "metric": "cosine",
+            "metric": metric,
             "spec": [
                 "serverless": [
-                    "cloud": self.cloud,
-                    "region": self.region
+                    "cloud": targetCloud,
+                    "region": targetRegion
                 ]
             ]
         ]
@@ -385,6 +395,44 @@ final class PineconeService {
 
         return indexCreateResponse
     }
+
+    /// Delete a Pinecone index
+    /// - Parameter name: Name of the index
+    func deleteIndex(_ name: String) async throws {
+        let endpoint = "\(baseURL)/indexes/\(name)"
+        var request = URLRequest(url: URL(string: endpoint)!)
+        request.httpMethod = "DELETE"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
+
+        try await withRetries(maxRetries: maxRetries) {
+            do {
+                try await self.applyRateLimit()
+                let (_, response) = try await session.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw PineconeError.invalidResponse
+                }
+
+                if httpResponse.statusCode != 200 && httpResponse.statusCode != 202 {
+                    if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                        throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                    }
+                    throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: "Failed to delete index")
+                }
+            } catch {
+                if let pineconeError = error as? PineconeError, case .retryableError = pineconeError {
+                    throw error
+                } else {
+                    logger.log(level: .error, message: "Failed to delete index '\(name)': \(error.localizedDescription)")
+                    throw error
+                }
+            }
+        }
+        
+        logger.log(level: .info, message: "Index deleted", context: name)
+        invalidateIndexListCache()
+    }
+
 
     /// Check if an index is ready for use
     /// - Parameter name: Name of the index
@@ -1462,6 +1510,7 @@ struct IndexInfo: Codable {
     let metric: String?
     let host: String?
     let spec: IndexSpec?
+    let status: IndexStatus?
 }
 
 struct IndexSpec: Codable {

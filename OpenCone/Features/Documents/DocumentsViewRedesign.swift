@@ -10,6 +10,7 @@ struct DocumentsViewRedesign: View {
     @State private var showingDocumentPicker = false
     @State private var showingAdvancedSheet = false
     @State private var showingNamespaceDialog = false
+    @State private var showingDeleteNamespaceDialog = false
     @State private var newNamespace = ""
     @State private var selectedFilter: DocumentFilter = .all
     @Environment(\.theme) private var theme: OCTheme
@@ -97,6 +98,22 @@ struct DocumentsViewRedesign: View {
             Button("Cancel", role: .cancel) { viewModel.newIndexName = "" }
             Button("Create") { Task { await viewModel.createIndex() } }
                 .disabled(viewModel.newIndexName.isEmpty)
+        }
+        .alert("Delete Knowledge Base", isPresented: $viewModel.showingDeleteIndexDialog) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { 
+                Task { await viewModel.deleteSelectedIndex() } 
+            }
+        } message: {
+            Text("Are you sure you want to permanently delete '\(viewModel.selectedIndex ?? "")'? This cannot be undone.")
+        }
+        .alert("Delete Collection", isPresented: $showingDeleteNamespaceDialog) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { 
+                Task { await viewModel.deleteSelectedNamespace() } 
+            }
+        } message: {
+            Text("Are you sure you want to permanently delete the collection '\(viewModel.selectedNamespace ?? "default")' and all its vectors? This cannot be undone.")
         }
         .animation(.spring(duration: 0.3), value: viewModel.isProcessing)
         .animation(.spring(duration: 0.3), value: viewModel.selectedDocuments.count)
@@ -191,85 +208,117 @@ private extension DocumentsViewRedesign {
 
             // Index picker
             if !viewModel.pineconeIndexes.isEmpty {
-                Menu {
-                    ForEach(viewModel.pineconeIndexes, id: \.self) { index in
-                        Button {
-                            Task { await viewModel.setIndex(index) }
-                        } label: {
-                            HStack {
-                                Text(index)
-                                if viewModel.selectedIndex == index { 
-                                    Image(systemName: "checkmark")
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(viewModel.pineconeIndexes, id: \.self) { index in
+                            Button {
+                                Task { await viewModel.setIndex(index) }
+                            } label: {
+                                HStack {
+                                    Text(index)
+                                    if viewModel.selectedIndex == index { 
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Divider()
+                        Divider()
 
-                    Button {
-                        viewModel.showingCreateIndexDialog = true
+                        Button {
+                            viewModel.showingCreateIndexDialog = true
+                        } label: {
+                            Label("Create New", systemImage: "plus")
+                        }
                     } label: {
-                        Label("Create New", systemImage: "plus")
+                        HStack {
+                            Image(systemName: "externaldrive")
+                                .foregroundColor(theme.primaryColor)
+                            Text(viewModel.selectedIndex ?? "Choose Index")
+                                .foregroundColor(theme.textPrimaryColor)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(theme.cardBackgroundColor)
+                        )
                     }
-                } label: {
-                    HStack {
-                        Image(systemName: "externaldrive")
-                            .foregroundColor(theme.primaryColor)
-                        Text(viewModel.selectedIndex ?? "Choose Index")
-                            .foregroundColor(theme.textPrimaryColor)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
-                            .foregroundColor(theme.textSecondaryColor)
+
+                    if viewModel.selectedIndex != nil {
+                        Button {
+                            viewModel.showingDeleteIndexDialog = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(theme.errorColor)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(theme.cardBackgroundColor)
+                                )
+                        }
                     }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(theme.cardBackgroundColor)
-                    )
                 }
             }
 
             // Namespace picker (if index selected)
             if viewModel.selectedIndex != nil && !viewModel.namespaces.isEmpty {
-                Menu {
-                    ForEach(viewModel.namespaces, id: \.self) { namespace in
-                        Button {
-                            viewModel.setNamespace(namespace)
-                        } label: {
-                            HStack {
-                                Text(namespace.isEmpty ? "Default" : namespace)
-                                if viewModel.selectedNamespace == namespace { 
-                                    Image(systemName: "checkmark")
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(viewModel.namespaces, id: \.self) { namespace in
+                            Button {
+                                viewModel.setNamespace(namespace)
+                            } label: {
+                                HStack {
+                                    Text(namespace.isEmpty ? "Default" : namespace)
+                                    if viewModel.selectedNamespace == namespace { 
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Divider()
+                        Divider()
 
-                    Button {
-                        showingNamespaceDialog = true
+                        Button {
+                            showingNamespaceDialog = true
+                        } label: {
+                            Label("Create Collection", systemImage: "plus")
+                        }
                     } label: {
-                        Label("Create Collection", systemImage: "plus")
+                        HStack {
+                            Image(systemName: "folder")
+                                .foregroundColor(theme.secondaryColor)
+                            Text(viewModel.selectedNamespace?.isEmpty == false ? viewModel.selectedNamespace! : "Default Collection")
+                                .foregroundColor(theme.textPrimaryColor)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundColor(theme.textSecondaryColor)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(theme.cardBackgroundColor)
+                        )
                     }
-                } label: {
-                    HStack {
-                        Image(systemName: "folder")
-                            .foregroundColor(theme.secondaryColor)
-                        Text(viewModel.selectedNamespace?.isEmpty == false ? viewModel.selectedNamespace! : "Default Collection")
-                            .foregroundColor(theme.textPrimaryColor)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
-                            .foregroundColor(theme.textSecondaryColor)
+
+                    if viewModel.selectedNamespace != nil {
+                        Button {
+                            showingDeleteNamespaceDialog = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(theme.errorColor)
+                                .padding(14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(theme.cardBackgroundColor)
+                                )
+                        }
                     }
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(theme.cardBackgroundColor)
-                    )
                 }
             }
 

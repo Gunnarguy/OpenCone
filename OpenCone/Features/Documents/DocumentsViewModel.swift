@@ -79,6 +79,9 @@ final class DocumentsViewModel: ObservableObject {
     /// Flag to control the visibility of the create index dialog
     @Published var showingCreateIndexDialog = false // Added for index creation dialog
 
+    /// Flag to control the visibility of the delete index confirmation dialog
+    @Published var showingDeleteIndexDialog = false 
+
     /// Holds the name for the new index being created
     @Published var newIndexName = "" // Added for index creation dialog
 
@@ -129,6 +132,17 @@ final class DocumentsViewModel: ObservableObject {
         self.pineconeService = pineconeService
         self.needsSecurityConsent = !UserDefaults.standard.bool(forKey: securityConsentKey)
         self.maxDocumentSize = maxDocumentSize
+
+        // Listen for global index changes to keep UI in sync
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("PineconeIndexListDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.loadIndexes()
+            }
+        }
     }
 
     /// Persist the user acknowledgement for the security-scoped bookmark consent banner.
@@ -788,6 +802,8 @@ final class DocumentsViewModel: ObservableObject {
         }
     }
 
+
+
     /// Create a new Pinecone index
     func createIndex() async {
         guard !newIndexName.isEmpty else {
@@ -805,14 +821,26 @@ final class DocumentsViewModel: ObservableObject {
             return
         }
 
-        await MainActor.run {
-            self.isLoadingIndexes = true
-            self.errorMessage = nil // Clear previous errors
+        isProcessing = true
+        defer {
+            Task { @MainActor in self.isProcessing = false }
         }
 
         do {
-            logger.log(level: .info, message: "Attempting to create index", context: newIndexName)
-            _ = try await pineconeService.createIndex(name: newIndexName, dimension: Configuration.embeddingDimension)
+            let dim = UserDefaults.standard.integer(forKey: "embedding.dimension")
+            let actualDimension = dim > 0 ? dim : Configuration.embeddingDimension
+            
+            let metric = UserDefaults.standard.string(forKey: "pinecone.metric") ?? "cosine"
+            let cloud = UserDefaults.standard.string(forKey: "pinecone.cloud") ?? "aws"
+            let region = UserDefaults.standard.string(forKey: "pinecone.region") ?? "us-east-1"
+            
+            _ = try await pineconeService.createIndex(
+                name: newIndexName, 
+                dimension: actualDimension,
+                metric: metric,
+                cloud: cloud,
+                region: region
+            )
             logger.log(level: .info, message: "Index creation initiated. Waiting for index to become ready...", context: newIndexName)
 
             // Wait for the index to be ready before refreshing the list
@@ -850,6 +878,62 @@ final class DocumentsViewModel: ObservableObject {
             self.isLoadingIndexes = false
             self.showingCreateIndexDialog = false // Close dialog regardless of outcome
             self.newIndexName = "" // Clear the name field
+        }
+    }
+
+    @MainActor
+    func deleteSelectedIndex() async {
+        guard let indexToDelete = selectedIndex else { return }
+        
+        self.isLoadingIndexes = true
+        self.errorMessage = nil
+        
+        // Optimistic UI update for immediate snappiness
+        self.pineconeIndexes.removeAll { $0 == indexToDelete }
+        self.selectedIndex = nil
+        
+        do {
+            try await pineconeService.deleteIndex(indexToDelete)
+            
+            // Re-fetch indexes after deletion
+            let indexes = try await pineconeService.listIndexes(forceRefresh: true)
+            self.pineconeIndexes = indexes
+            
+            // Select the first available index if any
+            if let first = indexes.first {
+                await setIndex(first)
+            } else {
+                self.selectedIndex = nil
+                self.namespaces = []
+                self.selectedNamespace = nil
+                self.indexDimension = nil
+            }
+        } catch {
+            self.errorMessage = "Failed to delete index: \(error.localizedDescription)"
+        }
+        
+        self.isLoadingIndexes = false
+    }
+
+    @MainActor
+    func deleteSelectedNamespace() async {
+        guard let namespaceToDelete = selectedNamespace else { return }
+        
+        self.errorMessage = nil
+        
+        // Optimistic UI update for immediate snappiness
+        self.namespaces.removeAll { $0 == namespaceToDelete }
+        if let first = self.namespaces.first {
+            self.selectedNamespace = first
+        } else {
+            self.selectedNamespace = nil
+        }
+        
+        do {
+            try await pineconeService.deleteNamespace(namespaceToDelete)
+            await loadIndexes() // Refresh indexes & namespaces
+        } catch {
+            self.errorMessage = "Failed to delete namespace: \(error.localizedDescription)"
         }
     }
 

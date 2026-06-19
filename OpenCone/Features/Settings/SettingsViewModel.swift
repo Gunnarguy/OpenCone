@@ -140,6 +140,9 @@ final class SettingsViewModel: ObservableObject {
 
     // OpenAI completion models - common options (user can also specify custom models)
     let availableCompletionModels = [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.3",
         "gpt-5.2",
         "gpt-5",
         "gpt-4o",
