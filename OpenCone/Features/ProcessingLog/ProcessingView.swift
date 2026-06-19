@@ -73,7 +73,7 @@ struct ProcessingView: View {
             .padding()
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 Text("\(viewModel.filteredLogs.count) entries")  // Use viewModel data
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -176,7 +176,6 @@ struct LogExportView: View {
                 .padding()
             }
             .navigationTitle("Export Logs")
-            // Fix navigationBarItems which is unavailable in macOS
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

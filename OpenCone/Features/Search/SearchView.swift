@@ -635,11 +635,11 @@ struct QuickSettingsPopover: View {
                 .navigationTitle("Quick Settings")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }
                             .fontWeight(.semibold)
                     }
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button {
                             resetToDefaults()
                         } label: {
@@ -750,12 +750,12 @@ struct SourcesSheet: View {
 .navigationTitle("Sources (\(viewModel.searchResults.count))")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .confirmationAction) {
             Button("Done") { dismiss() }
                 .fontWeight(.semibold)
         }
         if !viewModel.selectedResults.isEmpty {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .automatic) {
                 Button {
                     Task { await viewModel.generateAnswerFromSelected() }
                     dismiss()
@@ -881,7 +881,7 @@ struct ExportConversationSheet: View {
                 .navigationTitle("Export Conversation")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }
                             .fontWeight(.semibold)
                     }
@@ -2296,7 +2296,7 @@ struct MetadataFilterSheet: View {
             .navigationTitle("Metadata Filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     if !viewModel.metadataFilters.isEmpty {
                         Button("Clear All") {
                             viewModel.clearMetadataFilters()
@@ -2304,7 +2304,7 @@ struct MetadataFilterSheet: View {
                         .foregroundColor(theme.errorColor)
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         dismiss()
                     }
