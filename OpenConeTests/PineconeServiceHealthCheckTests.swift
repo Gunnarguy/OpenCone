@@ -76,7 +76,11 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
                     "name": "test-index",
                     "host": "test-index.pinecone.io",
                     "metric": "cosine",
-                    "dimension": 1536
+                    "dimension": 1536,
+                    "status": {
+                        "state": "Ready",
+                        "ready": true
+                    }
                 }
                 """
                 return (response, json.data(using: .utf8)!)
@@ -86,6 +90,10 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
                 {
                     "namespaces": {},
                     "dimension": 1536,
+                    "status": {
+                        "state": "Ready",
+                        "ready": true
+                    },
                     "indexFullness": 0,
                     "totalVectorCount": 0
                 }
@@ -118,7 +126,11 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
                     "name": "test-index",
                     "host": "test-index.pinecone.io",
                     "metric": "cosine",
-                    "dimension": 1536
+                    "dimension": 1536,
+                    "status": {
+                        "state": "Ready",
+                        "ready": true
+                    }
                 }
                 """
                 return (response, json.data(using: .utf8)!)
@@ -158,7 +170,11 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
                     "name": "test-index",
                     "host": "test-index.pinecone.io",
                     "metric": "cosine",
-                    "dimension": 1536
+                    "dimension": 1536,
+                    "status": {
+                        "state": "Ready",
+                        "ready": true
+                    }
                 }
                 """
                 return (response, json.data(using: .utf8)!)
