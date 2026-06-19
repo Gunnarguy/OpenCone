@@ -86,13 +86,13 @@ final class ThemeManager: ObservableObject, Sendable {
         }
 
         UIApplication.shared.setAlternateIconName(targetIcon) { error in
-            #if DEBUG
-            if let error = error {
-                print("[ThemeManager] Failed to set alternate icon: \(error.localizedDescription)")
-            } else {
-                print("[ThemeManager] Alternate icon set to: \(targetIcon ?? "primary")")
+            Task { @MainActor in
+                if let error = error {
+                    Logger.shared.log(level: .error, message: "Failed to set alternate icon: \(error.localizedDescription)", context: "ThemeManager")
+                } else {
+                    Logger.shared.log(level: .info, message: "Alternate icon set to: \(targetIcon ?? "primary")", context: "ThemeManager")
+                }
             }
-            #endif
         }
     }
 
