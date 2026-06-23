@@ -3,17 +3,10 @@ import Foundation
 #if canImport(UIKit)
 import UIKit
 #endif
-import FirebaseCore
-import FirebaseAnalytics
 
 @main
 struct OpenConeApp: App {
     // MARK: - Properties
-
-    init() {
-        // Initialize Firebase Telemetry
-        FirebaseApp.configure()
-    }
 
     // View models managing state for different features
     @StateObject private var settingsViewModel = SettingsViewModel() // Manages app settings and API keys
