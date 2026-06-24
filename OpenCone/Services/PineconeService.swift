@@ -1180,8 +1180,7 @@ final class PineconeService {
                 do {
                     result = try JSONDecoder().decode(QueryResponse.self, from: data)
                 } catch {
-                    let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
-                    logger.log(level: .error, message: "Pinecone decode error (query). Raw response: \(raw)")
+                    logger.log(level: .error, message: "Pinecone decode error (query). Response size: \(data.count) bytes, Error: \(error.localizedDescription)")
                     throw error
                 }
             } catch {
