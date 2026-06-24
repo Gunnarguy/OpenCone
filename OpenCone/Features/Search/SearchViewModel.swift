@@ -1394,25 +1394,6 @@ final class SearchViewModel: ObservableObject {
         return try? encoder.encode(export)
     }
 
-    /// Regenerate the last assistant response
-    func regenerateLastResponse() async {
-        // Find the last assistant message
-        guard let lastAssistantIdx = messages.lastIndex(where: { $0.role == .assistant }) else { return }
-
-        // Find the corresponding user message
-        let userMessageIdx = messages.prefix(lastAssistantIdx).lastIndex(where: { $0.role == .user })
-        guard let userIdx = userMessageIdx else { return }
-
-        let originalQuery = messages[userIdx].text
-
-        // Remove the assistant message we're regenerating
-        messages.remove(at: lastAssistantIdx)
-
-        // Set the search query and perform search again
-        searchQuery = originalQuery
-        await performSearch()
-    }
-
     // MARK: - Cancellation
 
     func cancelActiveSearch() {
