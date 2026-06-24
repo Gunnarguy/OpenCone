@@ -1381,14 +1381,6 @@ final class DocumentsViewModel: ObservableObject {
 
     // MARK: - Helper Methods
 
-    /// Get the total size of all selected documents
-    /// - Returns: Total size in bytes
-    func getTotalSelectedSize() -> Int64 {
-        return documents
-            .filter { selectedDocuments.contains($0.id) }
-            .reduce(0) { $0 + $1.fileSize }
-    }
-
     /// Persist a user-selected document into the app's sandbox so later processing never depends on provider permissions.
     private func persistDocumentCopy(from sourceURL: URL) throws -> URL {
         let fileManager = FileManager.default
