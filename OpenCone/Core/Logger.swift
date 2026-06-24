@@ -80,14 +80,6 @@ final class Logger: ObservableObject, Sendable {
         return logText
     }
 
-    /// Filters the log entries based on a specific log level.
-    /// - Parameter level: The `ProcessingLogEntry.LogLevel` to filter by.
-    /// - Returns: An array containing only the log entries matching the specified level.
-    func filterByLevel(_ level: ProcessingLogEntry.LogLevel) -> [ProcessingLogEntry] {
-        // Use the filter method on the logEntries array.
-        return logEntries.filter { $0.level == level }
-    }
-
     /// Searches log entries for a specific text string (case-insensitive).
     /// Checks both the message and the context fields.
     /// - Parameter searchText: The text to search for within the log entries.
