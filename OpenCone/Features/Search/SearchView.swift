@@ -2164,12 +2164,6 @@ struct ResultHeaderView: View {
         return components.last.map { String($0) } ?? source
     }
 
-    /// Get document type (extension) from source path
-    private func getDocumentType(from source: String) -> String {
-        let components = source.split(separator: ".")
-        return components.last.map { String($0).uppercased() } ?? "DOC"
-    }
-
     /// Determines the appropriate SF Symbol icon name based on the file extension.
     private func getDocumentIcon(from source: String) -> String {
         if source.hasSuffix(".pdf") {
