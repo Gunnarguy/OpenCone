@@ -672,7 +672,6 @@ final class SettingsViewModel: ObservableObject {
     }
 
     // Public validate triggers
-    func validateOpenAI() { runOpenAIValidation() }
     func validatePinecone() { runPineconeValidation() }
     func validateAll() { runOpenAIValidation(); runPineconeValidation() }
 
