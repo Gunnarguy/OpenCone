@@ -221,10 +221,14 @@ struct ChatBubble: View {
         return components.last.map(String.init) ?? path
     }
 
-    private func formatTime(_ date: Date) -> String {
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatTime(_ date: Date) -> String {
+        return Self.timeFormatter.string(from: date)
     }
 }
 
