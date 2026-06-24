@@ -581,7 +581,7 @@ struct SettingsView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(themeManager.currentTheme.successColor)
                         .font(.caption)
-                    Text("Saved \(lastSave, formatter: timeFormatter)")
+                    Text("Saved \(lastSave, formatter: Self.timeFormatter)")
                         .font(.caption)
                         .foregroundColor(themeManager.currentTheme.textSecondaryColor)
                 }
@@ -595,11 +595,11 @@ struct SettingsView: View {
         )
     }
 
-    private var timeFormatter: DateFormatter {
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter
-    }
+    }()
 
     // MARK: - Search UI Content
 
