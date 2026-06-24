@@ -1381,13 +1381,6 @@ final class DocumentsViewModel: ObservableObject {
 
     // MARK: - Helper Methods
 
-    /// Checks if the document is already processed
-    /// - Parameter documentId: ID of the document to check
-    /// - Returns: True if the document is processed
-    func isDocumentProcessed(documentId: UUID) -> Bool {
-        return documents.first(where: { $0.id == documentId })?.isProcessed ?? false
-    }
-
     /// Get the total size of all selected documents
     /// - Returns: Total size in bytes
     func getTotalSelectedSize() -> Int64 {
