@@ -76,8 +76,27 @@ struct DocumentsViewRedesign: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .sheet(isPresented: $showingDocumentPicker) {
-            DocumentPicker(viewModel: viewModel)
+        .fileImporter(
+            isPresented: $showingDocumentPicker,
+            allowedContentTypes: [
+                .pdf, .plainText, .utf8PlainText, .text, .rtf,
+                UTType("com.microsoft.word.doc")!,
+                UTType("org.openxmlformats.wordprocessingml.document")!,
+                UTType("com.microsoft.excel.xls")!,
+                UTType("org.openxmlformats.spreadsheetml.sheet")!,
+                UTType("com.microsoft.powerpoint.ppt")!,
+                UTType("org.openxmlformats.presentationml.presentation")!
+            ],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                for url in urls {
+                    viewModel.addDocument(at: url)
+                }
+            case .failure(let error):
+                print("Error picking document: \(error.localizedDescription)")
+            }
         }
         .sheet(isPresented: $showingAdvancedSheet) {
             AdvancedOptionsSheet(viewModel: viewModel)
