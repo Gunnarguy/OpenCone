@@ -188,26 +188,6 @@ final class EmbeddingService: Sendable {
         return embedding
     }
 
-    /// Calculate cosine similarity between two vectors
-    /// - Parameters:
-    ///   - a: First vector
-    ///   - b: Second vector
-    /// - Returns: Cosine similarity score
-    func cosineSimilarity(a: [Float], b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else {
-            return 0
-        }
-
-        let dotProduct = zip(a, b).map { $0 * $1 }.reduce(0, +)
-        let magnitudeA = sqrt(a.map { $0 * $0 }.reduce(0, +))
-        let magnitudeB = sqrt(b.map { $0 * $0 }.reduce(0, +))
-
-        guard magnitudeA > 0, magnitudeB > 0 else {
-            return 0
-        }
-
-        return dotProduct / (magnitudeA * magnitudeB)
-    }
 
     /// Convert embeddings to Pinecone format
     /// - Parameter embeddings: Array of EmbeddingModel objects
@@ -222,22 +202,6 @@ final class EmbeddingService: Sendable {
         }
     }
 
-    /// Local search when Pinecone is not available (for small datasets)
-    /// - Parameters:
-    ///   - queryEmbedding: Query vector embedding
-    ///   - embeddings: Array of EmbeddingModel objects
-    ///   - topK: Number of results to return
-    /// - Returns: Array of search results with similarities
-    func localSearch(queryEmbedding: [Float], embeddings: [EmbeddingModel], topK: Int) -> [(EmbeddingModel, Float)] {
-        let similarities = embeddings.map { embedding in
-            (embedding, cosineSimilarity(a: queryEmbedding, b: embedding.vector))
-        }
-
-        return similarities
-            .sorted { $0.1 > $1.1 } // Sort by similarity (descending)
-            .prefix(topK) // Take only top K results
-            .map { ($0.0, $0.1) }
-    }
 
     // MARK: - Metadata Helpers
 
