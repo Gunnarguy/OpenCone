@@ -262,24 +262,6 @@ struct OpenConeApp: App {
         #endif
     }
 
-    #if canImport(UIKit)
-    /// Sets the application's user interface style (light/dark).
-    /// Requires UIKit.
-    /// - Parameter darkMode: A boolean indicating whether dark mode should be enabled.
-    @MainActor
-    private func setAppearance(darkMode: Bool) {
-        // Access the first connected window scene to set the appearance
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
-            logger.log(level: .warning, message: "Could not find UIWindowScene to set appearance.")
-            return
-        }
-        // Use overrideUserInterfaceStyle to force light or dark mode
-        scene.windows.first?.overrideUserInterfaceStyle = darkMode ? .dark : .light
-        logger.log(
-            level: .info, message: "App appearance set to \(darkMode ? "Dark" : "Light") Mode."
-        )
-    }
-    #endif // canImport(UIKit)
 }
 
 // MARK: - App State
