@@ -1,0 +1,6 @@
+🧹 Remove unused localSearch and cosineSimilarity functions
+
+🎯 **What:** The `localSearch` function and its helper `cosineSimilarity` were removed from `OpenCone/Services/EmbeddingService.swift`.
+💡 **Why:** These functions are unused dead code. Removing them improves maintainability and readability without altering the application's behavior.
+✅ **Verification:** Verified with code searches that neither `localSearch` nor `cosineSimilarity` were invoked elsewhere in the codebase.
+✨ **Result:** A cleaner codebase with less dead code.
