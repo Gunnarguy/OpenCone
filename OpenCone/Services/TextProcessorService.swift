@@ -144,8 +144,6 @@ final class TextProcessorService {
                     }
                 }
 
-                // Manually trigger a memory cleanup after each batch
-                Thread.sleep(forTimeInterval: 0.01)
             }
 
             // Calculate analytics
