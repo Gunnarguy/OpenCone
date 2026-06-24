@@ -982,49 +982,6 @@ final class PineconeService {
         return responseModel ?? DeleteResponse(matchedCount: nil, deletedCount: nil)
     }
 
-    /// Update an existing vector's values or metadata
-    func updateVector(id: String, values: [Float]? = nil, metadata: [String: Any]? = nil, namespace: String? = nil) async throws -> UpdateResponse {
-        guard let indexHost = indexHost else {
-            throw PineconeError.noIndexSelected
-        }
-
-        var body: [String: Any] = ["id": id]
-        if let values = values { body["values"] = values }
-        if let metadata = metadata { body["setMetadata"] = metadata }
-        if let namespace = namespace { body["namespace"] = namespace }
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
-            throw PineconeError.invalidRequestData
-        }
-
-        let endpoint = "https://\(indexHost)/vectors/update"
-        var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"
-        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
-        request.httpBody = jsonData
-
-        var responseModel: UpdateResponse?
-
-        try await withRetries(maxRetries: maxRetries) {
-            try await self.applyRateLimit()
-            let (data, response) = try await session.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw PineconeError.invalidResponse
-            }
-
-            if httpResponse.statusCode != 200 {
-                if self.shouldRetry(statusCode: httpResponse.statusCode) {
-                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
-                }
-                let message = String(data: data, encoding: .utf8)
-                throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
-            }
-
-            responseModel = try JSONDecoder().decode(UpdateResponse.self, from: data)
-        }
-
-        return responseModel ?? UpdateResponse(upsertedCount: nil)
-    }
 
     /// Fetch vectors by identifier
     func fetchVectors(ids: [String], namespace: String? = nil) async throws -> FetchResponse {
@@ -1626,14 +1583,6 @@ struct DeleteResponse: Codable {
     enum CodingKeys: String, CodingKey {
         case matchedCount = "matched_count"
         case deletedCount = "deleted_count"
-    }
-}
-
-struct UpdateResponse: Codable {
-    let upsertedCount: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case upsertedCount = "upserted_count"
     }
 }
 
