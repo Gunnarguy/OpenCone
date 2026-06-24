@@ -126,12 +126,6 @@ struct Configuration {
         // Production implementation: Save securely to Keychain.
     }
 
-    /// Saves the Pinecone Project ID. (Placeholder - Prints confirmation).
-    /// - Parameter id: The Pinecone Project ID to save.
-    static func savePineconeProjectId(_ id: String) {
-        // Production implementation: Save securely to Keychain.
-    }
-
     // MARK: - Pinecone Location (Cloud/Region)
 
     /// Returns the preferred Pinecone cloud provider (e.g., "aws", "gcp")
