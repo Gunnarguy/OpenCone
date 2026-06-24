@@ -48,10 +48,5 @@ struct DocumentPicker: UIViewControllerRepresentable {
                 parent.viewModel.addDocument(at: url)
             }
         }
-        
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            // Handle cancellation if needed
-            print("Document picker was cancelled.")
-        }
     }
 }
