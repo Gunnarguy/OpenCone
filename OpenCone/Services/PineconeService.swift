@@ -45,8 +45,8 @@ final class PineconeService {
     private nonisolated let session: URLSession
 
     // Retry configuration
-    private let maxRetries = 3
-    private let retryDelay: TimeInterval = 1.0 // Base delay in seconds
+    var maxRetries = 3
+    var retryDelay: TimeInterval = 1.0 // Base delay in seconds
 
     // Rate limiting
     private var lastRequestTime: Date?

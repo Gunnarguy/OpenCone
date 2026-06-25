@@ -132,6 +132,8 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
+        sut.maxRetries = 0
+        sut.retryDelay = 0
 
         MockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
