@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenCone
 
-final class MockURLProtocol: URLProtocol {
+final class HealthCheckMockURLProtocol: URLProtocol {
     static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -13,7 +13,7 @@ final class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard let handler = MockURLProtocol.requestHandler else {
+        guard let handler = HealthCheckMockURLProtocol.requestHandler else {
             fatalError("Handler is unavailable.")
         }
 
@@ -36,7 +36,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        URLProtocol.registerClass(MockURLProtocol.self)
+        URLProtocol.registerClass(HealthCheckMockURLProtocol.self)
         // Reset UserDefaults state if necessary for clean tests
         UserDefaults.standard.removeObject(forKey: "pinecone.cachedIndexList")
         UserDefaults.standard.removeObject(forKey: "pineconeCloud")
@@ -44,14 +44,14 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     }
 
     override func tearDown() {
-        URLProtocol.unregisterClass(MockURLProtocol.self)
-        MockURLProtocol.requestHandler = nil
+        URLProtocol.unregisterClass(HealthCheckMockURLProtocol.self)
+        HealthCheckMockURLProtocol.requestHandler = nil
         super.tearDown()
     }
 
     func testHealthCheck_NoIndexSelected() async {
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
+        config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
         // indexHost and currentIndex are nil by default
 
@@ -64,11 +64,11 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     func testHealthCheck_Success() async throws {
 
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
+        config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
         // Setup handler to mock the index describe response so indexHost is set
-        MockURLProtocol.requestHandler = { request in
+        HealthCheckMockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             if request.url?.absoluteString.contains("/indexes/") == true {
                 let json = """
@@ -115,10 +115,10 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
 
     func testHealthCheck_ServerError() async throws {
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
+        config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
-        MockURLProtocol.requestHandler = { request in
+        HealthCheckMockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 let json = """
@@ -159,10 +159,10 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
 
     func testHealthCheck_CircuitOpen() async throws {
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
+        config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
 
-        MockURLProtocol.requestHandler = { request in
+        HealthCheckMockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 let json = """
@@ -192,7 +192,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         XCTAssertTrue(sut.isCircuitOpen)
 
         // Change handler to return 200, but health check should still fail fast because circuit is open
-        MockURLProtocol.requestHandler = { request in
+        HealthCheckMockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (response, Data())
         }
