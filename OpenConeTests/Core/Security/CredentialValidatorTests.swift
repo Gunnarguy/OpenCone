@@ -16,7 +16,7 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     override func tearDown() {
-        MockURLProtocol.requestHandler = nil
+        MockURLProtocol.reset()
         sut = nil
         super.tearDown()
     }
@@ -27,47 +27,38 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     func testValidateOpenAIKey_Success_ReturnsValid() async {
-        MockURLProtocol.requestHandler = { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            return (response, Data())
-        }
+        MockURLProtocol.mockResponse = HTTPURLResponse(url: URL(string: "https://api.openai.com/v1/models")!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        MockURLProtocol.mockData = Data()
 
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .valid)
     }
 
     func testValidateOpenAIKey_Unauthorized_ReturnsInvalid() async {
-        MockURLProtocol.requestHandler = { request in
-            let json = """
-            {
-                "error": {
-                    "message": "Incorrect API key provided"
-                }
+        MockURLProtocol.mockResponse = HTTPURLResponse(url: URL(string: "https://api.openai.com/v1/models")!, statusCode: 401, httpVersion: nil, headerFields: nil)!
+        let json = """
+        {
+            "error": {
+                "message": "Incorrect API key provided"
             }
-            """
-            let data = json.data(using: .utf8)!
-            let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
-            return (response, data)
         }
+        """
+        MockURLProtocol.mockData = json.data(using: .utf8)!
 
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .invalid(message: "Incorrect API key provided"))
     }
 
     func testValidateOpenAIKey_RateLimited_ReturnsRateLimited() async {
-        MockURLProtocol.requestHandler = { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: ["retry-after": "15"])!
-            return (response, Data())
-        }
+        MockURLProtocol.mockResponse = HTTPURLResponse(url: URL(string: "https://api.openai.com/v1/models")!, statusCode: 429, httpVersion: nil, headerFields: ["retry-after": "15"])!
+        MockURLProtocol.mockData = Data()
 
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .rateLimited(retryAfterSeconds: 15))
     }
 
     func testValidateOpenAIKey_NetworkError_ReturnsInvalid() async {
-        MockURLProtocol.requestHandler = { _ in
-            throw NSError(domain: "TestError", code: -1001, userInfo: [NSLocalizedDescriptionKey: "The request timed out."])
-        }
+        MockURLProtocol.mockError = NSError(domain: "TestError", code: -1001, userInfo: [NSLocalizedDescriptionKey: "The request timed out."])
 
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .invalid(message: "Network error: The request timed out."))

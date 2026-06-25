@@ -17,6 +17,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
     override func tearDown() {
         URLProtocol.unregisterClass(MockURLProtocol.self)
         MockURLProtocol.requestHandler = nil
+        MockURLProtocol.reset()
         super.tearDown()
     }
 
