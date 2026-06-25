@@ -132,11 +132,15 @@ struct LogEntryRow: View {
         .cornerRadius(8)
     }
 
-    /// Format timestamp for display
-    private func formattedTime(_ date: Date) -> String {
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    /// Format timestamp for display
+    private func formattedTime(_ date: Date) -> String {
+        return Self.timeFormatter.string(from: date)
     }
 }
 
@@ -223,11 +227,15 @@ struct LogExportView: View {
         #endif
     }
 
-    /// Format current date for filename
-    private func formattedDate() -> String {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd_HHmmss"
-        return formatter.string(from: Date())
+        return formatter
+    }()
+
+    /// Format current date for filename
+    private func formattedDate() -> String {
+        return Self.dateFormatter.string(from: Date())
     }
 }
 
