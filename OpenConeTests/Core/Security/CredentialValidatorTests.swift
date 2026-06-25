@@ -1,7 +1,6 @@
 import XCTest
 @testable import OpenCone
 
-}
 
 @MainActor
 final class CredentialValidatorTests: XCTestCase {
