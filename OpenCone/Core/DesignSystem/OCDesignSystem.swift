@@ -37,7 +37,6 @@ struct OCDesignSystem {
 // Extension to standardize view modifiers
 extension View {
 
-    // Removed @ViewBuilder as it's not applicable here
     func secondaryText() -> some View {
         self.font(.subheadline)
             .foregroundColor(ThemeManager.shared.currentTheme.textSecondaryColor)
