@@ -155,6 +155,8 @@ final class OpenAIService: Sendable {
 
             let embeddingResponse = try JSONDecoder().decode(EmbeddingResponse.self, from: data)
             return embeddingResponse.data.map { $0.embedding }
+        } catch let apiError as APIError {
+            throw apiError
         } catch {
             logger.log(level: .error, message: "Embedding request failed: \(error.localizedDescription)")
             throw APIError.requestFailed(statusCode: 0, message: error.localizedDescription)
@@ -275,6 +277,8 @@ final class OpenAIService: Sendable {
             }
 
             throw APIError.noCompletionGenerated
+        } catch let apiError as APIError {
+            throw apiError
         } catch {
             logger.log(level: .error, message: "Responses completion request failed: \(error.localizedDescription)")
             throw APIError.requestFailed(statusCode: 0, message: error.localizedDescription)
@@ -547,6 +551,8 @@ final class OpenAIService: Sendable {
             }
             // If stream ended without explicit completed event, still signal completion
             completeOnce()
+        } catch let apiError as APIError {
+            throw apiError
         } catch is CancellationError {
             logger.log(level: .info, message: "Responses streaming cancelled by user")
             throw CancellationError()
