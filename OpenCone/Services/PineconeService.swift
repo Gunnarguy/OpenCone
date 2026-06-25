@@ -643,12 +643,6 @@ final class PineconeService {
         return indexStats
     }
 
-    /// Fetch aggregate statistics for the current index, including namespace counts.
-    /// - Parameter forceRefresh: If true, bypasses cache and fetches fresh data
-    func fetchIndexStats(forceRefresh: Bool = false) async throws -> IndexStatsResponse {
-        try await describeIndexStats(forceRefresh: forceRefresh)
-    }
-
     /// Invalidate the stats cache for the current index (call after upsert/delete)
     func invalidateStatsCache() {
         if let indexName = currentIndex {

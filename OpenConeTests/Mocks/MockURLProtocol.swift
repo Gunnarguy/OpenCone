@@ -5,6 +5,7 @@ class MockURLProtocol: URLProtocol {
     static var mockData: Data?
     static var mockResponse: URLResponse?
     static var mockError: Error?
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool {
         return true
@@ -50,5 +51,6 @@ class MockURLProtocol: URLProtocol {
         mockData = nil
         mockResponse = nil
         mockError = nil
+        requestHandler = nil
     }
 }
