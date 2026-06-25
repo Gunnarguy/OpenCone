@@ -7,8 +7,6 @@ import Security
 final class SecureSettingsStore: @unchecked Sendable { 
     static let shared = SecureSettingsStore()
     private init() {
-        // One-time migrations from UserDefaults (legacy) to Keychain-backed storage
-        migrateLegacyUserDefaultsSecrets()
     }
 
     // MARK: - Keys
@@ -128,30 +126,6 @@ final class SecureSettingsStore: @unchecked Sendable {
         ]
 
         nonSecretKeys.forEach { defaults.removeObject(forKey: $0) }
-    }
-
-    // MARK: - Migration from legacy UserDefaults keys
-
-    private func migrateLegacyUserDefaultsSecrets() {
-        // Legacy UserDefaults keys used by SettingsViewModel
-        let legacyOpenAI = UserDefaults.standard.string(forKey: "openAIAPIKey")
-        let legacyPineconeKey = UserDefaults.standard.string(forKey: "pineconeAPIKey")
-        let legacyProjectId = UserDefaults.standard.string(forKey: "pineconeProjectId")
-
-        if let legacyOpenAI, !legacyOpenAI.isEmpty, loadKeychainString(forKey: Key.openAIKey) == nil {
-            _ = saveKeychainString(legacyOpenAI, forKey: Key.openAIKey)
-        }
-        UserDefaults.standard.removeObject(forKey: "openAIAPIKey")
-
-        if let legacyPineconeKey, !legacyPineconeKey.isEmpty, loadKeychainString(forKey: Key.pineconeKey) == nil {
-            _ = saveKeychainString(legacyPineconeKey, forKey: Key.pineconeKey)
-        }
-        UserDefaults.standard.removeObject(forKey: "pineconeAPIKey")
-
-        if let legacyProjectId, !legacyProjectId.isEmpty, loadKeychainString(forKey: Key.pineconeProjectId) == nil {
-            _ = saveKeychainString(legacyProjectId, forKey: Key.pineconeProjectId)
-        }
-        UserDefaults.standard.removeObject(forKey: "pineconeProjectId")
     }
 
     // MARK: - Keychain helpers
