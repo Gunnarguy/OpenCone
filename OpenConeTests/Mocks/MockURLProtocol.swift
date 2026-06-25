@@ -1,9 +1,13 @@
 import Foundation
 
 class MockURLProtocol: URLProtocol {
+    // Pattern 1: Static data properties
     static var mockData: Data?
     static var mockResponse: URLResponse?
     static var mockError: Error?
+
+    // Pattern 2: Closure-based request handler
+    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool {
         return true
@@ -14,6 +18,20 @@ class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
+        // If a request handler is provided, use it (Pattern 2)
+        if let handler = MockURLProtocol.requestHandler {
+            do {
+                let (response, data) = try handler(request)
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+            return
+        }
+
+        // Otherwise use the static properties (Pattern 1)
         if let error = MockURLProtocol.mockError {
             client?.urlProtocol(self, didFailWithError: error)
             return
@@ -36,5 +54,6 @@ class MockURLProtocol: URLProtocol {
         mockData = nil
         mockResponse = nil
         mockError = nil
+        requestHandler = nil
     }
 }
