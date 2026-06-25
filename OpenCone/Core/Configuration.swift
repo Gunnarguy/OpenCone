@@ -88,50 +88,6 @@ struct Configuration {
         return acceptedMimeTypes.contains(mimeType)
     }
 
-    // MARK: - API Key Management (Placeholder/Demo)
-    // Note: In a production application, API keys should be securely stored and retrieved
-    // using the Keychain service, not stored directly in code or UserDefaults.
-    // These functions are placeholders demonstrating where such logic would reside.
-
-    /// Retrieves the OpenAI API key. (Placeholder - Reads from static property).
-    /// - Returns: The configured OpenAI API key.
-    static func getOpenAIAPIKey() -> String {
-        // Retrieve securely from Keychain-backed store
-        return SecureSettingsStore.shared.getOpenAIKey()
-    }
-
-    /// Retrieves the Pinecone API key. (Placeholder - Reads from static property).
-    /// - Returns: The configured Pinecone API key.
-    static func getPineconeAPIKey() -> String {
-        // Retrieve securely from Keychain-backed store
-        return SecureSettingsStore.shared.getPineconeAPIKey()
-    }
-
-    /// Retrieves the Pinecone Project ID. (Placeholder - Reads from static property).
-    /// - Returns: The configured Pinecone Project ID.
-    static func getPineconeProjectId() -> String {
-        // Retrieve securely from Keychain-backed store
-        return SecureSettingsStore.shared.getPineconeProjectId()
-    }
-
-    /// Saves the OpenAI API key. (Placeholder - Prints confirmation).
-    /// - Parameter key: The OpenAI API key to save.
-    static func saveOpenAIAPIKey(_ key: String) {
-        // Production implementation: Save securely to Keychain.
-    }
-
-    /// Saves the Pinecone API key. (Placeholder - Prints confirmation).
-    /// - Parameter key: The Pinecone API key to save.
-    static func savePineconeAPIKey(_ key: String) {
-        // Production implementation: Save securely to Keychain.
-    }
-
-    /// Saves the Pinecone Project ID. (Placeholder - Prints confirmation).
-    /// - Parameter id: The Pinecone Project ID to save.
-    static func savePineconeProjectId(_ id: String) {
-        // Production implementation: Save securely to Keychain.
-    }
-
     // MARK: - Pinecone Location (Cloud/Region)
 
     /// Returns the preferred Pinecone cloud provider (e.g., "aws", "gcp")
