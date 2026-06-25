@@ -9,9 +9,9 @@ final class DocumentModelTests: XCTestCase {
 
         let url = URL(fileURLWithPath: "/test/path.pdf")
 
-        var doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
-        var doc2 = DocumentModel(id: id1, documentId: "doc2", fileName: "test2.pdf", filePath: url, mimeType: "application/pdf", fileSize: 200, dateAdded: Date())
-        var doc3 = DocumentModel(id: id2, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
+        let doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
+        let doc2 = DocumentModel(id: id1, documentId: "doc2", fileName: "test2.pdf", filePath: url, mimeType: "application/pdf", fileSize: 200, dateAdded: Date())
+        let doc3 = DocumentModel(id: id2, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
 
         // Equality is based solely on id
         XCTAssertEqual(doc1, doc2)
@@ -24,8 +24,8 @@ final class DocumentModelTests: XCTestCase {
 
         let url = URL(fileURLWithPath: "/test/path.pdf")
 
-        var doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
-        var doc2 = DocumentModel(id: id1, documentId: "doc2", fileName: "test2.pdf", filePath: url, mimeType: "application/pdf", fileSize: 200, dateAdded: Date())
+        let doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
+        let doc2 = DocumentModel(id: id1, documentId: "doc2", fileName: "test2.pdf", filePath: url, mimeType: "application/pdf", fileSize: 200, dateAdded: Date())
 
         var hasher1 = Hasher()
         doc1.hash(into: &hasher1)
