@@ -1049,13 +1049,6 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// Clear current search results and query
-    @MainActor
-    func clearSearch() {
-        searchQuery = ""
-        resetSearchState()
-    }
-
     /// Generate an answer based on selected results
     func generateAnswerFromSelected() async {
         guard !selectedResults.isEmpty else {
