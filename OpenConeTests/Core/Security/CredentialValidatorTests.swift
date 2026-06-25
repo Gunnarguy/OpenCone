@@ -1,7 +1,7 @@
 import XCTest
 @testable import OpenCone
 
-private final class MockURLProtocol: URLProtocol {
+private final class CredentialValidatorMockURLProtocol: URLProtocol {
     static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -13,7 +13,7 @@ private final class MockURLProtocol: URLProtocol {
     }
 
     override func startLoading() {
-        guard let handler = MockURLProtocol.requestHandler else {
+        guard let handler = CredentialValidatorMockURLProtocol.requestHandler else {
             fatalError("Handler is unavailable.")
         }
 
@@ -38,13 +38,13 @@ final class CredentialValidatorTests: XCTestCase {
     override func setUp() {
         super.setUp()
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
+        configuration.protocolClasses = [CredentialValidatorMockURLProtocol.self]
         let session = URLSession(configuration: configuration)
         sut = CredentialValidator(session: session)
     }
 
     override func tearDown() {
-        MockURLProtocol.requestHandler = nil
+        CredentialValidatorMockURLProtocol.requestHandler = nil
         sut = nil
         super.tearDown()
     }
@@ -55,7 +55,7 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     func testValidateOpenAIKey_Success_ReturnsValid() async {
-        MockURLProtocol.requestHandler = { request in
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (response, Data())
         }
@@ -65,7 +65,7 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     func testValidateOpenAIKey_Unauthorized_ReturnsInvalid() async {
-        MockURLProtocol.requestHandler = { request in
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
             let json = """
             {
                 "error": {
@@ -83,7 +83,7 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     func testValidateOpenAIKey_RateLimited_ReturnsRateLimited() async {
-        MockURLProtocol.requestHandler = { request in
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: ["retry-after": "15"])!
             return (response, Data())
         }
@@ -93,7 +93,7 @@ final class CredentialValidatorTests: XCTestCase {
     }
 
     func testValidateOpenAIKey_NetworkError_ReturnsInvalid() async {
-        MockURLProtocol.requestHandler = { _ in
+        CredentialValidatorMockURLProtocol.requestHandler = { _ in
             throw NSError(domain: "TestError", code: -1001, userInfo: [NSLocalizedDescriptionKey: "The request timed out."])
         }
 
