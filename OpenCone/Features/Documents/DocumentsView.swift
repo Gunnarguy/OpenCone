@@ -50,8 +50,24 @@ struct DocumentsView: View {
                 .padding(.vertical, 20)
         }
         .background(theme.backgroundColor.ignoresSafeArea())
-        .sheet(isPresented: $showingDocumentPicker) {
-            DocumentPicker(viewModel: viewModel)
+        .fileImporter(
+            isPresented: $showingDocumentPicker,
+            allowedContentTypes: [
+                .pdf, .plainText, .utf8PlainText, .text, .rtf,
+                UTType("com.microsoft.word.doc")!,                 // .doc
+                UTType("org.openxmlformats.wordprocessingml.document")!, // .docx
+                UTType("com.microsoft.excel.xls")!,                 // .xls
+                UTType("org.openxmlformats.spreadsheetml.sheet")!, // .xlsx
+                UTType("com.microsoft.powerpoint.ppt")!,            // .ppt
+                UTType("org.openxmlformats.presentationml.presentation")! // .pptx
+            ],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                for url in urls {
+                    viewModel.addDocument(at: url)
+                }
+            }
         }
 .alert("Create Collection", isPresented: $showingNamespaceDialog) { 
             namespaceDialogContent
