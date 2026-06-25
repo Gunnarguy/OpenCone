@@ -4,8 +4,17 @@ import Combine
 /// Centralized logging system for the app, conforming to `ObservableObject` for UI updates.
 @MainActor
 final class Logger: ObservableObject, Sendable { 
+
     /// Shared singleton instance of the logger.
     static let shared = Logger()
+
+    private static let exportDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    private static let consoleDateFormatter = ISO8601DateFormatter()
 
     /// Published array of log entries, allowing SwiftUI views to react to changes.
     @Published var logEntries: [ProcessingLogEntry] = []
@@ -39,7 +48,7 @@ final class Logger: ObservableObject, Sendable {
         }
 
         // Also print to the console for real-time debugging during development.
-        let timestamp = ISO8601DateFormatter().string(from: entry.timestamp)
+        let timestamp = Self.consoleDateFormatter.string(from: entry.timestamp)
         let contextInfo = context.map { " [\($0)]" } ?? "" // Use map for cleaner optional handling.
         print("[\(timestamp)] [\(level.rawValue)]\(contextInfo): \(message)")
     }
@@ -65,14 +74,11 @@ final class Logger: ObservableObject, Sendable {
         // Use a local copy of logEntries to avoid potential race conditions if logs are added during export.
         let entriesToExport = self.logEntries
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
-        var logText = "OpenCone Logs - \(dateFormatter.string(from: Date()))\n\n"
+        var logText = "OpenCone Logs - \(Self.exportDateFormatter.string(from: Date()))\n\n"
 
         // Iterate through the log entries and format them.
         for entry in entriesToExport {
-            let timestamp = dateFormatter.string(from: entry.timestamp)
+            let timestamp = Self.exportDateFormatter.string(from: entry.timestamp)
             let contextInfo = entry.context.map { " [\($0)]" } ?? ""
             logText += "[\(timestamp)] [\(entry.level.rawValue)]\(contextInfo): \(entry.message)\n"
         }
