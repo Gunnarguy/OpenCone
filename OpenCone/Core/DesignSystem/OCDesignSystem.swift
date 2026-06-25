@@ -43,10 +43,4 @@ extension View {
             .cornerRadius(OCDesignSystem.Sizing.cornerRadiusMedium)
             .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
-
-    // Removed @ViewBuilder as it's not applicable here
-    func secondaryText() -> some View {
-        self.font(.subheadline)
-            .foregroundColor(ThemeManager.shared.currentTheme.textSecondaryColor)
-    }
 }
