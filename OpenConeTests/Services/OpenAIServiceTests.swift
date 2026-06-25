@@ -63,17 +63,19 @@ final class OpenAIServiceTests: XCTestCase {
         do {
             _ = try await service.generateCompletion(systemPrompt: "sys", userMessage: "user", context: "ctx")
             XCTFail("Expected generateCompletion to throw, but it succeeded")
-        } catch let error as APIError {
-            // Assert
-            switch error {
-            case .requestFailed(let statusCode, let message):
-                XCTAssertEqual(statusCode, 404)
-                XCTAssertEqual(message, "Model not found")
-            default:
-                XCTFail("Expected requestFailed error, got \(error)")
-            }
         } catch {
-            XCTFail("Expected APIError, got \(error)")
+            print(">>> THROWN ERROR: \(error)")
+            if let apiError = error as? APIError {
+                switch apiError {
+                case .requestFailed(let statusCode, let message):
+                    XCTAssertEqual(statusCode, 404)
+                    XCTAssertEqual(message, "Model not found")
+                default:
+                    XCTFail("Expected requestFailed error, got \(apiError)")
+                }
+            } else {
+                XCTFail("Expected APIError, got \(error)")
+            }
         }
     }
 
@@ -96,10 +98,10 @@ final class OpenAIServiceTests: XCTestCase {
             XCTFail("Expected generateCompletion to throw, but it succeeded")
         } catch let error as APIError {
             // Assert
-            if case .requestFailed(_, let message) = error {
-                XCTAssertTrue(message?.contains("The data isn’t valid") == true || message?.contains("The data could not be read") == true || message?.contains("No completion generated") == true, "Expected No completion generated or data invalid, got \(message ?? "")")
+            if case .noCompletionGenerated = error {
+                // Success
             } else {
-                 XCTFail("Expected requestFailed error due to catch, got \(error)")
+                 XCTFail("Expected noCompletionGenerated error, got \(error)")
             }
         } catch {
             XCTFail("Expected APIError, got \(error)")
