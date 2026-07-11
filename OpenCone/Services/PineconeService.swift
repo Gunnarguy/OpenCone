@@ -896,7 +896,7 @@ final class PineconeService {
             }
 
             guard let url = URL(string: endpoint) else {
-                throw PineconeError.invalidURL
+                return false
             }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
