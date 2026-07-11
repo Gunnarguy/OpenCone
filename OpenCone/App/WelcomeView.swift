@@ -517,6 +517,5 @@ struct APIKeyEntryView: View {
     // Provides a preview instance of the WelcomeView in Xcode Canvas.
     WelcomeView(settingsViewModel: SettingsViewModel()) {
         // Action to perform when the preview setup completes.
-        print("Setup completed in Preview")
     }
 }
