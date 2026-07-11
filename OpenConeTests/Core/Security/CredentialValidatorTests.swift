@@ -100,4 +100,16 @@ final class CredentialValidatorTests: XCTestCase {
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .invalid(message: "Network error: The request timed out."))
     }
+
+    func testValidateOpenAIKey_LargePayload_ReturnsInvalid() async {
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
+            // Create a payload larger than 10KB
+            let largeData = Data(repeating: 0x20, count: 11 * 1024)
+            return (response, largeData)
+        }
+
+        let status = await sut.validateOpenAIKey("sk-testkey")
+        XCTAssertEqual(status, .invalid(message: "Unauthorized: Invalid API key"))
+    }
 }

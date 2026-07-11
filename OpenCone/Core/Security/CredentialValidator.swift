@@ -79,6 +79,7 @@ final class CredentialValidator: Sendable {
 
     private func decodeOpenAIErrorMessage(_ data: Data) -> String? {
         struct OpenAIErrorResponse: Decodable { let error: Inner; struct Inner: Decodable { let message: String } }
+        guard data.count <= 10 * 1024 else { return nil }
         if let decoded = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
             return decoded.error.message
         }
@@ -143,6 +144,7 @@ final class CredentialValidator: Sendable {
 
     private func decodePineconeErrorMessage(_ data: Data) -> String? {
         struct PineconeErrorResponse: Decodable { let message: String? }
+        guard data.count <= 10 * 1024 else { return nil }
         if let decoded = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data) {
             return decoded.message
         }
