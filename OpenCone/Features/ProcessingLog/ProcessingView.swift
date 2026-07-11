@@ -222,7 +222,7 @@ struct LogExportView: View {
 
                 rootViewController.present(activityViewController, animated: true)
             } catch {
-                print("Error writing log file: \(error.localizedDescription)")
+                // Ignore error as requested
             }
         #endif
     }
