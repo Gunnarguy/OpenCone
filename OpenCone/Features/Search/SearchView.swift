@@ -1828,11 +1828,7 @@ struct SourcesTabView: View {
                     Spacer()
 
                     Button(action: {
-                        for result in viewModel.searchResults {
-                            if !result.isSelected {
-                                viewModel.toggleResultSelection(result)
-                            }
-                        }
+                        viewModel.selectAllResults()
                     }) {
                         Text("Select All")
                             .font(.caption)

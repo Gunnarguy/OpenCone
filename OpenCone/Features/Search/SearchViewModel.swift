@@ -585,6 +585,20 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
+    /// Select all search results efficiently
+    func selectAllResults() {
+        // Fast path: if all are selected, do nothing
+        if searchResults.allSatisfy({ $0.isSelected }) { return }
+
+        for i in 0..<searchResults.count {
+            if !searchResults[i].isSelected {
+                searchResults[i].isSelected = true
+                selectedResults.append(searchResults[i])
+            }
+        }
+    }
+
+
     /// Toggle expansion state for a search result row
     func toggleResultExpansion(for resultID: UUID) {
         if expandedResultIDs.contains(resultID) {
