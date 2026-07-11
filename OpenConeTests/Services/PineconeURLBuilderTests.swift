@@ -66,12 +66,15 @@ final class PineconeURLBuilderTests: XCTestCase {
     }
     
     func testBuildURL_AdversarialPathComponents() throws {
+        service.indexHost = "my-index.svc.pinecone.io"
+        
         // Test that adversarial inputs in path components are properly percent-encoded
         let nameWithSpaces = "my index name"
-        let nameWithSpecialChars = "test/namespace!@#"
-        
         let url1 = try service.buildURL(isControlPlane: true, pathComponents: ["indexes", nameWithSpaces])
+        XCTAssertEqual(url1.absoluteString, "https://api.pinecone.io/indexes/my%20index%20name")
+        
+        let nameWithSpecialChars = "namespace%name"
         let url2 = try service.buildURL(isControlPlane: false, pathComponents: ["namespaces", nameWithSpecialChars])
-        XCTFail("url1: \(url1.absoluteString), url2: \(url2.absoluteString)")
+        XCTAssertEqual(url2.absoluteString, "https://my-index.svc.pinecone.io/namespaces/namespace%25name")
     }
 }
