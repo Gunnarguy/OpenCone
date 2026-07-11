@@ -72,4 +72,46 @@ final class CredentialValidatorPineconeTests: XCTestCase {
         let status = await validator.validatePinecone(apiKey: "pcsk_test", projectId: "test-proj")
         XCTAssertEqual(status, .invalid(message: "Network error: The Internet connection appears to be offline."))
     }
+
+    func testValidatePinecone_oversizedResponses() async {
+        let url = URL(string: "https://api.pinecone.io/indexes")!
+        MockURLProtocol.mockResponse = HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil)
+
+        // 1. Exactly 10,239 bytes - should decode successfully
+        let prefix = "{\"message\":\""
+        let suffix = "\"}"
+        let fillSize = 10239 - prefix.count - suffix.count
+        let fillString = String(repeating: "D", count: fillSize)
+        MockURLProtocol.mockData = (prefix + fillString + suffix).data(using: .utf8)!
+        XCTAssertEqual(MockURLProtocol.mockData?.count, 10239)
+
+        let status1 = await validator.validatePinecone(apiKey: "pcsk_invalid", projectId: "test-proj")
+        if case .invalid(let msg) = status1 {
+            XCTAssertTrue(msg.starts(with: "DDDD"))
+        } else {
+            XCTFail("Expected invalid status")
+        }
+
+        // 2. Exactly 10,240 bytes - should decode successfully
+        let fillSize2 = 10240 - prefix.count - suffix.count
+        let fillString2 = String(repeating: "E", count: fillSize2)
+        MockURLProtocol.mockData = (prefix + fillString2 + suffix).data(using: .utf8)!
+        XCTAssertEqual(MockURLProtocol.mockData?.count, 10240)
+
+        let status2 = await validator.validatePinecone(apiKey: "pcsk_invalid", projectId: "test-proj")
+        if case .invalid(let msg) = status2 {
+            XCTAssertTrue(msg.starts(with: "EEEE"))
+        } else {
+            XCTFail("Expected invalid status")
+        }
+
+        // 3. Exactly 10,241 bytes - should be rejected as oversized
+        let fillSize3 = 10241 - prefix.count - suffix.count
+        let fillString3 = String(repeating: "F", count: fillSize3)
+        MockURLProtocol.mockData = (prefix + fillString3 + suffix).data(using: .utf8)!
+        XCTAssertEqual(MockURLProtocol.mockData?.count, 10241)
+
+        let status3 = await validator.validatePinecone(apiKey: "pcsk_invalid", projectId: "test-proj")
+        XCTAssertEqual(status3, .invalid(message: "Network error: The server response exceeded the allowed size limit."))
+    }
 }

@@ -25,6 +25,36 @@ final class CredentialValidator: Sendable {
         Logger.shared.log(level: level, message: message)
     }
 
+    // MARK: - Bounded Download Helper
+
+    private func downloadBoundedData(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (asyncBytes, response) = try await session.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BoundedResponseError.invalidResponse
+        }
+        
+        let isSuccess = (httpResponse.statusCode == 200)
+        let maxBytes = isSuccess ? 256 * 1024 : 10 * 1024
+        
+        if let contentLengthString = httpResponse.value(forHTTPHeaderField: "Content-Length"),
+           let contentLength = Int(contentLengthString),
+           contentLength > maxBytes {
+            throw BoundedResponseError.responseExceedsLimit
+        }
+        
+        var data = Data()
+        data.reserveCapacity(min(maxBytes, 4096))
+        
+        for try await byte in asyncBytes {
+            data.append(byte)
+            if data.count > maxBytes {
+                throw BoundedResponseError.responseExceedsLimit
+            }
+        }
+        
+        return (data, httpResponse)
+    }
+
     // MARK: - OpenAI
 
     /// Validates the OpenAI API key by fetching the model list.
@@ -49,10 +79,7 @@ final class CredentialValidator: Sendable {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                return .invalid(message: "Invalid HTTP response")
-            }
+            let (data, http) = try await downloadBoundedData(for: request)
 
             if http.statusCode == 200 {
                 return .valid
@@ -113,10 +140,7 @@ final class CredentialValidator: Sendable {
         request.setValue(pid, forHTTPHeaderField: "X-Project-Id")
 
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                return .invalid(message: "Invalid HTTP response")
-            }
+            let (data, http) = try await downloadBoundedData(for: request)
 
             if http.statusCode == 200 {
                 return .valid
@@ -147,5 +171,21 @@ final class CredentialValidator: Sendable {
             return decoded.message
         }
         return nil
+    }
+}
+
+// MARK: - Bounded Response Error
+
+enum BoundedResponseError: Error, LocalizedError {
+    case invalidResponse
+    case responseExceedsLimit
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Invalid HTTP response from server."
+        case .responseExceedsLimit:
+            return "The server response exceeded the allowed size limit."
+        }
     }
 }

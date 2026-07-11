@@ -397,15 +397,23 @@ final class DocumentsViewModel: ObservableObject {
                         activeIndex = location.indexName
                     }
 
-                    let docIds = docs.map { $0.documentId }
-                    let response = try await pineconeService.deleteVectors(
-                        ids: nil,
-                        filter: ["doc_id": ["$in": docIds]],
-                        namespace: location.namespace
-                    )
+                    let uniqueDocIds = Array(Set(docs.map { $0.documentId })).sorted()
+                    let chunks = stride(from: 0, to: uniqueDocIds.count, by: 100).map {
+                        Array(uniqueDocIds[$0..<min($0 + 100, uniqueDocIds.count)])
+                    }
 
-                    if let deleted = response.deletedCount {
-                        logger.log(level: .info, message: "Batch deleted \(deleted) vectors for \(docs.count) documents")
+                    for chunk in chunks {
+                        try Task.checkCancellation()
+
+                        let response = try await pineconeService.deleteVectors(
+                            ids: nil,
+                            filter: ["doc_id": ["$in": chunk]],
+                            namespace: location.namespace
+                        )
+
+                        if let deleted = response.deletedCount {
+                            logger.log(level: .info, message: "Batch deleted \(deleted) vectors for \(docs.count) documents")
+                        }
                     }
 
                     for doc in docs {
@@ -467,6 +475,8 @@ final class DocumentsViewModel: ObservableObject {
                     self.documents.removeAll { removedIDsSnapshot.contains($0.id) }
                     self.selectedDocuments.subtract(removedIDsSnapshot)
                 }
+
+                self.selectedIndex = self.pineconeService.getCurrentIndex()
 
                 if removalErrorsSnapshot.isEmpty {
                     self.errorMessage = nil
@@ -596,6 +606,7 @@ final class DocumentsViewModel: ObservableObject {
                 self.indexDimension = nil
                 self.indexMetadata = nil
                 self.indexStats = nil
+                self.selectedIndex = self.pineconeService.getCurrentIndex()
                 self.logger.log(level: .error, message: "Failed to set index", context: error.localizedDescription)
             }
         }

@@ -236,9 +236,9 @@ import SwiftUI
             // Populate with sample data
             viewModel.searchQuery = "user engagement recommendations"
             viewModel.searchResults = sampleSearchResults
-            viewModel.selectedResults = sampleSearchResults.filter {
+            viewModel.selectedResultIDs = Set(sampleSearchResults.filter {
                 $0.id == sampleSearchResults[1].id
-            }
+            }.map { $0.id })
             viewModel.generatedAnswer =
                 "The system enhances user engagement by providing personalized recommendations based on interaction history and content similarity. Key metrics include CTR and time spent."
             viewModel.isSearching = false

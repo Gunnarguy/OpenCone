@@ -1829,7 +1829,7 @@ struct SourcesTabView: View {
 
                     Button(action: {
                         for result in viewModel.searchResults {
-                            if !result.isSelected {
+                            if !viewModel.selectedResultIDs.contains(result.id) {
                                 viewModel.toggleResultSelection(result)
                             }
                         }
@@ -1850,7 +1850,7 @@ struct SourcesTabView: View {
                         ForEach(filteredResults) { result in
                             SearchResultRow(
                                 result: result,
-                                isSelected: result.isSelected,
+                                isSelected: viewModel.selectedResultIDs.contains(result.id),
                                 viewModel: viewModel
                             ) {
                                 viewModel.toggleResultSelection(result)

@@ -100,4 +100,56 @@ final class CredentialValidatorTests: XCTestCase {
         let status = await sut.validateOpenAIKey("sk-testkey")
         XCTAssertEqual(status, .invalid(message: "Network error: The request timed out."))
     }
+
+    func testValidateOpenAIKey_OversizedResponses() async {
+        // 1. Exactly 10,239 bytes - should succeed in decoding
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
+            let prefix = "{\"error\":{\"message\":\""
+            let suffix = "\"}}"
+            let fillSize = 10239 - prefix.count - suffix.count
+            let fillString = String(repeating: "A", count: fillSize)
+            let data = (prefix + fillString + suffix).data(using: .utf8)!
+            XCTAssertEqual(data.count, 10239)
+            return (response, data)
+        }
+        let status1 = await sut.validateOpenAIKey("sk-testkey")
+        if case .invalid(let msg) = status1 {
+            XCTAssertTrue(msg.starts(with: "AAAA"))
+        } else {
+            XCTFail("Expected invalid status")
+        }
+
+        // 2. Exactly 10,240 bytes - should succeed in decoding
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
+            let prefix = "{\"error\":{\"message\":\""
+            let suffix = "\"}}"
+            let fillSize = 10240 - prefix.count - suffix.count
+            let fillString = String(repeating: "B", count: fillSize)
+            let data = (prefix + fillString + suffix).data(using: .utf8)!
+            XCTAssertEqual(data.count, 10240)
+            return (response, data)
+        }
+        let status2 = await sut.validateOpenAIKey("sk-testkey")
+        if case .invalid(let msg) = status2 {
+            XCTAssertTrue(msg.starts(with: "BBBB"))
+        } else {
+            XCTFail("Expected invalid status")
+        }
+
+        // 3. Exactly 10,241 bytes - should be rejected as oversized
+        CredentialValidatorMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!
+            let prefix = "{\"error\":{\"message\":\""
+            let suffix = "\"}}"
+            let fillSize = 10241 - prefix.count - suffix.count
+            let fillString = String(repeating: "C", count: fillSize)
+            let data = (prefix + fillString + suffix).data(using: .utf8)!
+            XCTAssertEqual(data.count, 10241)
+            return (response, data)
+        }
+        let status3 = await sut.validateOpenAIKey("sk-testkey")
+        XCTAssertEqual(status3, .invalid(message: "Network error: The server response exceeded the allowed size limit."))
+    }
 }

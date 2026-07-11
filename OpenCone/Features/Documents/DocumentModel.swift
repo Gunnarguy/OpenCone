@@ -149,7 +149,6 @@ struct SearchResultModel: Identifiable {
     var sourceDocument: String
     var score: Float
     var metadata: [String: String]
-    var isSelected: Bool = false
     
     init(content: String, sourceDocument: String, score: Float, metadata: [String: String]) {
         self.content = content

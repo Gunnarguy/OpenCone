@@ -7,6 +7,9 @@ import Security
 final class SecureSettingsStore: @unchecked Sendable { 
     static let shared = SecureSettingsStore()
     private init() {
+        Task { @MainActor in
+            self.migrateLegacyUserDefaultsSecrets()
+        }
     }
 
     // MARK: - Keys
@@ -130,34 +133,100 @@ final class SecureSettingsStore: @unchecked Sendable {
 
     // MARK: - Keychain helpers
 
-    @discardableResult
-    private func saveKeychainString(_ value: String, forKey key: String) -> Bool {
-        guard let data = value.data(using: .utf8) else { return false }
+    // MARK: - Legacy Migration
 
-        // Remove any existing item
-        let deleteQuery: [String: Any] = [
+    @MainActor
+    func migrateLegacyUserDefaultsSecrets() {
+        let defaults = UserDefaults.standard
+        let logger = Logger.shared
+        
+        let keysToMigrate = [
+            (legacyKey: "openAIAPIKey", keychainKey: Key.openAIKey),
+            (legacyKey: "pineconeAPIKey", keychainKey: Key.pineconeKey),
+            (legacyKey: "pineconeProjectId", keychainKey: Key.pineconeProjectId)
+        ]
+        
+        for (legacyKey, keychainKey) in keysToMigrate {
+            guard let legacyValue = defaults.string(forKey: legacyKey), !legacyValue.isEmpty else {
+                continue
+            }
+            
+            do {
+                try saveKeychainString(legacyValue, forKey: keychainKey, accessibility: kSecAttrAccessibleWhenUnlocked)
+                
+                // Read it back to verify success
+                if let verifiedValue = loadKeychainString(forKey: keychainKey), verifiedValue == legacyValue {
+                    defaults.removeObject(forKey: legacyKey)
+                    logger.log(level: .info, message: "Successfully migrated secret '\(legacyKey)' to Keychain and verified read-back.")
+                } else {
+                    logger.log(level: .error, message: "Failed to verify Keychain read-back for '\(legacyKey)'. Will retry next time.")
+                }
+            } catch {
+                logger.log(level: .error, message: "Failed to migrate '\(legacyKey)' to Keychain: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - Keychain helpers
+
+    private let serviceIdentifier = "com.opencone.securestore"
+
+    private func saveKeychainString(_ value: String, forKey key: String, accessibility: CFString = kSecAttrAccessibleWhenUnlocked) throws {
+        guard let data = value.data(using: .utf8) else {
+            throw KeychainError.dataEncodingFailed
+        }
+
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key
         ]
-        SecItemDelete(deleteQuery as CFDictionary)
 
-        // Add new item
-        var addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data
-        ]
+        // Check if item already exists
+        let statusCheck = SecItemCopyMatching(query as CFDictionary, nil)
 
-        // Improve accessibility as needed (default generic)
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        if statusCheck == errSecSuccess {
+            // Item exists, update it
+            let attributesToUpdate: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: accessibility
+            ]
+            let status = SecItemUpdate(query as CFDictionary, attributesToUpdate as CFDictionary)
+            if status != errSecSuccess {
+                throw KeychainError.unhandledStatus(status)
+            }
+        } else if statusCheck == errSecItemNotFound {
+            // Item does not exist, add it
+            var attributes = query
+            attributes[kSecValueData as String] = data
+            attributes[kSecAttrAccessible as String] = accessibility
 
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        return status == errSecSuccess
+            let status = SecItemAdd(attributes as CFDictionary, nil)
+            if status != errSecSuccess {
+                throw KeychainError.unhandledStatus(status)
+            }
+        } else {
+            throw KeychainError.unhandledStatus(statusCheck)
+        }
+    }
+
+    @discardableResult
+    private func saveKeychainString(_ value: String, forKey key: String) -> Bool {
+        do {
+            try saveKeychainString(value, forKey: key, accessibility: kSecAttrAccessibleWhenUnlocked)
+            return true
+        } catch {
+            Task { @MainActor in
+                Logger.shared.log(level: .error, message: "Keychain save error: \(error.localizedDescription)")
+            }
+            return false
+        }
     }
 
     private func loadKeychainString(forKey key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key,
             kSecReturnData as String: kCFBooleanTrue as Any,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -173,9 +242,32 @@ final class SecureSettingsStore: @unchecked Sendable {
     private func deleteKeychainValue(forKey key: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceIdentifier,
             kSecAttrAccount as String: key
         ]
         let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+}
+
+// MARK: - Keychain Errors
+
+enum KeychainError: Error, LocalizedError {
+    case dataEncodingFailed
+    case itemNotFound
+    case unhandledStatus(OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .dataEncodingFailed:
+            return "Failed to encode or decode Keychain data."
+        case .itemNotFound:
+            return "The requested item was not found in the Keychain."
+        case .unhandledStatus(let status):
+            if let message = SecCopyErrorMessageString(status, nil) as String? {
+                return "Keychain error: \(message) (code \(status))"
+            }
+            return "Unhandled Keychain status: \(status)"
+        }
     }
 }

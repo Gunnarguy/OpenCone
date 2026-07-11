@@ -235,7 +235,11 @@ final class SearchViewModel: ObservableObject {
     @Published var isSearching = false
     @Published var searchResults: [SearchResultModel] = []
     @Published var generatedAnswer: String = ""
-    @Published var selectedResults: [SearchResultModel] = []
+    @Published var selectedResultIDs: Set<UUID> = []
+    
+    var selectedResults: [SearchResultModel] {
+        searchResults.filter { selectedResultIDs.contains($0.id) }
+    }
     @Published var errorMessage: String? = nil  // Holds user-facing error message
     @Published var pineconeIndexes: [String] = []
     @Published var namespaces: [String] = []
@@ -573,15 +577,10 @@ final class SearchViewModel: ObservableObject {
 
     /// Toggle selection of a search result
     func toggleResultSelection(_ result: SearchResultModel) {
-        if let index = searchResults.firstIndex(where: { $0.id == result.id }) {
-            searchResults[index].isSelected.toggle()
-
-            // Update the selected results array
-            if searchResults[index].isSelected {
-                selectedResults.append(searchResults[index])
-            } else {
-                selectedResults.removeAll(where: { $0.id == result.id })
-            }
+        if selectedResultIDs.contains(result.id) {
+            selectedResultIDs.remove(result.id)
+        } else {
+            selectedResultIDs.insert(result.id)
         }
     }
 
@@ -1443,7 +1442,7 @@ final class SearchViewModel: ObservableObject {
         self.isSearching = isPreparingForSearch
         self.searchResults = []
         self.generatedAnswer = ""
-        self.selectedResults = []
+        self.selectedResultIDs.removeAll()
         self.errorMessage = nil
         self.highlightedResultID = nil
         self.expandedResultIDs.removeAll()
