@@ -551,7 +551,7 @@ final class PineconeService {
         }
         let endpoint = "https://\(indexHost)/describe_index_stats"
         guard let url = URL(string: endpoint) else {
-            throw PineconeError.invalidURL
+            return false
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -896,7 +896,7 @@ final class PineconeService {
             }
 
             guard let url = URL(string: endpoint) else {
-                return false
+                throw PineconeError.invalidURL
             }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
