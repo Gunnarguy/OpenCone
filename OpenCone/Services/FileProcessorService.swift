@@ -179,20 +179,19 @@ final class FileProcessorService {
     /// - Parameter url: URL to the PDF file
     /// - Returns: The extracted text content with structure preserved
     private func extractTextFromPDF(at url: URL) async throws -> String? {
-        return await withCheckedContinuation { continuation in
+        let localLogger = self.logger
+        return await Task.detached {
             // Create a data provider that ensures file access is properly managed
             guard let data = try? Data(contentsOf: url) else {
-                logger.log(level: .error, message: "Failed to read PDF file data")
-                continuation.resume(returning: nil)
-                return
+                await localLogger.log(level: .error, message: "Failed to read PDF file data")
+                return nil
             }
 
             // Create PDF document from data rather than direct URL access
             // This avoids file system access issues when files might be moved/deleted
             guard let pdfDocument = PDFDocument(data: data) else {
-                logger.log(level: .error, message: "Failed to load PDF document")
-                continuation.resume(returning: nil)
-                return
+                await localLogger.log(level: .error, message: "Failed to load PDF document")
+                return nil
             }
 
             var structuredChunks:
@@ -200,12 +199,12 @@ final class FileProcessorService {
             let pageCount = pdfDocument.pageCount
 
             // Log success in opening the document
-            logger.log(level: .debug, message: "Successfully opened PDF with \(pageCount) pages")
+            await localLogger.log(level: .debug, message: "Successfully opened PDF with \(pageCount) pages")
 
             // Process each page
             for pageIndex in 0..<pageCount {
                 guard let page = pdfDocument.page(at: pageIndex) else {
-                    logger.log(level: .warning, message: "Could not access page \(pageIndex+1)")
+                    await localLogger.log(level: .warning, message: "Could not access page \(pageIndex+1)")
                     continue
                 }
 
@@ -213,11 +212,11 @@ final class FileProcessorService {
                 if let attributedString = page.attributedString {
                     do {
                         // Wrap in do-catch to catch any potential errors in processing
-                        let processedText = try processAttributedStringWithFormat(
+                        let processedText = try Self.processAttributedStringWithFormat(
                             attributedString, pageNumber: pageIndex + 1)
                         structuredChunks.append(contentsOf: processedText)
                     } catch {
-                        logger.log(
+                        await localLogger.log(
                             level: .error,
                             message:
                                 "Error processing page \(pageIndex+1): \(error.localizedDescription)"
@@ -228,7 +227,7 @@ final class FileProcessorService {
                     if let pageText = page.string {
                         structuredChunks.append((pageText, pageIndex + 1, false, 12.0, .zero))
                     } else {
-                        logger.log(
+                        await localLogger.log(
                             level: .warning, message: "No text content for page \(pageIndex+1)")
                     }
                 }
@@ -236,28 +235,27 @@ final class FileProcessorService {
 
             // Check if we extracted any content
             if structuredChunks.isEmpty {
-                logger.log(level: .warning, message: "No text content extracted from PDF")
-                continuation.resume(returning: "")
-                return
+                await localLogger.log(level: .warning, message: "No text content extracted from PDF")
+                return ""
             }
 
             // Reconstruct the text from structured chunks
             let finalText =
                 structuredChunks
-                .map { "\(isHeadingPrefix($0.isHeading))\($0.text) [Page \($0.page)]" }
+                .map { "\(Self.isHeadingPrefix($0.isHeading))\($0.text) [Page \($0.page)]" }
                 .joined(separator: "\n\n")
 
-            continuation.resume(returning: finalText)
-        }
+            return finalText
+        }.value
     }
 
     /// Helper to add heading prefix
-    private func isHeadingPrefix(_ isHeading: Bool) -> String {
+    private static func isHeadingPrefix(_ isHeading: Bool) -> String {
         return isHeading ? "## " : ""
     }
 
     /// Process attributed string to extract formatting information
-    private func processAttributedStringWithFormat(
+    private static func processAttributedStringWithFormat(
         _ attributedString: NSAttributedString, pageNumber: Int
     ) throws -> [(text: String, page: Int, isHeading: Bool, fontSize: CGFloat, rect: CGRect)] {
         var structuredChunks:
