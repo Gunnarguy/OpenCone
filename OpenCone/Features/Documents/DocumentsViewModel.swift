@@ -351,62 +351,135 @@ final class DocumentsViewModel: ObservableObject {
             let defaultNamespace = await MainActor.run { self.selectedNamespace }
             var activeIndex = originalIndex
 
+            // Group documents by targetIndex and targetNamespace to batch/concurrently process deletions
+            var docsByIndexNamespace: [String?: [String: [DocumentModel]]] = [:]
             for document in documentsToRemove {
-                var vectorsRemoved = !document.isProcessed
-                var fileRemoved = false
-
                 let targetIndex = document.lastIndexedIndexName ?? originalIndex
                 let targetNamespace = document.lastIndexedNamespace ?? defaultNamespace
-
-                if document.isProcessed {
-                    do {
-                        if let indexName = targetIndex {
-                            if activeIndex != indexName {
-                                try await pineconeService.setCurrentIndex(indexName)
-                                activeIndex = indexName
-                            }
-                            let response = try await pineconeService.deleteVectors(
-                                ids: nil,
-                                filter: ["doc_id": ["$eq": document.documentId]],
-                                namespace: targetNamespace
-                            )
-                            if let deleted = response.deletedCount {
-                                logger.log(level: .info, message: "Deleted \(deleted) vectors", context: document.fileName)
-                            }
-                            vectorsRemoved = true
-                        } else {
-                            vectorsRemoved = false
-                            removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
-                        }
-                    } catch PineconeError.namespaceNotFound {
-                        vectorsRemoved = true
-                        logger.log(level: .warning, message: "Namespace not found during deletion; treating as already removed", context: document.fileName)
-                    } catch {
-                        vectorsRemoved = false
-                        removalErrors.append("Failed to delete vectors for \(document.fileName): \(error.localizedDescription)")
-                    }
+                if docsByIndexNamespace[targetIndex] == nil {
+                    docsByIndexNamespace[targetIndex] = [:]
                 }
+                docsByIndexNamespace[targetIndex]![targetNamespace, default: []].append(document)
+            }
 
-                if vectorsRemoved {
+            for (targetIndex, docsByNamespace) in docsByIndexNamespace {
+                if let indexName = targetIndex {
                     do {
-                        let path = document.filePath.path
-                        if FileManager.default.fileExists(atPath: path) {
-                            try FileManager.default.removeItem(at: document.filePath)
-                            fileRemoved = true
-                        } else {
-                            fileRemoved = true
+                        if activeIndex != indexName {
+                            try await pineconeService.setCurrentIndex(indexName)
+                            activeIndex = indexName
+                        }
+
+                        // Execute deletions concurrently for this index's namespaces
+                        await withTaskGroup(of: [(DocumentModel, Bool, String?)].self) { group in
+                            for (targetNamespace, docs) in docsByNamespace {
+                                group.addTask {
+                                    var results: [(DocumentModel, Bool, String?)] = []
+                                    // Batch deletion using $in
+                                    let processedDocs = docs.filter { $0.isProcessed }
+                                    let unprocessedDocs = docs.filter { !$0.isProcessed }
+
+                                    if !processedDocs.isEmpty {
+                                        let docIds = processedDocs.map { $0.documentId }
+                                        do {
+                                            let response = try await self.pineconeService.deleteVectors(
+                                                ids: nil,
+                                                filter: ["doc_id": ["$in": docIds]],
+                                                namespace: targetNamespace
+                                            )
+                                            if let deleted = response.deletedCount {
+                                                self.logger.log(level: .info, message: "Batch deleted \(deleted) vectors from \(targetNamespace)")
+                                            }
+                                            for doc in processedDocs {
+                                                results.append((doc, true, nil))
+                                            }
+                                        } catch PineconeError.namespaceNotFound {
+                                            self.logger.log(level: .warning, message: "Namespace not found during deletion; treating as already removed")
+                                            for doc in processedDocs {
+                                                results.append((doc, true, nil))
+                                            }
+                                        } catch {
+                                            for doc in processedDocs {
+                                                results.append((doc, false, "Failed to delete vectors for \(doc.fileName): \(error.localizedDescription)"))
+                                            }
+                                        }
+                                    }
+
+                                    for doc in unprocessedDocs {
+                                        results.append((doc, true, nil)) // vectors removed is true because it's not processed
+                                    }
+
+                                    return results
+                                }
+                            }
+
+                            for await results in group {
+                                for (document, vectorsRemoved, errorMsg) in results {
+                                    if let errorMsg = errorMsg {
+                                        removalErrors.append(errorMsg)
+                                    }
+
+                                    var fileRemoved = false
+                                    if vectorsRemoved {
+                                        do {
+                                            let path = document.filePath.path
+                                            if FileManager.default.fileExists(atPath: path) {
+                                                try FileManager.default.removeItem(at: document.filePath)
+                                            }
+                                            fileRemoved = true
+                                        } catch {
+                                            removalErrors.append("Failed to remove local copy for \(document.fileName): \(error.localizedDescription)")
+                                        }
+                                    }
+
+                                    if vectorsRemoved && fileRemoved {
+                                        removedDocumentIDs.insert(document.id)
+                                        self.logger.log(level: .info, message: "Document removed", context: document.fileName)
+                                    } else {
+                                        self.logger.log(level: .warning, message: "Document removal incomplete", context: document.fileName)
+                                    }
+                                }
+                            }
                         }
                     } catch {
-                        fileRemoved = false
-                        removalErrors.append("Failed to remove local copy for \(document.fileName): \(error.localizedDescription)")
+                        // Failed to set index
+                        for (_, docs) in docsByNamespace {
+                            for document in docs {
+                                removalErrors.append("Failed to set Pinecone index '\(indexName)' for \(document.fileName): \(error.localizedDescription)")
+                            }
+                        }
                     }
-                }
-
-                if vectorsRemoved && fileRemoved {
-                    removedDocumentIDs.insert(document.id)
-                    logger.log(level: .info, message: "Document removed", context: document.fileName)
                 } else {
-                    logger.log(level: .warning, message: "Document removal incomplete", context: document.fileName)
+                    // No valid index to delete from
+                    for (_, docs) in docsByNamespace {
+                        for document in docs {
+                            var vectorsRemoved = !document.isProcessed
+                            if document.isProcessed {
+                                vectorsRemoved = false
+                                removalErrors.append("Missing Pinecone index for \(document.fileName); cannot delete vectors.")
+                            }
+
+                            var fileRemoved = false
+                            if vectorsRemoved {
+                                do {
+                                    let path = document.filePath.path
+                                    if FileManager.default.fileExists(atPath: path) {
+                                        try FileManager.default.removeItem(at: document.filePath)
+                                    }
+                                    fileRemoved = true
+                                } catch {
+                                    removalErrors.append("Failed to remove local copy for \(document.fileName): \(error.localizedDescription)")
+                                }
+                            }
+
+                            if vectorsRemoved && fileRemoved {
+                                removedDocumentIDs.insert(document.id)
+                                logger.log(level: .info, message: "Document removed", context: document.fileName)
+                            } else {
+                                logger.log(level: .warning, message: "Document removal incomplete", context: document.fileName)
+                            }
+                        }
+                    }
                 }
             }
 
