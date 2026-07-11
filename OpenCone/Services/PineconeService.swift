@@ -130,7 +130,10 @@ final class PineconeService {
     func describeIndex(name: String) async throws -> IndexDescribeResponse {
         let endpoint = "\(baseURL)/indexes/\(name)"
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
 
@@ -196,7 +199,10 @@ final class PineconeService {
 
         let endpoint = "\(baseURL)/indexes/\(indexName)"
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
 
@@ -256,7 +262,10 @@ final class PineconeService {
 
         let endpoint = "\(baseURL)/indexes"
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
 
@@ -349,7 +358,10 @@ final class PineconeService {
             throw PineconeError.invalidRequestData
         }
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
         request.httpBody = jsonData
@@ -400,7 +412,10 @@ final class PineconeService {
     /// - Parameter name: Name of the index
     func deleteIndex(_ name: String) async throws {
         let endpoint = "\(baseURL)/indexes/\(name)"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
 
@@ -440,7 +455,10 @@ final class PineconeService {
     func isIndexReady(name: String) async throws -> Bool {
         let endpoint = "\(baseURL)/indexes/\(name)"
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.controlPlaneVersion)
 
@@ -532,7 +550,10 @@ final class PineconeService {
             return false
         }
         let endpoint = "https://\(indexHost)/describe_index_stats"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            return false
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
 
@@ -594,7 +615,10 @@ final class PineconeService {
 
         let endpoint = "https://\(indexHost)/describe_index_stats"
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
 
@@ -680,7 +704,10 @@ final class PineconeService {
             throw PineconeError.invalidRequestData
         }
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.namespaceVersion)
         request.httpBody = jsonData
@@ -790,7 +817,10 @@ final class PineconeService {
         }
 
         let endpoint = "https://\(indexHost)/namespaces/\(namespace)"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.namespaceVersion)
 
@@ -865,7 +895,10 @@ final class PineconeService {
                 throw PineconeError.invalidRequestData
             }
 
-            var request = URLRequest(url: URL(string: endpoint)!)
+            guard let url = URL(string: endpoint) else {
+                throw PineconeError.invalidURL
+            }
+            var request = URLRequest(url: url)
             request.httpMethod = "POST"
             applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
             request.httpBody = jsonData
@@ -941,7 +974,10 @@ final class PineconeService {
         }
 
         let endpoint = "https://\(indexHost)/vectors/delete"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
         request.httpBody = jsonData
@@ -990,7 +1026,10 @@ final class PineconeService {
         }
 
         let endpoint = "https://\(indexHost)/vectors/fetch"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
         request.httpBody = jsonData
@@ -1036,7 +1075,10 @@ final class PineconeService {
         }
 
         let endpoint = "https://\(indexHost)/vectors/fetch-by-metadata"
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.metadataFetchVersion)
         request.httpBody = jsonData
@@ -1095,7 +1137,10 @@ final class PineconeService {
             throw PineconeError.invalidRequestData
         }
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
     applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
         request.httpBody = jsonData
@@ -1212,7 +1257,10 @@ final class PineconeService {
             throw PineconeError.invalidRequestData
         }
 
-        var request = URLRequest(url: URL(string: endpoint)!)
+        guard let url = URL(string: endpoint) else {
+            throw PineconeError.invalidURL
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
         request.httpBody = jsonData
@@ -1673,6 +1721,7 @@ struct PineconeErrorResponse: Codable {
 }
 
 enum PineconeError: Error {
+    case invalidURL
     case invalidRequestData
     case invalidResponse
     case requestFailed(statusCode: Int, message: String?)
@@ -1763,6 +1812,9 @@ extension PineconeService {
 extension PineconeError: LocalizedError {
     var errorDescription: String? {
         switch self {
+        case .invalidURL:
+            return "The generated URL was invalid."
+
         case .invalidRequestData:
             return "The Pinecone request payload was invalid or could not be encoded."
         case .invalidResponse:
