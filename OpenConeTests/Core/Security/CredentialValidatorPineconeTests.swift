@@ -72,4 +72,17 @@ final class CredentialValidatorPineconeTests: XCTestCase {
         let status = await validator.validatePinecone(apiKey: "pcsk_test", projectId: "test-proj")
         XCTAssertEqual(status, .invalid(message: "Network error: The Internet connection appears to be offline."))
     }
+
+    func testValidatePinecone_largePayload_rejectsDecoding() async {
+        let url = URL(string: "https://api.pinecone.io/indexes")!
+        MockURLProtocol.mockResponse = HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil)
+
+        let largeString = String(repeating: "A", count: 15000)
+        let errorJson = "{\"message\": \"\(largeString)\"}"
+        MockURLProtocol.mockData = Data(errorJson.utf8)
+
+        let status = await validator.validatePinecone(apiKey: "pcsk_invalid", projectId: "test-proj")
+        // Since decoding fails, it falls back to the generic unauthorized message
+        XCTAssertEqual(status, .invalid(message: "Unauthorized: Invalid API key or Project ID"))
+    }
 }

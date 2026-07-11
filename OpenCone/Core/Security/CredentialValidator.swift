@@ -78,11 +78,17 @@ final class CredentialValidator: Sendable {
     }
 
     private func decodeOpenAIErrorMessage(_ data: Data) -> String? {
+        // Enforce maximum payload size (10KB) to prevent DoS via large JSON payloads
+        guard data.count < 10240 else { return nil }
+
         struct OpenAIErrorResponse: Decodable { let error: Inner; struct Inner: Decodable { let message: String } }
-        if let decoded = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data) {
+
+        do {
+            let decoded = try JSONDecoder().decode(OpenAIErrorResponse.self, from: data)
             return decoded.error.message
+        } catch {
+            return nil
         }
-        return nil
     }
 
     // MARK: - Pinecone
@@ -142,10 +148,16 @@ final class CredentialValidator: Sendable {
     }
 
     private func decodePineconeErrorMessage(_ data: Data) -> String? {
+        // Enforce maximum payload size (10KB) to prevent DoS via large JSON payloads
+        guard data.count < 10240 else { return nil }
+
         struct PineconeErrorResponse: Decodable { let message: String? }
-        if let decoded = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data) {
+
+        do {
+            let decoded = try JSONDecoder().decode(PineconeErrorResponse.self, from: data)
             return decoded.message
+        } catch {
+            return nil
         }
-        return nil
     }
 }
