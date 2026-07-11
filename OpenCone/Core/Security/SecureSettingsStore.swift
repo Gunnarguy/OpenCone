@@ -149,7 +149,7 @@ final class SecureSettingsStore: @unchecked Sendable {
         ]
 
         // Improve accessibility as needed (default generic)
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
 
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         return status == errSecSuccess
