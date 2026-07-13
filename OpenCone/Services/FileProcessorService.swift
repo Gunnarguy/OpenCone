@@ -291,7 +291,9 @@ actor FileProcessorService {
     /// - Parameter url: URL to the text file
     /// - Returns: The extracted text content
     private func extractTextFromPlainText(at url: URL) async throws -> String? {
-        return try String(contentsOf: url, encoding: .utf8)
+        return try await Task.detached(priority: .userInitiated) {
+            return try String(contentsOf: url, encoding: .utf8)
+        }.value
     }
 
     /// Extract text from an image using OCR
