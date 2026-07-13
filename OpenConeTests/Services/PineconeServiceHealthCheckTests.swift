@@ -53,6 +53,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
+        sut.retryDelay = 0
         // indexHost and currentIndex are nil by default
 
         let result = await sut.healthCheck()
@@ -66,6 +67,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
+        sut.retryDelay = 0
 
         // Setup handler to mock the index describe response so indexHost is set
         HealthCheckMockURLProtocol.requestHandler = { request in
@@ -117,6 +119,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
+        sut.retryDelay = 0
 
         HealthCheckMockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
@@ -161,6 +164,7 @@ final class PineconeServiceHealthCheckTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [HealthCheckMockURLProtocol.self]
         let sut = PineconeService(apiKey: "test", projectId: "test", sessionConfiguration: config)
+        sut.retryDelay = 0
 
         HealthCheckMockURLProtocol.requestHandler = { request in
             if request.url?.absoluteString.contains("/indexes/") == true {
