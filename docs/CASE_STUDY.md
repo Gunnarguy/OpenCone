@@ -60,9 +60,9 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 
 ## Tradeoffs
 
-- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. We prioritized keeping raw file preparation local over maximum throughput.
+- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. I prioritized keeping raw file preparation local over maximum throughput.
 - **No Offline Embeddings**: The app relies on OpenAI's remote Embeddings API, meaning it requires an internet connection to ingest new documents or query indexes. This is the central tradeoff in OpenCone's architecture and the reason it should not be described as a fully offline RAG system.
-- **Unencrypted Local Sandbox Cache**: While files are isolated within the sandbox, the raw text is cached in the app folder. We rely on the device-level passcode encryption framework to secure these caches, requiring users to enforce password lockouts.
+- **Unencrypted Local Sandbox Cache**: While files are isolated within the sandbox, the raw text is cached in the app folder. The app relies on the device-level passcode encryption framework to secure these caches, requiring users to enforce password lockouts.
 
 ---
 
