@@ -20,7 +20,7 @@
 ---
 
 ## Overview
-OpenCone is a local-first front end and cloud-hybrid RAG client designed to transform personal documents (PDFs, Word docs, plain text, code scripts, and images) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
+OpenCone is a local-first front end and cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, code, and images) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
 
 During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
@@ -30,12 +30,12 @@ During queries, OpenCone executes semantic vector lookup against Pinecone, perfo
 
 | Dimension | Detail |
 |---|---|
-| Platform | iOS / iPadOS / macOS Catalyst |
+| Platform | iOS 17.6+, iPhone |
 | Language | Swift |
 | UI | SwiftUI |
 | Architecture | MVVM-S |
 | Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API, Apple Speech/Vision |
-| Storage | Secure Enclave Keychain (`SecureSettingsStore`), `UserDefaults`, Sandbox Files |
+| Storage | Keychain (`SecureSettingsStore`), `UserDefaults`, Sandbox Files |
 | App Store | [Download](https://apps.apple.com/us/app/opencone/id6744467668) |
 | Status | Active |
 | License | [MIT](LICENSE) |
@@ -147,7 +147,7 @@ This chart defines the boundaries between local device memory, Keychain credenti
 flowchart LR
     subgraph LocalDevice["On-Device boundary"]
         subgraph SafeStorage["Secure Storage"]
-            KC[(Secure Enclave Keychain)]
+            KC[(Keychain)]
         end
         subgraph PlainStorage["Unencrypted Space"]
             UD[(UserDefaults)]

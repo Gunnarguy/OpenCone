@@ -12,7 +12,7 @@ OpenCone runs the majority of its ingestion and synchronization pipelines direct
 - **Sandbox File Copies**: When you select documents, they are copied into the app's local sandbox storage directory. The app creates security-scoped bookmarks to retain access without writing to outside folders.
 - **Local Text Extraction**: Conversion of formats (PDFs, plain text files) into raw text strings is executed completely on-device using iOS frameworks (e.g. `PDFKit`).
 - **Local OCR Processing**: Native Vision-based OCR runs locally to recognize text structures in images (PNG, JPEG, TIFF) without sending files to image-processing cloud endpoints.
-- **Microphone Transcription**: Voice transcription uses Apple's native Speech APIs. Processing is handled locally on the device hardware when supported.
+- **Microphone Transcription**: Voice input uses Apple's Speech framework with server recognition allowed (`requiresOnDeviceRecognition = false`), so your audio may be sent to Apple to transcribe.
 
 ---
 
@@ -22,10 +22,10 @@ OpenCone communicates with third-party service providers only when necessary to 
 
 | Destination | Data Transmitted | Purpose | Encryption & Retention |
 |---|---|---|---|
-| **OpenAI API** (`/v1/embeddings`) | Batched text chunks (excluding raw document frames or identifiers). | Generates 3072-dimension vectors. | HTTPS (TLS 1.3). OpenAI processes requests statefully according to their API data-usage agreements. |
-| **OpenAI API** (`/v1/responses`) | RAG context package (composed prompt template containing relevant text chunks + chat history). | Generates streamed token responses. | HTTPS (TLS 1.3). Stateless transaction. Data is not permanently retained by OpenCone. |
-| **Pinecone DB** | Float vectors, segment ranges, file names, and doc identifiers. | Similarity matching and index storage. | HTTPS (TLS 1.3). Stored inside your serverless Pinecone indexes. |
-| **Apple Speech Services** | Raw audio coordinates. | Transcribes speech to query text. | HTTPS (TLS 1.2+). Apple processes audio streams to convert speech to text when local engine models are unavailable. |
+| **OpenAI API** (`/v1/embeddings`) | Batched text chunks (excluding raw document frames or identifiers). | Generates 3072-dimension vectors. | HTTPS. OpenAI processes requests statefully according to their API data-usage agreements. |
+| **OpenAI API** (`/v1/responses`) | RAG context package (composed prompt template containing relevant text chunks + chat history). | Generates streamed token responses. | HTTPS. Stateless transaction. Data is not permanently retained by OpenCone. |
+| **Pinecone DB** | Float vectors plus each chunk's full text, a preview, the file name, the file's path on your iPhone, segment ranges, and document identifiers. | Similarity matching and index storage. | HTTPS. Stored inside your serverless Pinecone indexes. |
+| **Apple Speech Services** | Your recorded audio, when you use voice input. | Transcribes speech to query text. | HTTPS. The app allows server recognition, so Apple may transcribe on its servers even when an on-device model exists. |
 
 OpenCone does **not** host any intermediary collection servers. All network transactions travel directly from your iOS client to the destination endpoints.
 
