@@ -1,1 +1,1 @@
-On-Device RAG with Pinecone
+RAG with Pinecone and OpenAI

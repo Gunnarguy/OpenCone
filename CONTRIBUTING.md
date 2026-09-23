@@ -6,7 +6,7 @@ This guide outlines our development workflow, coding standards, branch conventio
 
 ## 1. Project Status
 
-OpenCone is an iOS application designed for on-device RAG. While we welcome community contributions, our priority is maintaining consistency in architecture patterns, security boundaries, and logging practices.
+OpenCone is an iOS application for RAG over your own Pinecone index: files are read and chunked on the device, then embedded with OpenAI and searched in Pinecone. While we welcome community contributions, our priority is maintaining consistency in architecture patterns, security boundaries, and logging practices.
 
 ---
 
