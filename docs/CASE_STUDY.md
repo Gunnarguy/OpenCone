@@ -1,6 +1,6 @@
 # Case Study: OpenCone
 
-Cloud-hybrid Retrieval-Augmented Generation (RAG) client for Apple iOS, iPadOS, and macOS via Catalyst.
+Cloud-hybrid Retrieval-Augmented Generation (RAG) client for iPhone (iOS 17.6 or later).
 
 ---
 
@@ -46,15 +46,15 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 **Solution**: OpenCone implements security-scoped bookmarks. The app copies documents into its own sandbox folder and builds bookmark datas. These bookmark structures are saved in the database model and re-activated (`startAccessingSecurityScopedResource`) during index synchronization or file re-extraction.
 
 ### 2. OCR Memory Overhead
-**Challenge**: Processing large images or scanned PDFs on iOS using `VNRecognizeTextRequest` generates native buffer allocations, creating high heap spikes that trigger iOS Out-Of-Memory (OOM) app crashes.
-**Solution**: The `FileProcessorService` wraps individual page extractions inside serial `autoreleasepool` blocks. This ensures native memory buffers and recognized text frames are freed immediately after page parsing completes rather than waiting for the entire loop to finish.
+**Challenge**: Processing large images on iOS using `VNRecognizeTextRequest` generates native buffer allocations, creating high heap spikes that trigger iOS Out-Of-Memory (OOM) app crashes.
+**Solution**: Chunking and embedding loops run inside `autoreleasepool`.
 
 ### 3. API Throttling & Connection Interruptions
 **Challenge**: Sending hundreds of vectors to Pinecone or requesting streaming answers can fail due to rate limits (429 status codes) or connection dropouts, causing UI hangs or vector store corruption.
 **Solution**: OpenCone integrates:
 1. **Exponential Backoff**: Up to 3 retry loops with sleeping intervals for transient faults.
 2. **Circuit Breaker**: Trips the network connection state to open in `PineconeService` when consecutive errors exceed limits, preventing server flooding.
-3. **SSE Watchdog**: Monitors OpenAI response stream tokens. If no token delta is received within 30 seconds, it cancels the task to save battery and shows a recovery prompt.
+3. **SSE Watchdog**: Monitors OpenAI response stream tokens. If no token delta is received within 30 seconds, it cancels the stream and retries the request once without streaming.
 
 ---
 
@@ -71,8 +71,8 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 OpenCone implements a production-grade, local-first RAG architecture on iOS with the following metrics:
 
 - **APIs Integrated**: 3 major external systems (OpenAI completions, OpenAI embeddings, Pinecone serverless DB) and 3 native Apple frameworks (Vision OCR, PDFKit parsing, SFSpeechRecognizer).
-- **Supported Formats**: 12 MIME types (PDF, DOCX, TXT, HTML, CSS, Markdown, JSON, XML, CSV, TSV, RTF, PNG, JPEG, TIFF).
-- **Architecture Layers**: 4 decoupled layers (UI presentation, ViewModel coordinators, Service utility engines, and Enclave Keychain storage).
+- **Supported Formats**: PDF, TXT, HTML, CSS, Markdown, JSON, XML, CSV, RTF.
+- **Architecture Layers**: 4 decoupled layers (UI presentation, ViewModel coordinators, Service utility engines, and Keychain storage).
 - **Resilience Controls**: Circuit breaker limits, exponential retry backoff delays, rate-limit sleep thresholds, and SSE timeout watchdogs.
 
 ---
