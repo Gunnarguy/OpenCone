@@ -1,8 +1,8 @@
-Turn the files on your iPhone into a RAG workspace in your own Pinecone index. Import PDFs, code, and text: OpenCone reads and chunks them on the phone, embeds them with OpenAI, and stores and searches them in Pinecone. Point the app at your OpenAI and Pinecone keys and it streams grounded, citation-backed answers in real time.
+Turn the files on your iPhone into a RAG workspace in your own Pinecone index. Import PDFs and supported text formats: OpenCone reads and chunks them on the phone, embeds them with OpenAI, and stores and searches them in Pinecone. Point the app at your OpenAI and Pinecone keys and it streams grounded, citation-backed answers in real time.
 
 COMPLETE DOCUMENT PIPELINE
-• Multi-format extraction: PDF, TXT, HTML, Markdown, JSON, CSV, and code
-• MIME-aware chunking with configurable size and overlap
+• Multi-format extraction: PDF, TXT, HTML, Markdown, JSON, CSV, CSS, and JavaScript
+• MIME-aware chunking with a fixed size and overlap for each file type
 • Security-scoped bookmarks preserve file access across launches
 • Deduplication by path, size, and timestamp fingerprinting
 • Live progress tracking with structured logs for every phase

@@ -17,7 +17,7 @@ This document details the copy assets, keywords, reviewer credentials, screensho
 > OpenCone is a native, privacy-first client that drives a complete Retrieval-Augmented Generation (RAG) pipeline from your iPhone. Simply input your OpenAI and Pinecone API credentials to build a secure, searchable knowledge base in your own Pinecone index.
 > 
 > COMPLETE DOCUMENT PIPELINE
-> - Multi-Format Processing: Import PDFs, plain text, Markdown, HTML, JSON, CSV, and code files into a secure local sandbox.
+> - Multi-Format Processing: Import PDFs, plain text, Markdown, HTML, JSON, CSV, JavaScript, and CSS files into a secure local sandbox.
 > - MIME-Aware Chunking: Automatically segments text into semantically cohesive chunks using recursive splitters with custom sizes and overlaps.
 > - Sandbox Bookmarks: Stores security-scoped bookmarks to retain file read access across app launches without annoying prompts.
 > - Fingerprint Deduplication: Pre-calculates SHA256 hashes to prevent duplicate file uploads and conserve index space.

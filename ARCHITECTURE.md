@@ -83,7 +83,7 @@ flowchart TD
 
 ### App Shell & Lifecycle
 - **[OpenConeApp.swift](OpenCone/App/OpenConeApp.swift)**: Bootstrap layer. Operates as a state machine governing the transition from initial boot, welcome onboarding (API key registration), active main application UI, and unrecoverable errors. 
-- **Release Safety Enforcer**: Inside `enforceNoBundledSecrets()`, the app calls a fatal assertion in non-debug targets if hardcoded OpenAI/Pinecone environment credentials are detected.
+- **Release Safety Enforcer**: Inside `enforceNoBundledSecrets()`, the app calls a fatal assertion in non-debug targets if OpenAI/Pinecone keys are set as environment variables.
 
 ### Views (SwiftUI Presentation)
 - **[MainView.swift](OpenCone/App/MainView.swift)**: Hosts the primary tab switcher. Hooks into the scene lifecycle to trigger refresh updates (index stats, document states) on tab selections.
@@ -99,7 +99,7 @@ flowchart TD
 - **[PineconeService.swift](OpenCone/Services/PineconeService.swift)**: Implements REST operations for index control (list, create, delete) and vector data actions (upsert, query, delete). Features stateful region/host discovery and circuit-breaking error protection.
 - **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
 - **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, extracts PDF text with `PDFKit`, and reads text formats as UTF-8. Its `VNRecognizeTextRequest` OCR path for images never runs, because the document picker does not offer images.
-- **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively using boundary separators (such as JSON tags, markdown hashes, or newlines) and computes SHA256 hashes.
+- **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively, splitting every type on paragraphs, lines, sentences, then words, and computes SHA256 hashes.
 - **[SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift)**: Listens to the device microphone, performs speech-to-text conversion via Apple's Speech API, and publishes normalize audio amplitudes (0.0 - 1.0) for UI waveforms.
 
 ---
@@ -132,7 +132,7 @@ OpenCone utilizes Swift's structured concurrency (`async/await`) to maintain res
 OpenCone integrates multi-layered network recovery patterns to cope with API failures:
 1. **Exponential Backoff**: Transient errors (e.g. 503 Service Unavailable or network dropouts) trigger up to 3 retry attempts with an increasing sleep duration.
 2. **Circuit Breaker**: Guarded by a circuit breaker state in `PineconeService`. If consecutive API requests fail beyond the threshold, the circuit trips to `.open`. Subsequent requests fail immediately to prevent request flooding, auto-resetting after a timeout or when the user changes indexes.
-3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task terminates the connection and returns a user-friendly error string.
+3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task cancels the stream and retries the request once without streaming.
 
 ---
 
@@ -144,7 +144,7 @@ OpenCone integrates multi-layered network recovery patterns to cope with API fai
   - `model`: Defaults to `gpt-4o` (or custom parameters).
   - `stream`: Set to `true`.
   - `input`: Formatted as structured message JSON objects.
-  - `tools`: Conditionally activates `web_search` or `code_interpreter` based on text context heuristics.
+  - `tools`: `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic.
   - `reasoning.effort`: Configured dynamically for reasoning-capable models (e.g., `o3-mini`, `gpt-5`).
 - **Events Handled**:
   - `response.output_text.delta` / `response.text.delta`: Text streaming segments.

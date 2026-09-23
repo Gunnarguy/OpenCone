@@ -20,7 +20,7 @@
 ---
 
 ## Overview
-OpenCone is a cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, and code) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text, recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
+OpenCone is a cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, JavaScript, and CSS) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text, recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
 
 During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
@@ -125,7 +125,7 @@ flowchart TD
 ```
 
 ### 1. Ingestion & Processing Details
-- **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, TXT, HTML, CSS, Markdown, JSON, XML, CSV, and RTF. Word, Excel and PowerPoint files appear in the picker but cannot be extracted.
+- **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, TXT, HTML, CSS, JavaScript, Markdown, JSON, XML, CSV, and RTF. Word, Excel and PowerPoint files appear in the picker but cannot be extracted. Some text types are rejected because their MIME type is not on the accepted list: Python (`.py`, `text/x-python-script`), TSV (`text/tab-separated-values`), and source files that iOS gives no MIME type, such as `.swift`.
 - **Extraction**: Text is extracted locally using `PDFKit` page extraction, or read directly as UTF-8 for text formats. Chunking and embedding loops run inside `autoreleasepool`.
 - **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
 - **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
@@ -225,11 +225,8 @@ flowchart LR
    cd OpenCone
    open OpenCone.xcodeproj
    ```
-2. **Configure schemes (optional for debug)**:
-   Select **Product > Scheme > Edit Scheme... > Run > Arguments**. Add these environment variables:
-   - `OPENAI_API_KEY`
-   - `PINECONE_API_KEY`
-   - `PINECONE_PROJECT_ID`
+2. **API keys**:
+   No build reads scheme environment variables for keys; enter your keys in the app. The Release guard only refuses them: a Release build whose environment sets `OPENAI_API_KEY`, `PINECONE_API_KEY` or `PINECONE_PROJECT_ID` stops with a `fatalError` when it initializes its services.
 
 3. **Install Dependencies**:
    OpenCone uses only Apple frameworks (PDFKit, Vision, SFSpeechRecognizer); no packages, CocoaPods or Carthage.

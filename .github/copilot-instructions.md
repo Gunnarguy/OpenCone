@@ -61,4 +61,4 @@ scripts/preflight_check.sh
   try await pineconeService.withRetries(maxRetries: 3) { ... }
   ```
 - **Keychain Keys**: Retrieve all API keys from `SecureSettingsStore.shared` rather than local config files.
-- **Release Guard**: Non-debug archive targets will trigger a `fatalError` if environment secrets are hardcoded.
+- **Release Guard**: Non-debug archive targets will trigger a `fatalError` if API keys are set as scheme environment variables.

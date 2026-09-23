@@ -9,11 +9,11 @@ This document outlines the development status of OpenCone, categorizing mileston
 ### App Core & Security
 - [x] **App State Lifecycle**: Built a stable state machine (`loading`, `welcome`, `main`, `error`) in `OpenConeApp`.
 - [x] **Keychain Secure Storage**: Implemented `SecureSettingsStore` for Keychain-level API key persistence, preventing unencrypted UserDefaults storage.
-- [x] **Release Security Gate**: Integrated compile-time checks that crash the app (`enforceNoBundledSecrets`) if developer environment keys leak into non-debug production builds.
+- [x] **Release Security Gate**: A check compiled only into non-debug builds crashes the app (`enforceNoBundledSecrets`) if `OPENAI_API_KEY`, `PINECONE_API_KEY` or `PINECONE_PROJECT_ID` is set in its environment.
 - [x] **Preflight Script Automation**: Created `scripts/preflight_check.sh` to validate secrets, verify Plist usage strings, enforce MD timestamp checks, and run unit tests.
 
 ### Document Processing
-- [x] **Multi-format Extraction**: Support for PDF, TXT, HTML, JSON, CSV, RTF, MD, and common code scripts.
+- [x] **Multi-format Extraction**: Support for PDF, TXT, HTML, JSON, CSV, RTF, MD, CSS, and JavaScript; other source-code types such as Python (`.py`) are rejected because their MIME type is not on the accepted list.
 - [x] **Vision OCR Engine**: Local text recognition for images (PNG, JPEG, TIFF) using native `VNRecognizeTextRequest`. The document picker does not offer images, so this path never runs from the UI.
 - [x] **Security Bookmarks**: Sandboxed access (`startAccessingSecurityScopedResource`) to files across app boots.
 - [x] **Recursive Text Splitting**: MIME-aware chunking with custom size and overlap rules.

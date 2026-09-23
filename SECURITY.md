@@ -10,7 +10,7 @@ We actively support the following versions of OpenCone:
 
 | Version | Status | Supported Swift/iOS | Updates |
 |---|---|---|---|
-| 2.2.x | Active / Production | iOS 17.0+ / Xcode 16.0+ | Security patches & dependency updates |
+| 2.2.x | Active / Production | iOS 17.6+ / Xcode 16.0+ | Security patches & dependency updates |
 | < 2.2.0 | Legacy | iOS 16.x | Critical vulnerability fixes only |
 
 ---
@@ -54,7 +54,7 @@ OpenCone logs diagnostic info to a centralized `Logger.shared` singleton.
 ## 6. Release Build Protection
 
 To prevent accidental developer credentials from leaking into production App Store archives:
-- **Compile-Time Env Checks**: During initialization, `OpenConeApp` runs `enforceNoBundledSecrets()`.
+- **Release-Build Env Checks**: When it initializes its services, `OpenConeApp` runs `enforceNoBundledSecrets()`.
 - **Fatal Error Guard**: If non-empty environment parameters (`OPENAI_API_KEY`, `PINECONE_API_KEY`) are detected in non-debug targets, the app throws a `fatalError` and shuts down immediately.
 
 ---

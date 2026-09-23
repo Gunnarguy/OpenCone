@@ -30,6 +30,8 @@
 
 (Correction, 2026-09-23: Framework/platform is iPhone only, on iOS 17.6 or later; the project has never enabled iPad or Mac Catalyst.)
 
+(Correction, 2026-09-23: the project has never had a Swift package reference, so the Package manager, Dependency files and Lockfiles rows describe packages that do not exist.)
+
 ---
 
 ## PR Diff Inventory
