@@ -28,6 +28,8 @@
 | Architecture pattern | MVVM-S | View -> ViewModel -> Service separation |
 | Legacy/modern status | Modern | Swift 5.10+, iOS 17+, async/await concurrency pattern |
 
+(Correction, 2026-09-23: Framework/platform is iPhone only, on iOS 17.6 or later; the project has never enabled iPad or Mac Catalyst.)
+
 ---
 
 ## PR Diff Inventory

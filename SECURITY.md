@@ -18,8 +18,8 @@ We actively support the following versions of OpenCone:
 ## 2. Secret Storage Model
 
 OpenCone does not store user API keys, tokens, or project configuration identifiers in plain-text storage (such as settings plist files or UserDefaults configuration bundles).
-- **Secure Enclave Keychain**: All secret strings—specifically the OpenAI API Key, the Pinecone API Key, and the Pinecone Project ID—are written to the iOS Keychain via our custom `SecureSettingsStore` manager.
-- **Biometric Enclave Integration**: Access is restricted to the application process sandbox, matching Apple's default Keychain access groups.
+- **Keychain**: All secret strings, specifically the OpenAI API Key, the Pinecone API Key, and the Pinecone Project ID, are written to the iOS Keychain via our custom `SecureSettingsStore` manager.
+- **Access Scope**: Access is restricted to the application process sandbox, matching Apple's default Keychain access groups.
 - **Wipe and Purge**: Triggering the **Reset Stored Keys & Preferences** action inside Settings completely removes keys from the Keychain and revokes security bookmarks.
 
 ---
@@ -28,7 +28,7 @@ OpenCone does not store user API keys, tokens, or project configuration identifi
 
 All imported documents are copied to the application's local sandbox directories (`Library/Caches` or `Documents` depending on user settings).
 - **iOS Sandbox Isolation**: The files are completely isolated from other applications running on the iOS device.
-- **Security-Scoped Bookmarks**: The file URLs are persisted using security-scoped bookmark records. While bookmarks allow the app to re-read files across launches, the actual file content is never shared outside of the Sandbox.
+- **Security-Scoped Bookmarks**: The file URLs are persisted using security-scoped bookmark records. While bookmarks allow the app to re-read files across launches, the files themselves stay in the sandbox; their extracted text is sent to OpenAI and Pinecone as chunks.
 - **Recommendation**: To keep local documents secure on your device, users must enforce hardware passcodes and enable FaceID/TouchID unlock options on their iOS device.
 
 ---
@@ -38,7 +38,7 @@ All imported documents are copied to the application's local sandbox directories
 OpenCone communicates with external endpoints strictly using encrypted **HTTPS (TLS 1.2/1.3)** connections:
 - **Direct Client-to-API**: The application speaks directly to OpenAI's endpoint (`api.openai.com`) and Pinecone's serverless endpoints. There is no middle proxy server, third-party relay, or custom collection endpoint.
 - **Stateless Transfers**: Text segments and embeddings are transmitted to remote APIs to generate vectors or parse completions, and are not persisted inside OpenCone after requests are finalized.
-- **Microphone Transit**: When utilizing Speech Input, raw audio coordinates are processed locally when possible or streamed directly to Apple's Speech Recognition endpoints.
+- **Microphone Transit**: Speech Input allows server recognition (`requiresOnDeviceRecognition = false`), so raw audio may be streamed to Apple's Speech Recognition servers even when on-device recognition is available.
 
 ---
 

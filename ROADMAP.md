@@ -13,15 +13,15 @@ This document outlines the development status of OpenCone, categorizing mileston
 - [x] **Preflight Script Automation**: Created `scripts/preflight_check.sh` to validate secrets, verify Plist usage strings, enforce MD timestamp checks, and run unit tests.
 
 ### Document Processing
-- [x] **Multi-format Extraction**: Support for PDF, DOCX, TXT, HTML, JSON, CSV, RTF, MD, and common code scripts.
-- [x] **Vision OCR Engine**: Local text recognition for images (PNG, JPEG, TIFF) using native `VNRecognizeTextRequest`.
+- [x] **Multi-format Extraction**: Support for PDF, TXT, HTML, JSON, CSV, RTF, MD, and common code scripts.
+- [x] **Vision OCR Engine**: Local text recognition for images (PNG, JPEG, TIFF) using native `VNRecognizeTextRequest`. The document picker does not offer images, so this path never runs from the UI.
 - [x] **Security Bookmarks**: Sandboxed access (`startAccessingSecurityScopedResource`) to files across app boots.
 - [x] **Recursive Text Splitting**: MIME-aware chunking with custom size and overlap rules.
 - [x] **Fingerprint Deduplication**: Pre-compute SHA256 hashes to prevent redundant processing.
 
 ### Retrieval & Search (RAG)
 - [x] **Pinecone Integration**: Complete Control and Data plane REST wrappers, supporting circuit breakers, host caching, and retries.
-- [x] **Two-Stage Retrieval**: Support for hybrid semantic + keyword search with alpha weighting controls and reranking (BGE Reranker v2 M3, Cohere, Pinecone models).
+- [x] **Two-Stage Retrieval**: Hybrid alpha weighting in the query path and reranking (BGE Reranker v2 M3, Cohere, Pinecone models); documents are uploaded with dense vectors only, so results come from semantic similarity today.
 - [x] **Advanced Metadata Filters**: Full operators support ($eq, $in, $gte, $lte, $contains) for scoping queries.
 - [x] **OpenAI Responses API Stream**: Real-time token streaming using Server-Sent Events (SSE).
 - [x] **Speech-to-Text Transcription**: Connects `AVAudioEngine` input taps and Apple's Speech API for voice query input.
@@ -41,7 +41,7 @@ This document outlines the development status of OpenCone, categorizing mileston
 - [ ] **On-Device Vector Database**: Introduce local offline embeddings (e.g. SQLite vector extensions) to allow offline searches.
 - [ ] **Bookmark-Aware File Syncing**: Detect changes in source files using security bookmarks to re-index documents automatically.
 - [ ] **Parallel Processing Queue**: Speed up ingestion by running parallel background worker Tasks.
-- [ ] **Multimodal Visual Input**: Allow uploading images directly to OpenAI completion models without local OCR pre-processing.
+- [ ] **Multimodal Visual Input**: Allow uploading images directly to OpenAI completion models.
 
 ---
 

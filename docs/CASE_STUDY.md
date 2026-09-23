@@ -10,7 +10,7 @@ Modern generative AI applications are heavily dependent on cloud-based middlewar
 1. **User Privacy**: Handling sensitive files (such as legal contracts, research notes, or personal correspondence) on remote servers introduces compliance and privacy concerns.
 2. **Infrastructure Costs**: Maintaining middle-tier databases, vector hosting engines, and processing workers requires continuous operational overhead and budget monitoring.
 
-OpenCone was designed to prove that a **native Apple client can own file ingestion, OCR extraction, and query coordination locally while still talking directly to OpenAI and Pinecone for the cloud execution path**. By keeping document preparation local and avoiding a custom middleware layer, OpenCone respects privacy, reduces product-surface complexity, and operates directly as a native mobile application.
+OpenCone was designed to prove that a **native Apple client can own file ingestion, text extraction, and query coordination locally while still talking directly to OpenAI and Pinecone for the cloud execution path**. By keeping document preparation local and avoiding a custom middleware layer, OpenCone respects privacy, reduces product-surface complexity, and operates directly as a native mobile application.
 
 ---
 
@@ -18,7 +18,7 @@ OpenCone was designed to prove that a **native Apple client can own file ingesti
 
 Building a cloud-hybrid RAG client on iOS presented severe engineering constraints:
 - **Restricted Sandbox Permissions**: iOS sandboxing strictly limits file access. If a user imports a document, those access privileges expire when the app process is terminated unless specific security protocols are implemented.
-- **Hardware Resource Limits**: Apple mobile devices have restricted CPU cores and volatile memory (RAM) budgets compared to cloud servers. Running OCR extraction models or serial embedding requests on thousands of pages can lead to system memory termination.
+- **Hardware Resource Limits**: Apple mobile devices have restricted CPU cores and volatile memory (RAM) budgets compared to cloud servers. Running text extraction or serial embedding requests on thousands of pages can lead to system memory termination.
 - **Network Unreliability**: Mobile network connections drop frequently. Because embeddings, vector search, and answer generation still depend on OpenAI and Pinecone, connection instability can cause UI freezes, API timeout failures, or duplicate vector upserts.
 
 ---
@@ -30,7 +30,7 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 - **App State Machine**: Transition logic inside `OpenConeApp` coordinates app startup, onboard validations, the main workspace, and error views.
 - **Decoupled ViewModels**: Features (Search, Ingestion, Settings, and Logs) have isolated ViewModels that manage state properties (using Combine `@Published` syntax).
 - **Stateless Services Layer**:
-  - `FileProcessorService` uses local native libraries (`PDFKit`, `Vision` OCR) to parse document types.
+  - `FileProcessorService` uses `PDFKit` for PDFs and reads text formats directly; its `Vision` OCR path for images never runs, because the document picker does not offer images.
   - `TextProcessorService` tokenizes and chunkifies raw text recursively using MIME boundary rules.
   - `EmbeddingService` coordinates batch vectors creation via OpenAI API clients.
   - `PineconeService` runs index CRUD, similarity queries, and deletion requests.
@@ -45,8 +45,8 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 **Challenge**: When users import files, sandbox URLs lose read rights once the application process terminates. The app cannot re-parse or sync documents without asking the user for manual permission again.
 **Solution**: OpenCone implements security-scoped bookmarks. The app copies documents into its own sandbox folder and builds bookmark datas. These bookmark structures are saved in the database model and re-activated (`startAccessingSecurityScopedResource`) during index synchronization or file re-extraction.
 
-### 2. OCR Memory Overhead
-**Challenge**: Processing large images on iOS using `VNRecognizeTextRequest` generates native buffer allocations, creating high heap spikes that trigger iOS Out-Of-Memory (OOM) app crashes.
+### 2. Memory Overhead
+**Challenge**: Chunking and embedding a large document on iOS creates many temporary objects, and memory spikes can trigger iOS Out-Of-Memory (OOM) app crashes.
 **Solution**: Chunking and embedding loops run inside `autoreleasepool`.
 
 ### 3. API Throttling & Connection Interruptions
@@ -60,7 +60,7 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 
 ## Tradeoffs
 
-- **OCR Speed vs Cloud Ingestion**: Local image text extraction takes more time on-device than pushing images to a cloud OCR server. I prioritized keeping raw file preparation local over maximum throughput.
+- **Local Preparation vs Cloud Ingestion**: I prioritized keeping raw file preparation local over maximum throughput.
 - **No Offline Embeddings**: The app relies on OpenAI's remote Embeddings API, meaning it requires an internet connection to ingest new documents or query indexes. This is the central tradeoff in OpenCone's architecture and the reason it should not be described as a fully offline RAG system.
 - **Unencrypted Local Sandbox Cache**: While files are isolated within the sandbox, the raw text is cached in the app folder. The app relies on the device-level passcode encryption framework to secure these caches, requiring users to enforce password lockouts.
 
@@ -68,9 +68,9 @@ OpenCone implements a strict **MVVM-S (Model-View-ViewModel-Service)** architect
 
 ## Outcome
 
-OpenCone implements a production-grade, local-first RAG architecture on iOS with the following metrics:
+OpenCone implements a production-grade RAG architecture on iOS with the following metrics:
 
-- **APIs Integrated**: 3 major external systems (OpenAI completions, OpenAI embeddings, Pinecone serverless DB) and 3 native Apple frameworks (Vision OCR, PDFKit parsing, SFSpeechRecognizer).
+- **APIs Integrated**: 3 major external systems (OpenAI completions, OpenAI embeddings, Pinecone serverless DB) and 2 native Apple frameworks in use (PDFKit parsing, SFSpeechRecognizer); Vision OCR is in the code but never runs from the UI.
 - **Supported Formats**: PDF, TXT, HTML, CSS, Markdown, JSON, XML, CSV, RTF.
 - **Architecture Layers**: 4 decoupled layers (UI presentation, ViewModel coordinators, Service utility engines, and Keychain storage).
 - **Resilience Controls**: Circuit breaker limits, exponential retry backoff delays, rate-limit sleep thresholds, and SSE timeout watchdogs.

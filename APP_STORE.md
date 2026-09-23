@@ -10,22 +10,21 @@ This document details the copy assets, keywords, reviewer credentials, screensho
 
 ### Promotional Text
 *170 characters max*
-> Turn every file on your device into a private, semantic search workspace with local text extraction, Pinecone vector indexing, and streaming OpenAI answers.
+> Turn the files on your iPhone into a private, semantic search workspace with local text extraction, Pinecone vector indexing, and streaming OpenAI answers.
 
 ### Description
 *4,000 characters max*
-> OpenCone is a native, privacy-first client that puts a complete Retrieval-Augmented Generation (RAG) pipeline directly on your iPhone, iPad, or Mac via Catalyst. Simply input your OpenAI and Pinecone API credentials to build a secure, searchable local knowledge base.
+> OpenCone is a native, privacy-first client that drives a complete Retrieval-Augmented Generation (RAG) pipeline from your iPhone. Simply input your OpenAI and Pinecone API credentials to build a secure, searchable knowledge base in your own Pinecone index.
 > 
 > COMPLETE DOCUMENT PIPELINE
-> - Multi-Format Processing: Import PDFs, Word documents (DOCX), plain text, Markdown, HTML, JSON, CSV, and code files into a secure local sandbox.
-> - On-Device OCR: Uses Apple's Vision framework to run text recognition locally on images (PNG, JPEG, TIFF).
+> - Multi-Format Processing: Import PDFs, plain text, Markdown, HTML, JSON, CSV, and code files into a secure local sandbox.
 > - MIME-Aware Chunking: Automatically segments text into semantically cohesive chunks using recursive splitters with custom sizes and overlaps.
 > - Sandbox Bookmarks: Stores security-scoped bookmarks to retain file read access across app launches without annoying prompts.
 > - Fingerprint Deduplication: Pre-calculates SHA256 hashes to prevent duplicate file uploads and conserve index space.
 > 
 > SEMANTIC SEARCH WITH CITATIONS
 > - Vector Lookup: Converts your queries into embeddings and runs similarity queries against Pinecone index namespaces.
-> - Hybrid Retrieval: Balance dense semantic matches and sparse keyword lists using a simple alpha slider.
+> - Hybrid Retrieval: The query path supports hybrid weighting with a simple alpha slider, but documents are uploaded with dense vectors only, so results come from semantic similarity today.
 > - Advanced Reranking: Refines retrieval precision using Cohere, BGE, or Pinecone inference models.
 > - Citation Sources: Reviews the exact chunks matched, showing file names, status ranges, and metadata properties.
 > - Real-Time Streaming: Tokens stream into your chat window via Server-Sent Events (SSE) for instant, fluid answers.
@@ -35,7 +34,7 @@ This document details the copy assets, keywords, reviewer credentials, screensho
 > - Dynamic UI Controls: Automatically toggles between reasoning effort (Low, Medium, High) for reasoning models and temperature/top-p sliders for standard completions.
 > 
 > SECURITY & PRIVACY
-> - Credentials Enclave: API keys reside in the secure Keychain and are never written to unencrypted folders.
+> - Credentials: API keys reside in the secure Keychain and are never written to unencrypted folders.
 > - Safe Telemetry: Logs reside in a local memory buffer and can be cleared instantly. No third-party trackers are integrated.
 > - Application Purge: A dedicated reset action wipes Keychain keys, bookmarks, and local sandbox caches.
 > 
@@ -47,7 +46,7 @@ This document details the copy assets, keywords, reviewer credentials, screensho
 
 ### Keywords
 *100 characters max total, comma-separated, no spaces*
-`RAG,AI,OpenAI,GPT-5,Pinecone,semantic,search,OCR,vector,database,on-device,speech,iOS,iPadOS,Catalyst`
+`RAG,AI,OpenAI,GPT-5,Pinecone,semantic,search,vector,database,on-device,speech,iOS`
 
 ---
 
@@ -55,7 +54,7 @@ This document details the copy assets, keywords, reviewer credentials, screensho
 
 Dear App Review Team,
 
-OpenCone is a document-centric retrieval-augmented generation (RAG) utility. It runs local file extraction and OCR, uploads text embeddings to the user's Pinecone database, and queries those records to stream grounded answers.
+OpenCone is a document-centric retrieval-augmented generation (RAG) utility. It runs local file extraction, uploads text embeddings to the user's Pinecone database, and queries those records to stream grounded answers.
 
 ### Test Credentials
 We have provisioned sandbox environment keys for the review process:

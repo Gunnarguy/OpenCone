@@ -20,7 +20,7 @@
 ---
 
 ## Overview
-OpenCone is a local-first front end and cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, and code) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text (utilizing Vision OCR where necessary), recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
+OpenCone is a cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, and code) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text, recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
 
 During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
 
@@ -34,7 +34,7 @@ During queries, OpenCone executes semantic vector lookup against Pinecone, perfo
 | Language | Swift |
 | UI | SwiftUI |
 | Architecture | MVVM-S |
-| Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API, Apple Speech/Vision |
+| Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API, Apple Speech |
 | Storage | Keychain (`SecureSettingsStore`), `UserDefaults`, Sandbox Files |
 | App Store | [Download](https://apps.apple.com/us/app/opencone/id6744467668) |
 | Status | Active |
@@ -126,7 +126,7 @@ flowchart TD
 
 ### 1. Ingestion & Processing Details
 - **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, TXT, HTML, CSS, Markdown, JSON, XML, CSV, and RTF. Word, Excel and PowerPoint files appear in the picker but cannot be extracted.
-- **Extraction**: Text is extracted locally using `PDFKit` page extraction or `Vision` framework OCR. Chunking and embedding loops run inside `autoreleasepool`.
+- **Extraction**: Text is extracted locally using `PDFKit` page extraction, or read directly as UTF-8 for text formats. Chunking and embedding loops run inside `autoreleasepool`.
 - **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
 - **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
 
@@ -153,7 +153,7 @@ flowchart LR
             SB[(Sandbox Files)]
         end
         subgraph LogicMemory["Processing Memory"]
-            MEM[OCR Autoreleasepool]
+            MEM[Chunking and Embedding Autoreleasepool]
         end
     end
 
@@ -206,7 +206,7 @@ flowchart LR
 | `defaultChunkOverlap`| UserDefaults | `256` | No | Saved preference; not read by the chunker. |
 | `completionModel` | UserDefaults | `gpt-4o` | No | Model ID used for text completion. |
 | `searchTopK` | UserDefaults | `10` | No | Nearest-neighbor vector counts retrieved. |
-| `hybridAlpha` | UserDefaults | `0.5` | No | Sparse vs dense search weighting (`1.0`=semantic, `0.0`=keyword). |
+| `hybridAlpha` | UserDefaults | `0.5` | No | Used only when hybrid search is on and the index uses dotproduct: scales the dense query by alpha and the sparse query by 1 minus alpha. OpenCone uploads documents with dense vectors only, so any value above `0.0` ranks by semantic similarity, and `0.0` sends an all-zero dense query. |
 
 ---
 
@@ -282,7 +282,7 @@ flowchart LR
 - [x] Secure Settings Store Keychain integration and release-build secret safeguards.
 - [x] Speech Recognition service integration with dynamic level animation.
 - [x] Circuit breaker logic, exponential backoff retries, and rate limits for Pinecone query robustness.
-- [x] Two-stage RAG queries supporting hybrid retrieval and reranking.
+- [x] Two-stage RAG queries with reranking, and a hybrid query path (documents are uploaded with dense vectors only, so results come from semantic similarity today).
 
 ### In Progress
 - [ ] Automated integration test coverage for streaming completions.

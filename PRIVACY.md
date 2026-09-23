@@ -1,8 +1,8 @@
 # OpenCone Privacy Policy
 
-**Last updated:** 2026-05-29
+**Last updated:** 2026-09-23
 
-OpenCone is a local-first, native RAG (Retrieval-Augmented Generation) client designed with a strong focus on privacy. This policy outlines how local files, metadata segments, and API authorization keys are processed, cached, and transmitted.
+OpenCone is a native RAG (Retrieval-Augmented Generation) client designed with a strong focus on privacy. This policy outlines how local files, metadata segments, and API authorization keys are processed, cached, and transmitted.
 
 ---
 
@@ -11,7 +11,6 @@ OpenCone is a local-first, native RAG (Retrieval-Augmented Generation) client de
 OpenCone runs the majority of its ingestion and synchronization pipelines directly on your iOS device:
 - **Sandbox File Copies**: When you select documents, they are copied into the app's local sandbox storage directory. The app creates security-scoped bookmarks to retain access without writing to outside folders.
 - **Local Text Extraction**: Conversion of formats (PDFs, plain text files) into raw text strings is executed completely on-device using iOS frameworks (e.g. `PDFKit`).
-- **Local OCR Processing**: Native Vision-based OCR runs locally to recognize text structures in images (PNG, JPEG, TIFF) without sending files to image-processing cloud endpoints.
 - **Microphone Transcription**: Voice input uses Apple's Speech framework with server recognition allowed (`requiresOnDeviceRecognition = false`), so your audio may be sent to Apple to transcribe.
 
 ---
@@ -34,7 +33,7 @@ OpenCone does **not** host any intermediary collection servers. All network tran
 ## 3. Credentials & Keys Storage
 
 - Users configure and provide their own personal API keys.
-- Keys are written directly to the secure iOS Keychain (Secure Enclave) via `SecureSettingsStore`.
+- Keys are written directly to the secure iOS Keychain via `SecureSettingsStore`.
 - Credentials are never stored in unencrypted plist files, configuration variables, or `UserDefaults` caches.
 
 ---
@@ -42,7 +41,7 @@ OpenCone does **not** host any intermediary collection servers. All network tran
 ## 4. Telemetry & Telemetry Boundaries
 
 - OpenCone does **not** contain third-party analytics trackers, advertising SDKs, or remote crash reporting libraries.
-- Diagnostic log items (e.g. status changes, pipeline speeds) are written solely to a local memory buffer accessible under the **Logs** tab. These logs never leave the device.
+- Diagnostic log items (e.g. status changes, pipeline speeds) are written solely to a local memory buffer accessible under the **Logs** tab. The app never uploads these logs; they leave the device only if you copy or share them from the **Logs** tab.
 
 ---
 

@@ -1,6 +1,6 @@
 # Copilot & Agent Instructions for OpenCone
 
-OpenCone is an on-device Retrieval-Augmented Generation (RAG) iOS/macOS Catalyst sandbox application built with SwiftUI, async/await, OpenAI embeddings, and Pinecone serverless vector databases.
+OpenCone is a cloud-hybrid Retrieval-Augmented Generation (RAG) iPhone application built with SwiftUI, async/await, OpenAI embeddings, and Pinecone serverless vector databases.
 
 ---
 
@@ -31,7 +31,7 @@ OpenCone is an on-device Retrieval-Augmented Generation (RAG) iOS/macOS Catalyst
 | **Search & RAG** | [SearchViewModel.swift](OpenCone/Features/Search/SearchViewModel.swift), [SearchView.swift](OpenCone/Features/Search/SearchView.swift) |
 | **Pinecone REST API** | [PineconeService.swift](OpenCone/Services/PineconeService.swift) |
 | **OpenAI Integration** | [OpenAIService.swift](OpenCone/Services/OpenAIService.swift) |
-| **Security Enclave** | [SecureSettingsStore.swift](OpenCone/Core/Security/SecureSettingsStore.swift), [Configuration.swift](OpenCone/Core/Configuration.swift) |
+| **Secure Settings Store** | [SecureSettingsStore.swift](OpenCone/Core/Security/SecureSettingsStore.swift), [Configuration.swift](OpenCone/Core/Configuration.swift) |
 
 ---
 
@@ -55,7 +55,7 @@ scripts/preflight_check.sh
 ## 5. Coding & Logging Conventions
 
 - **Logging**: Always dispatch diagnostics to `Logger.shared.log(level:message:context:)`. Never use `print()` or `NSLog()` statements.
-- **Memory Safety**: Wrap loops parsing multiple files (such as OCR extractions) inside local `autoreleasepool` blocks to free buffers immediately.
+- **Memory Safety**: Wrap heavy loops (such as chunking and embedding) inside local `autoreleasepool` blocks to free buffers immediately.
 - **Resilience**: Wrap Pinecone calls inside the retry block:
   ```swift
   try await pineconeService.withRetries(maxRetries: 3) { ... }
