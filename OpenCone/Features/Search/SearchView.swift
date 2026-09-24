@@ -726,18 +726,16 @@ struct SourcesSheet: View {
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
-    private func isResultSelected(_ result: SearchResultModel) -> Bool {
-        viewModel.selectedResults.contains { $0.id == result.id }
-    }
-
     var body: some View {
+        let selectedIDs = Set(viewModel.selectedResults.map { $0.id })
+
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 12) {
                     ForEach(viewModel.searchResults) { result in
                         SearchResultRow(
                             result: result,
-                            isSelected: isResultSelected(result),
+                            isSelected: selectedIDs.contains(result.id),
                             viewModel: viewModel
                         ) {
                             viewModel.toggleResultSelection(result)
