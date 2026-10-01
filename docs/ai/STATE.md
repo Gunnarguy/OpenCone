@@ -1,8 +1,9 @@
 # Current State
 
 Updated: 2026-10-01
-Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; not pushed
-Last verified commit: ec09fb8 (routing and the model catalog; Gunnar's prompt-cache work stays uncommitted)
+Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`, pushed to origin 2026-10-01
+Last verified commit: 0032a7f (merge of origin/main's 2026-09-23 docs corrections, no code; routing and the model
+catalog are ec09fb8; Gunnar's prompt-cache work stays uncommitted)
 
 ## Objective
 Reboot OpenCone around one idea, in Gunnar's words (2026-09-30): "just ask once and then it
@@ -11,7 +12,7 @@ Pinecone indexes and namespaces is committed and unit-tested; it closes when the
 Exact Next Action passes.
 
 ## Status
-Committed in ec09fb8 (2026-10-01), test_verified, not pushed. Never run against real OpenAI or
+Committed in ec09fb8 (2026-10-01) and pushed, test_verified. Never run against real OpenAI or
 Pinecone accounts. Version 3 is on the App Store; 3.1 is tagged and set as `MARKETING_VERSION` but not
 released, so a release would carry this work as 3.1 or later.
 
