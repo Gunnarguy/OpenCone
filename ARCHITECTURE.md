@@ -29,7 +29,7 @@ flowchart TD
         AS -->|.error| EV[ErrorView]
 
         MV -->|Ask| SV[SearchView]
-        MV -->|Documents| DV[DocumentsViewRedesign]
+        MV -->|Documents| DV[DocumentsView]
         MV -->|Settings| SetV[SettingsView]
         SetV -->|Advanced| PV[ProcessingView]
     end
@@ -87,7 +87,7 @@ flowchart TD
 
 ### Views (SwiftUI Presentation)
 - **[MainView.swift](OpenCone/App/MainView.swift)**: Three tabs (Ask, Documents, Settings), each in a `NavigationStack`. Reloads the index list when Ask is opened. Errors from Documents and Settings show as an alert; Ask shows its own in place.
-- **[DocumentsViewRedesign.swift](OpenCone/Features/Documents/DocumentsViewRedesign.swift)**: Card-based dashboard reporting file status metrics, ingestion success/failure bars, and floating context action popups.
+- **[DocumentsView.swift](OpenCone/Features/Documents/DocumentsView.swift)**: A grouped list in the style of the rest of the app: where uploads go (index and namespace menus with passage counts), indexing progress, and the documents (search, filter, swipe to remove or index, Select for several). One button indexes every new document. The file picker offers only types text can be read from. `DocumentDetailsView` shows where a document was indexed, time per step, and passage sizes.
 - **[SearchView.swift](OpenCone/Features/Search/SearchView.swift)**: The Ask screen, laid out like OpenResponses' chat: `ChatStatusBar` (model menu, reasoning effort, tool badges, the gear for `AnswerSettingsPanel`), `SearchScopeBar` (where to search, opening `SearchScopeSheet`), the conversation in `MessageBubble`s, and `ChatComposer`. Answers render through `MarkdownText`, which parses blocks itself (headings, lists, tables, quotes, code) and turns passage tags such as [S2] into `opencone-source://` links; a tag or a source chip opens `SourcesPresentationView`.
 - **[SettingsView.swift](OpenCone/Features/Settings/SettingsView.swift)**: Segmented tabs over grouped forms, as in OpenResponses: General (keys, your data, about), Answers (the same `AnswerSettingsForm` as the gear in Ask), Advanced (search defaults, uploads, log level and the activity log, Pinecone API versions).
 - **Appearance**: One theme built from system colors (`OCTheme.system`); the app follows the system's light or dark setting and Dynamic Type.

@@ -127,7 +127,7 @@ flowchart TD
 ```
 
 ### 1. Ingestion & Processing Details
-- **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, TXT, HTML, CSS, JavaScript, Markdown, JSON, XML, CSV, and RTF. Word, Excel and PowerPoint files appear in the picker but cannot be extracted. Some text types are rejected because their MIME type is not on the accepted list: Python (`.py`, `text/x-python-script`), TSV (`text/tab-separated-values`), and source files that iOS gives no MIME type, such as `.swift`.
+- **Ingestion**: Documents are selected via the native document picker. Bookmarks are resolved dynamically with security permissions enabled (`startAccessingSecurityScopedResource`). Supported MIME types include PDFs, TXT, HTML, CSS, JavaScript, Markdown, JSON, XML, CSV, and RTF. Word, Excel and PowerPoint files cannot be extracted, so the picker no longer offers them; images are read with on-device text recognition. Some text types are rejected because their MIME type is not on the accepted list: Python (`.py`, `text/x-python-script`), TSV (`text/tab-separated-values`), and source files that iOS gives no MIME type, such as `.swift`.
 - **Extraction**: Text is extracted locally using `PDFKit` page extraction, or read directly as UTF-8 for text formats. Chunking and embedding loops run inside `autoreleasepool`.
 - **Chunking**: Text is split recursively using `RecursiveTextSplitter`. Chunk sizes (default `1024` chars) and overlaps (default `256` chars) adapt based on file types.
 - **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
@@ -187,7 +187,7 @@ flowchart LR
 | **App Entry** | [OpenConeApp.swift](OpenCone/App/OpenConeApp.swift) | Bootstrapping, AppState machine, and Release credential check. |
 | **Main UI** | [MainView.swift](OpenCone/App/MainView.swift) | Tabs (Ask, Documents, Settings) and view-model synchronization. The activity log is under Settings > Advanced. |
 | **Ask** | [SearchView.swift](OpenCone/Features/Search/SearchView.swift), [Components/](OpenCone/Features/Search/Components) | The conversation: status bar, where to search, Markdown answers with their sources, composer. |
-| **Ingestion View** | [DocumentsViewRedesign.swift](OpenCone/Features/Documents/DocumentsViewRedesign.swift) | Document list, dashboards, and bulk action triggers. |
+| **Ingestion View** | [DocumentsView.swift](OpenCone/Features/Documents/DocumentsView.swift) | Where uploads go, indexing progress, and the document list. |
 | **Ingestion Engine** | [DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift) | Pipeline scheduling, progress tracking, and bookmarks updates. |
 | **API Clients** | [PineconeService.swift](OpenCone/Services/PineconeService.swift), [OpenAIService.swift](OpenCone/Services/OpenAIService.swift) | Low-level REST connections, retry logic, SSE parsing, and circuit breakers. |
 | **Text Splitter** | [TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift) | Content tokenization, recursive chunking, and hashing. |

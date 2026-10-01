@@ -4,8 +4,8 @@ import Foundation
 /// `-OpenConeDemo`, the app opens on sample indexes and a sample conversation; it makes no requests
 /// unless a question is sent, and saves no settings or keys (the settings stay in memory and the
 /// keys aren't checked). `-OpenConeDemoScreen <name>` also opens one screen (empty, scope,
-/// scope-one, answer-settings, models, sources, passage, settings). Debug builds only: in Release,
-/// `isActive` is always false.
+/// scope-one, answer-settings, models, sources, passage, settings, documents, index-details, document).
+/// Debug builds only: in Release, `isActive` is always false.
 enum DemoMode {
     static var isActive: Bool {
         #if DEBUG
@@ -84,6 +84,69 @@ enum DemoContent {
 
         guard DemoMode.screen != "empty" else { return }
         search.messages = conversation()
+    }
+
+    /// Sample documents in every state, in the "manuals" index
+    static func seedDocuments(_ documents: DocumentsViewModel) {
+        documents.needsSecurityConsent = false
+        documents.pineconeIndexes = ["manuals", "research", "recipes", "legacy-notes"]
+        documents.selectedIndex = "manuals"
+        documents.namespaces = ["", "baxter", "bd"]
+        documents.selectedNamespace = "baxter"
+        documents.indexDimension = 1536
+        documents.indexStats = IndexStatsResponse(
+            namespaces: ["": NamespaceStats(vectorCount: 18), "baxter": NamespaceStats(vectorCount: 412), "bd": NamespaceStats(vectorCount: 236)],
+            dimension: 1536,
+            totalVectorCount: 666
+        )
+        documents.indexMetadata = IndexDescribeResponse(
+            name: "manuals",
+            dimension: 1536,
+            metric: "cosine",
+            host: "manuals-a1b2c3d.svc.aped-4627-b74a.pinecone.io",
+            status: IndexStatus(state: "Ready", ready: true)
+        )
+
+        func document(_ name: String, mime: String, size: Int64, chunks: Int = 0, namespace: String? = nil, error: String? = nil, minutesAgo: Double) -> DocumentModel {
+            var document = DocumentModel(
+                fileName: name,
+                filePath: URL(fileURLWithPath: "/demo/\(name)"),
+                mimeType: mime,
+                fileSize: size,
+                dateAdded: Date().addingTimeInterval(-minutesAgo * 60),
+                isProcessed: namespace != nil,
+                processingError: error,
+                chunkCount: chunks
+            )
+            if let namespace {
+                document.lastIndexedIndexName = "manuals"
+                document.lastIndexedNamespace = namespace
+                document.lastIndexedAt = Date().addingTimeInterval(-minutesAgo * 60 + 90)
+                var stats = DocumentProcessingStats()
+                let start = document.lastIndexedAt!.addingTimeInterval(-42)
+                stats.startTime = start
+                stats.endTime = document.lastIndexedAt
+                stats.addPhase(phase: .textExtraction, start: start, end: start.addingTimeInterval(6))
+                stats.addPhase(phase: .chunking, start: start.addingTimeInterval(6), end: start.addingTimeInterval(7))
+                stats.addPhase(phase: .embeddingGeneration, start: start.addingTimeInterval(7), end: start.addingTimeInterval(31))
+                stats.addPhase(phase: .vectorUpsert, start: start.addingTimeInterval(31), end: start.addingTimeInterval(42))
+                stats.chunkSizes = (0..<chunks).map { 700 + ($0 * 37 % 330) }
+                stats.extractedTextLength = stats.chunkSizes.reduce(0, +)
+                stats.totalTokens = stats.extractedTextLength / 4
+                stats.avgTokensPerChunk = Double(stats.totalTokens) / Double(max(chunks, 1))
+                stats.vectorsUploaded = chunks
+                document.processingStats = stats
+            }
+            return document
+        }
+
+        documents.documents = [
+            document("Baxter Sigma Spectrum Service Manual.pdf", mime: "application/pdf", size: 8_912_384, chunks: 168, namespace: "baxter", minutesAgo: 2_880),
+            document("BD Alaris 8015 Technical Manual.pdf", mime: "application/pdf", size: 6_104_221, chunks: 124, namespace: "bd", minutesAgo: 1_440),
+            document("Filter change checklist.md", mime: "text/markdown", size: 6_240, minutesAgo: 12),
+            document("Occlusion alarm label.jpg", mime: "image/jpeg", size: 1_843_200, minutesAgo: 9),
+            document("Pump fleet inventory.csv", mime: "text/csv", size: 48_210, error: "No text could be read from the file.", minutesAgo: 30),
+        ]
     }
 
     private static func profile(

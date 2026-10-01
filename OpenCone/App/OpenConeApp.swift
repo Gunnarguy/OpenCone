@@ -118,6 +118,7 @@ struct OpenConeApp: App {
             indexSurveyor: nil,
             indexCatalogStore: nil
         )
+        DemoContent.seedDocuments(documents)
         Task {
             await DemoContent.seed(search, settings: settingsViewModel)
             documentsViewModel = documents

@@ -37,7 +37,7 @@ struct MainView: View {
 
             // MARK: Documents Tab
             NavigationStack {
-                DocumentsViewRedesign(viewModel: documentsViewModel)
+                DocumentsView(viewModel: documentsViewModel)
                     .navigationTitle("Documents")
             }
             .tabItem {
@@ -72,7 +72,11 @@ struct MainView: View {
     /// Load API keys and initialize data when view appears
     private func loadInitialData() {
         if DemoMode.isActive {
-            if DemoMode.screen == "settings" { selectedTab = 2 }
+            switch DemoMode.screen {
+            case "settings": selectedTab = 2
+            case "documents", "index-details", "document": selectedTab = 1
+            default: break
+            }
             return
         }
 
