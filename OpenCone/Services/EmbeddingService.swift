@@ -2,6 +2,9 @@ import Foundation
 
 /// Service for generating embeddings from text
 final class EmbeddingService: Sendable {
+    /// Passages embedded per OpenAI request
+    static let batchSize = 50
+
 
     private let openAIService: OpenAIService
     private nonisolated(unsafe) static let isoDateFormatter: ISO8601DateFormatter = { 
@@ -86,7 +89,7 @@ final class EmbeddingService: Sendable {
     ) async throws -> [EmbeddingModel] {
         await log(level: .info, message: "Generating embeddings in batches for \(chunks.count) chunks")
 
-        let batchSize = 50 // OpenAI can handle 50 chunks at a time efficiently
+        let batchSize = Self.batchSize
         var embeddingModels: [EmbeddingModel] = []
         embeddingModels.reserveCapacity(chunks.count)
 

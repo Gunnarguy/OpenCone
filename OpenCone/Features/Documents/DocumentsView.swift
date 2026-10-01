@@ -18,6 +18,14 @@ struct DocumentsView: View {
     /// A document opened from code rather than a tap: the demo's "document" screen
     @State private var openedDocument: DocumentModel?
 
+    /// Where and how Create makes an index: the values `DocumentsViewModel.createIndex` reads
+    private var newIndexSummary: String {
+        let metric = UserDefaults.standard.string(forKey: SettingsStorageKeys.newIndexMetric) ?? "cosine"
+        let storedDimension = UserDefaults.standard.integer(forKey: "embedding.dimension")
+        let dimension = storedDimension > 0 ? storedDimension : Configuration.embeddingDimension
+        return "\(Configuration.getPineconeCloud().uppercased()) \(Configuration.getPineconeRegion()), \(metric), \(dimension) dimensions"
+    }
+
     enum DocumentFilter: String, CaseIterable, Identifiable {
         case all = "All"
         case notIndexed = "Not indexed"
@@ -111,7 +119,7 @@ struct DocumentsView: View {
             Button("Cancel", role: .cancel) { viewModel.newIndexName = "" }
             Button("Create") { Task { await viewModel.createIndex() } }
         } message: {
-            Text("A serverless Pinecone index for the embedding model in Settings > Advanced. Lowercase letters, digits and hyphens.")
+            Text("A serverless index in \(newIndexSummary), as set in Settings > Advanced > New indexes. Lowercase letters, digits and hyphens.")
         }
         .confirmationDialog(
             "Delete the index \(viewModel.selectedIndex ?? "")?",

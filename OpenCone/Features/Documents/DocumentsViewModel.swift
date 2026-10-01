@@ -841,9 +841,11 @@ final class DocumentsViewModel: ObservableObject {
             let dim = UserDefaults.standard.integer(forKey: "embedding.dimension")
             let actualDimension = dim > 0 ? dim : Configuration.embeddingDimension
             
-            let metric = UserDefaults.standard.string(forKey: "pinecone.metric") ?? "cosine"
-            let cloud = UserDefaults.standard.string(forKey: "pinecone.cloud") ?? "aws"
-            let region = UserDefaults.standard.string(forKey: "pinecone.region") ?? "us-east-1"
+            let metric = UserDefaults.standard.string(forKey: SettingsStorageKeys.newIndexMetric) ?? "cosine"
+            // Where Settings keeps them; this used to read keys nothing wrote, so every index went to
+            // AWS us-east-1
+            let cloud = Configuration.getPineconeCloud()
+            let region = Configuration.getPineconeRegion()
             
             _ = try await pineconeService.createIndex(
                 name: newIndexName, 

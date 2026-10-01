@@ -47,6 +47,10 @@ enum SettingsStorageKeys {
     // which replaced it, so a settings file from before the scope still reads the same.
     static let indexRoutingEnabled = "search.indexRoutingEnabled"
     static let searchScope = "search.scope"
+
+    /// The similarity metric for indexes created from Documents. The key predates this setting: index
+    /// creation already read it, and nothing wrote it until 2026-10-01.
+    static let newIndexMetric = "pinecone.metric"
 }
 
 /// How widely a question is searched

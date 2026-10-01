@@ -81,7 +81,7 @@ nonisolated final class ModelCatalogStore: @unchecked Sendable {
     /// tried again on the next refresh. Returns true when a model's settings changed.
     @discardableResult
     func learnSettings(for ids: [String], now: Date = Date(),
-                       load: (URL) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(from: $0) }) async -> Bool {
+                       load: (URL) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(from: $0, delegate: APIActivity.recorder) }) async -> Bool {
         guard readsDocs else { return false }
         let due = ids.filter { id in
             guard let learned = state.withLock({ $0.learned[id] }) else { return true }

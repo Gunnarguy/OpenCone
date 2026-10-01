@@ -17,6 +17,9 @@ struct PineconeServiceConfiguration: Sendable {
 /// Service for interacting with Pinecone vector database
 @MainActor
 final class PineconeService {
+    /// Vectors per upsert request
+    static let upsertBatchSize = 100
+
 
     private var logger: Logger { Logger.shared }
     private let apiKey: String
@@ -144,7 +147,7 @@ final class PineconeService {
             do {
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -215,7 +218,7 @@ final class PineconeService {
                 // Apply rate limiting
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard !data.isEmpty else {
                     throw PineconeError.emptyResponse
@@ -275,7 +278,7 @@ final class PineconeService {
             do {
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -369,7 +372,7 @@ final class PineconeService {
             do {
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -416,7 +419,7 @@ final class PineconeService {
         try await withRetries(maxRetries: maxRetries) {
             do {
                 try await self.applyRateLimit()
-                let (_, response) = try await session.data(for: request)
+                let (_, response) = try await session.data(for: request, delegate: APIActivity.recorder)
                 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -459,7 +462,7 @@ final class PineconeService {
             do {
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -555,7 +558,7 @@ final class PineconeService {
             cfg.protocolClasses = self.session.configuration.protocolClasses
             let shortSession = URLSession(configuration: cfg)
 
-            let (_, response) = try await shortSession.data(for: request)
+            let (_, response) = try await shortSession.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 markHealthFailure(reason: "Invalid response in health check")
                 return false
@@ -614,7 +617,7 @@ final class PineconeService {
             do {
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -703,7 +706,7 @@ final class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -745,7 +748,7 @@ final class PineconeService {
 
             try await withRetries(maxRetries: maxRetries) {
                 try await self.applyRateLimit()
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
                 }
@@ -813,7 +816,7 @@ final class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (_, response) = try await session.data(for: request)
+            let (_, response) = try await session.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -845,7 +848,7 @@ final class PineconeService {
         }
 
         // Break vectors into batches to avoid oversized requests
-        let batchSize = 100 // Pinecone recommends batches of 100
+        let batchSize = Self.upsertBatchSize
         let batches = stride(from: 0, to: vectors.count, by: batchSize).map {
             Array(vectors[$0..<min($0 + batchSize, vectors.count)])
         }
@@ -893,7 +896,7 @@ final class PineconeService {
                     // Apply rate limiting
                     try await self.applyRateLimit()
 
-                    let (data, response) = try await session.data(for: request)
+                    let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                     guard let httpResponse = response as? HTTPURLResponse else {
                         throw PineconeError.invalidResponse
@@ -967,7 +970,7 @@ final class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -1016,7 +1019,7 @@ final class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -1062,7 +1065,7 @@ final class PineconeService {
 
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
             }
@@ -1125,7 +1128,7 @@ final class PineconeService {
                 // Apply rate limiting
                 try await self.applyRateLimit()
 
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw PineconeError.invalidResponse
@@ -1235,7 +1238,7 @@ final class PineconeService {
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
 
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
@@ -1366,7 +1369,7 @@ final class PineconeService {
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
 
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
@@ -1492,7 +1495,7 @@ final class PineconeService {
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
 
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse
@@ -1549,7 +1552,7 @@ final class PineconeService {
         try await withRetries(maxRetries: maxRetries) {
             try await self.applyRateLimit()
 
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw PineconeError.invalidResponse

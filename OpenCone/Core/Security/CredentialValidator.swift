@@ -28,7 +28,7 @@ final class CredentialValidator: Sendable {
     // MARK: - Bounded Download Helper
 
     private func downloadBoundedData(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (asyncBytes, response) = try await session.bytes(for: request)
+        let (asyncBytes, response) = try await session.bytes(for: request, delegate: APIActivity.recorder)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw BoundedResponseError.invalidResponse
         }

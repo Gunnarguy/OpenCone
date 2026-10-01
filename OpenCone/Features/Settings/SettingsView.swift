@@ -3,10 +3,11 @@ import UIKit
 
 /// Settings, laid out like OpenResponses' settings: segmented tabs over inset grouped forms.
 /// General holds the keys and your data, Answers the same answer settings as the gear in Ask, and
-/// Advanced the search defaults, uploads, the Pinecone API versions and the log.
+/// Advanced every endpoint OpenCone calls, the search defaults, uploads, new indexes, the Pinecone API
+/// versions and the log.
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
-    @State private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab = .demoInitial
 
     var body: some View {
         VStack(spacing: 12) {
@@ -40,6 +41,15 @@ private enum SettingsTab: CaseIterable {
     case answers
     case advanced
 
+    /// The tab a demo screen opens on (`DemoMode`); General otherwise
+    static var demoInitial: SettingsTab {
+        switch DemoMode.screen {
+        case "settings-answers": return .answers
+        case "settings-advanced", "endpoints", "endpoint": return .advanced
+        default: return .general
+        }
+    }
+
     var title: String {
         switch self {
         case .general: return "General"
@@ -60,6 +70,10 @@ private struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
+            Section {
+                AppHeader(openAIStatus: viewModel.openAIStatus, pineconeStatus: viewModel.pineconeStatus)
+            }
+
             Section {
                 keyRow("OpenAI API key", text: $viewModel.openAIAPIKey, status: viewModel.openAIStatus, secure: true)
                 keyRow("Pinecone API key", text: $viewModel.pineconeAPIKey, status: viewModel.pineconeStatus, secure: true)
@@ -165,6 +179,110 @@ private struct GeneralSettingsTab: View {
     }
 }
 
+/// OpenCone's icon, version, and whether each key works
+private struct AppHeader: View {
+    let openAIStatus: CredentialStatus
+    let pineconeStatus: CredentialStatus
+
+    var body: some View {
+        HStack(spacing: 14) {
+            AppIconImage()
+                .frame(width: 60, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 13.5, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13.5, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08))
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("OpenCone")
+                        .font(.title3.weight(.semibold))
+                    Text("Version \(GeneralSettingsTab.versionText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    ConnectionPill(name: "OpenAI", status: openAIStatus)
+                    ConnectionPill(name: "Pinecone", status: pineconeStatus)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// The app's own icon, read from the bundle; a symbol when it can't be
+private struct AppIconImage: View {
+    var body: some View {
+        if let icon = Self.icon {
+            Image(uiImage: icon)
+                .resizable()
+                .scaledToFill()
+        } else {
+            ZStack {
+                LinearGradient(colors: [.blue, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: "magnifyingglass")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+
+    private static let icon: UIImage? = {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let files = primary["CFBundleIconFiles"] as? [String],
+              let name = files.last
+        else {
+            return nil
+        }
+        return UIImage(named: name)
+    }()
+}
+
+/// "OpenAI" with a dot that says whether its key works
+private struct ConnectionPill: View {
+    let name: String
+    let status: CredentialStatus
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(name)
+                .font(.caption.weight(.medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.12), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name): \(spoken)")
+    }
+
+    private var color: Color {
+        switch status {
+        case .valid: return .green
+        case .invalid: return .red
+        case .rateLimited: return .orange
+        case .validating, .unknown: return .gray
+        }
+    }
+
+    private var spoken: String {
+        switch status {
+        case .valid: return "works"
+        case .invalid: return "doesn't work"
+        case .rateLimited: return "rate limited"
+        case .validating: return "checking"
+        case .unknown: return "not checked"
+        }
+    }
+}
+
 private struct CredentialStatusIcon: View {
     let status: CredentialStatus
 
@@ -196,10 +314,31 @@ private struct CredentialStatusIcon: View {
 
 private struct AdvancedSettingsTab: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @ObservedObject private var activity = APIActivity.shared
     @State private var confirmingReset = false
+    /// Open on a demo screen (`DemoMode`)
+    @State private var showingEndpoints = DemoMode.screen == "endpoints" || DemoMode.screen == "endpoint"
+    @State private var showingResponsesEndpoint = DemoMode.screen == "endpoint"
 
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    EndpointsView(settings: viewModel)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Endpoints", systemImage: "point.3.connected.trianglepath.dotted")
+                        Text(endpointsSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Label("APIs", systemImage: "network")
+            } footer: {
+                Text("Every OpenAI and Pinecone endpoint OpenCone calls: what each is for, the settings that shape it, and how its requests went.")
+            }
+
             Section {
                 Toggle("Always open the preferred index", isOn: $viewModel.enforcePreferredIndex)
                 TextField("Preferred index", text: $viewModel.preferredIndexName)
@@ -254,14 +393,36 @@ private struct AdvancedSettingsTab: View {
                         Text(model).tag(model)
                     }
                 }
-                Picker("Dimensions for new indexes", selection: $viewModel.embeddingDimension) {
-                    Text("1536").tag(1536)
-                    Text("3072").tag(3072)
-                }
             } header: {
                 Label("Uploads", systemImage: "square.and.arrow.up.on.square")
             } footer: {
                 Text("Documents are embedded with this model. Questions use the model that built each index once OpenCone has checked it.")
+            }
+
+            Section {
+                Picker("Cloud", selection: $viewModel.pineconeCloud) {
+                    ForEach(viewModel.availableClouds, id: \.self) { cloud in
+                        Text(cloud.uppercased()).tag(cloud)
+                    }
+                }
+                Picker("Region", selection: $viewModel.pineconeRegion) {
+                    ForEach(viewModel.availableRegions, id: \.self) { region in
+                        Text(region).tag(region)
+                    }
+                }
+                Picker("Metric", selection: $viewModel.newIndexMetric) {
+                    ForEach(viewModel.availableMetrics, id: \.self) { metric in
+                        Text(metric).tag(metric)
+                    }
+                }
+                Picker("Dimensions", selection: $viewModel.embeddingDimension) {
+                    Text("1536").tag(1536)
+                    Text("3072").tag(3072)
+                }
+            } header: {
+                Label("New indexes", systemImage: "plus.square.on.square")
+            } footer: {
+                Text(NewIndexText.footer)
             }
 
             Section {
@@ -284,21 +445,18 @@ private struct AdvancedSettingsTab: View {
 
             Section {
                 LabeledContent("Control plane") {
-                    versionField("2024-07", text: $viewModel.pineconeControlPlaneVersion)
+                    versionField(PineconeAPIVersions.controlPlane, text: $viewModel.pineconeControlPlaneVersion)
                 }
                 LabeledContent("Data plane") {
-                    versionField("2024-07", text: $viewModel.pineconeDataPlaneVersion)
+                    versionField(PineconeAPIVersions.dataPlane, text: $viewModel.pineconeDataPlaneVersion)
                 }
                 LabeledContent("Namespaces") {
-                    versionField("2025-01", text: $viewModel.pineconeNamespaceVersion)
-                }
-                LabeledContent("Metadata fetch") {
-                    versionField("2025-01", text: $viewModel.pineconeMetadataFetchVersion)
+                    versionField(PineconeAPIVersions.namespaces, text: $viewModel.pineconeNamespaceVersion)
                 }
             } header: {
                 Label("Pinecone API versions", systemImage: "number")
             } footer: {
-                Text("Change these only to follow a Pinecone API change. They're used after you reopen OpenCone.")
+                Text("Change these only to follow a Pinecone API change; Endpoints shows which endpoints each one covers. They're used after you reopen OpenCone. Pinecone's latest stable version is \(PineconeAPIVersions.latestStable).")
             }
 
             Section {
@@ -313,6 +471,22 @@ private struct AdvancedSettingsTab: View {
             Button("Reset", role: .destructive, action: viewModel.resetToDefaults)
             Button("Cancel", role: .cancel) {}
         }
+        .navigationDestination(isPresented: $showingEndpoints) {
+            EndpointsView(settings: viewModel)
+                .navigationDestination(isPresented: $showingResponsesEndpoint) {
+                    EndpointDetailView(endpoint: .responses, settings: viewModel)
+                }
+        }
+    }
+
+    private var endpointsSubtitle: String {
+        let count = activity.calls.count
+        let failed = activity.calls.filter { !$0.succeeded }.count
+        let endpoints = "\(APIEndpoint.allCases.count) endpoints"
+        guard count > 0 else { return "\(endpoints), no requests yet" }
+        return failed > 0
+            ? "\(endpoints), \(count) requests, \(failed) didn't work"
+            : "\(endpoints), \(count) requests"
     }
 
     private func versionField(_ placeholder: String, text: Binding<String>) -> some View {

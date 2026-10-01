@@ -24,15 +24,28 @@ final class SettingsViewModel: ObservableObject {
     @Published var defaultChunkOverlap: Int = Configuration.defaultChunkOverlap
     @Published var embeddingModel: String = Configuration.embeddingModel
     @Published var completionModel: String = Configuration.completionModel {
-        // A model change can leave an effort the new model rejects, which fails every request
-        didSet { clampReasoningEffort() }
+        // A model change can leave an effort the new model rejects, which fails every request, or an
+        // answer length the new model can't write
+        didSet {
+            clampReasoningEffort()
+            clampAnswerLength()
+            clampServiceTier()
+        }
     }
 
     // OpenAI generation parameters
     @Published var temperature: Double = 0.3
     @Published var topP: Double = 0.95
     @Published var reasoningEffort: String = "none" // none|low|medium|high|xhigh (GPT-5.2)
-    @Published var conversationMode: String = "server" // "server" (Responses-managed) | "client" (bounded history)
+
+    // Responses API request options (RequestSettings reads them for each request)
+    @Published var verbosity: String = "medium"
+    @Published var serviceTier: String = "auto"
+    @Published var webSearchContextSize: String = "medium"
+    /// The sites web search may use, as typed; empty means any site
+    @Published var webSearchDomains: String = ""
+    /// Earlier exchanges sent with each question; 0 sends none
+    @Published var historyExchanges: Int = RequestSettings.defaultHistoryExchanges
 
     // Search defaults
     @Published var defaultTopK: Int = 10
@@ -78,7 +91,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var similarityThreshold: Double = 0.0 // 0 = no threshold
     @Published var includeMetadataInResults: Bool = true
     @Published var maxContextTokens: Int = 32000
-    @Published var maxOutputTokens: Int = 4000 // OpenAI max_output_tokens - GPT-5 supports 128K
+    @Published var maxOutputTokens: Int = RequestSettings.defaultMaxOutputTokens // max_output_tokens, reasoning included
     @Published var streamingEnabled: Bool = true
     @Published var webSearchEnabled: Bool = false // OpenAI Responses API web_search tool
     @Published var codeInterpreterEnabled: Bool = false // OpenAI code_interpreter tool
@@ -125,10 +138,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var rerankTopN: Int = 5 // Number of results after reranking
 
     // Pinecone advanced settings
-    @Published var pineconeControlPlaneVersion: String = "2024-07"
-    @Published var pineconeDataPlaneVersion: String = "2024-07"
-    @Published var pineconeNamespaceVersion: String = "2025-01"
-    @Published var pineconeMetadataFetchVersion: String = "2025-01"
+    @Published var pineconeControlPlaneVersion: String = PineconeAPIVersions.controlPlane
+    @Published var pineconeDataPlaneVersion: String = PineconeAPIVersions.dataPlane
+    @Published var pineconeNamespaceVersion: String = PineconeAPIVersions.namespaces
+    @Published var pineconeMetadataFetchVersion: String = PineconeAPIVersions.metadataFetch
 
     // Timeouts and retries
     @Published var requestTimeoutSeconds: Int = 30
@@ -139,7 +152,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var showDebugInfo: Bool = false
 
     // Conversation settings
-    @Published var maxConversationTurns: Int = 10 // For client-bounded mode
     @Published var systemPromptOverride: String = ""
 
     // Available rerank models
@@ -170,25 +182,50 @@ final class SettingsViewModel: ObservableObject {
     var availableReasoningEffortOptions: [String] {
         CurrentModelCatalog.reasoningEfforts(for: completionModel)
     }
-    let availableConversationModes = ["server", "client"]
+
+    /// Answer lengths up to the most the selected model writes, and the current one if it's between
+    var answerLengthChoices: [Int] {
+        var choices = ModelLimits.lengthChoices(for: completionModel)
+        if !choices.contains(maxOutputTokens) {
+            choices.append(maxOutputTokens)
+            choices.sort()
+        }
+        return choices
+    }
+
+    /// The selected model takes `text.verbosity`
+    var supportsVerbosity: Bool { ModelLimits.supportsVerbosity(completionModel) }
+
+    /// The service tiers the selected model is offered at
+    var availableServiceTiers: [String] { ModelLimits.serviceTiers(for: completionModel) }
+
+    /// The selected model has the code interpreter tool
+    var supportsCodeInterpreter: Bool { ModelLimits.supportsCodeInterpreter(completionModel) }
+
+    /// The allowed sites as the request sends them
+    var webSearchDomainList: [String] { RequestSettings.domains(from: webSearchDomains) }
     let availableLogLevels = ProcessingLogEntry.LogLevel.allCases
 
-    // Pinecone regions for AWS and GCP
-    let awsRegions = [
-        "us-east-1", "us-east-2", "us-west-1", "us-west-2",
-        "eu-west-1", "eu-west-2", "eu-central-1",
-        "ap-northeast-1", "ap-southeast-1", "ap-southeast-2",
+    /// Where Pinecone creates serverless indexes, from the cloud regions table in Pinecone's "Create an
+    /// index" guide (read 2026-10-01). The Starter plan creates in AWS us-east-1 only.
+    static let serverlessRegions: [String: [String]] = [
+        "aws": ["us-east-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1"],
+        "gcp": ["us-central1", "europe-west4"],
+        "azure": ["eastus2"],
     ]
-
-    let gcpRegions = [
-        "us-central1", "us-east1", "us-east4", "us-west1",
-        "europe-west1", "europe-west4",
-        "asia-northeast1", "asia-southeast1",
-    ]
+    let availableClouds = ["aws", "gcp", "azure"]
+    /// Similarity metrics for new dense indexes; hybrid search needs dotproduct
+    let availableMetrics = ["cosine", "dotproduct", "euclidean"]
 
     var availableRegions: [String] {
-        pineconeCloud == "gcp" ? gcpRegions : awsRegions
+        Self.serverlessRegions[pineconeCloud] ?? Self.serverlessRegions["aws"] ?? []
     }
+
+    /// The metric new indexes are created with
+    @Published var newIndexMetric: String = UserDefaults.standard.string(forKey: SettingsStorageKeys.newIndexMetric) ?? "cosine"
+
+    /// Set once the old 4,000-token default has been raised
+    static let answerLengthRaisedKey = "search.maxOutputTokens.raised"
 
     private let logger = Logger.shared
     private var cancellables = Set<AnyCancellable>()
@@ -227,7 +264,14 @@ final class SettingsViewModel: ObservableObject {
             $temperature.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $topP.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $reasoningEffort.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $conversationMode.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+        ]
+
+        let requestPublishers: [AnyPublisher<Void, Never>] = [
+            $verbosity.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $serviceTier.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $webSearchContextSize.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $webSearchDomains.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $historyExchanges.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let searchPublishers: [AnyPublisher<Void, Never>] = [
@@ -268,9 +312,9 @@ final class SettingsViewModel: ObservableObject {
 
         let pineconePublishers: [AnyPublisher<Void, Never>] = [
             $showDebugInfo.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $maxConversationTurns.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $systemPromptOverride.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $pineconeCloud.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $newIndexMetric.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $pineconeRegion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $pineconeControlPlaneVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $pineconeDataPlaneVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -278,7 +322,8 @@ final class SettingsViewModel: ObservableObject {
             $pineconeMetadataFetchVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
-        let allPublishers = chunkPublishers + searchPublishers + advancedPublishers + retrievalPublishers + pineconePublishers
+        let allPublishers = chunkPublishers + requestPublishers + searchPublishers + advancedPublishers
+            + retrievalPublishers + pineconePublishers
 
         Publishers.MergeMany(allPublishers)
             .debounce(for: RunLoop.SchedulerTimeType.Stride(1.0), scheduler: RunLoop.main)
@@ -324,7 +369,7 @@ final class SettingsViewModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] newCloud in
                 guard let self = self else { return }
-                let validRegions = newCloud == "gcp" ? self.gcpRegions : self.awsRegions
+                let validRegions = Self.serverlessRegions[newCloud] ?? []
                 if !validRegions.contains(self.pineconeRegion) {
                     self.pineconeRegion = validRegions.first ?? "us-east-1"
                 }
@@ -366,8 +411,7 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(temperature, forKey: "openai.temperature")
         defaults.set(topP, forKey: "openai.topP")
         defaults.set(reasoningEffort, forKey: "openai.reasoningEffort")
-        defaults.set(conversationMode, forKey: "openai.conversationMode")
-        defaults.set(maxOutputTokens, forKey: "search.maxOutputTokens")
+        writeRequestOptions()
         defaults.set(webSearchEnabled, forKey: "search.webSearchEnabled")
         defaults.set(codeInterpreterEnabled, forKey: "search.codeInterpreterEnabled")
         defaults.set(max(1, min(defaultTopK, 100)), forKey: SettingsStorageKeys.searchTopK)
@@ -379,6 +423,16 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(rerankModel, forKey: SettingsStorageKeys.rerankModel)
         defaults.set(rerankTopN, forKey: SettingsStorageKeys.rerankTopN)
         defaults.set(systemPromptOverride, forKey: "conversation.systemPromptOverride")
+    }
+
+    /// The Responses options the requests read through RequestSettings
+    private func writeRequestOptions() {
+        defaults.set(maxOutputTokens, forKey: "search.maxOutputTokens")
+        defaults.set(verbosity, forKey: RequestSettings.Key.verbosity)
+        defaults.set(serviceTier, forKey: RequestSettings.Key.serviceTier)
+        defaults.set(webSearchContextSize, forKey: RequestSettings.Key.webSearchContextSize)
+        defaults.set(webSearchDomains, forKey: RequestSettings.Key.webSearchDomains)
+        defaults.set(historyExchanges, forKey: RequestSettings.Key.historyExchanges)
     }
 
     /// Use a model picked from a menu or typed as an ID. It replaces an older "custom model"
@@ -398,7 +452,7 @@ final class SettingsViewModel: ObservableObject {
         temperature = 0.3
         topP = 0.95
         reasoningEffort = CurrentModelCatalog.normalizedEffort("none", model: completionModel)
-        maxOutputTokens = 4000
+        resetRequestOptions()
         webSearchEnabled = false
         codeInterpreterEnabled = false
         defaultTopK = 10
@@ -408,8 +462,16 @@ final class SettingsViewModel: ObservableObject {
         rerankModel = "bge-reranker-v2-m3"
         rerankTopN = 5
         systemPromptOverride = ""
-        conversationMode = "server"
         persistRequestSettings()
+    }
+
+    private func resetRequestOptions() {
+        maxOutputTokens = min(RequestSettings.defaultMaxOutputTokens, ModelLimits.maxOutputTokens(for: completionModel))
+        verbosity = "medium"
+        serviceTier = "auto"
+        webSearchContextSize = "medium"
+        webSearchDomains = ""
+        historyExchanges = RequestSettings.defaultHistoryExchanges
     }
 
     /// Save API keys to secure storage
@@ -426,9 +488,17 @@ final class SettingsViewModel: ObservableObject {
 
         // Load API keys
         loadAPIKeys()
-        // Load Pinecone location prefs
+        // Load Pinecone location prefs. A cloud or region Pinecone doesn't offer serverless indexes in,
+        // saved by an earlier version's longer list, becomes the cloud's first region.
         pineconeCloud = store.getPineconeCloud()
         pineconeRegion = store.getPineconeRegion()
+        if normalizeLocation(), !DemoMode.isActive {
+            // Index creation reads the stored values, so store the corrected ones now
+            store.setPineconeCloud(pineconeCloud)
+            store.setPineconeRegion(pineconeRegion)
+        }
+        let storedMetric = defaults.string(forKey: SettingsStorageKeys.newIndexMetric) ?? "cosine"
+        newIndexMetric = availableMetrics.contains(storedMetric) ? storedMetric : "cosine"
 
         // Load configuration settings from UserDefaults
         defaultChunkSize =
@@ -479,11 +549,13 @@ final class SettingsViewModel: ObservableObject {
             UserDefaults.standard.set(reasoningEffort, forKey: "openai.reasoningEffort")
         }
 
-        // Conversation mode
-        conversationMode = UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server"
-        if !availableConversationModes.contains(conversationMode) {
-            conversationMode = "server"
-        }
+        // Responses options, read through RequestSettings so a stored value the API rejects becomes the default
+        verbosity = RequestSettings.verbosity
+        serviceTier = RequestSettings.serviceTier ?? "auto"
+        clampServiceTier()
+        webSearchContextSize = RequestSettings.webSearchContextSize
+        webSearchDomains = defaults.string(forKey: RequestSettings.Key.webSearchDomains) ?? ""
+        historyExchanges = RequestSettings.historyExchanges
 
         // Search defaults
         let storedTopK = defaults.integer(forKey: SettingsStorageKeys.searchTopK)
@@ -521,7 +593,17 @@ final class SettingsViewModel: ObservableObject {
         let storedMaxTokens = defaults.integer(forKey: "search.maxContextTokens")
         maxContextTokens = storedMaxTokens > 0 ? storedMaxTokens : 32000
         let storedMaxOutput = defaults.integer(forKey: "search.maxOutputTokens")
-        maxOutputTokens = storedMaxOutput > 0 ? storedMaxOutput : 4000
+        maxOutputTokens = storedMaxOutput > 0 ? storedMaxOutput : RequestSettings.defaultMaxOutputTokens
+        // Until 2026-10-01 every save stored 4,000, the old default, which reasoning can use up before
+        // an answer starts: move it to the new default, once
+        if storedMaxOutput == 4_000, !defaults.bool(forKey: Self.answerLengthRaisedKey) {
+            maxOutputTokens = RequestSettings.defaultMaxOutputTokens
+            if !DemoMode.isActive {
+                defaults.set(maxOutputTokens, forKey: "search.maxOutputTokens")
+                defaults.set(true, forKey: Self.answerLengthRaisedKey)
+            }
+        }
+        clampAnswerLength()
         streamingEnabled = (defaults.object(forKey: "search.streamingEnabled") as? Bool) ?? true
         webSearchEnabled = (defaults.object(forKey: "search.webSearchEnabled") as? Bool) ?? false
         codeInterpreterEnabled = (defaults.object(forKey: "search.codeInterpreterEnabled") as? Bool) ?? false
@@ -562,8 +644,6 @@ final class SettingsViewModel: ObservableObject {
         showDebugInfo = defaults.bool(forKey: "debug.showDebugInfo")
 
         // Conversation settings
-        let storedMaxTurns = defaults.integer(forKey: "conversation.maxTurns")
-        maxConversationTurns = storedMaxTurns > 0 ? storedMaxTurns : 10
         systemPromptOverride = defaults.string(forKey: "conversation.systemPromptOverride") ?? ""
     }
 
@@ -582,7 +662,6 @@ final class SettingsViewModel: ObservableObject {
         UserDefaults.standard.set(temperature, forKey: "openai.temperature")
         UserDefaults.standard.set(topP, forKey: "openai.topP")
         UserDefaults.standard.set(reasoningEffort, forKey: "openai.reasoningEffort")
-        UserDefaults.standard.set(conversationMode, forKey: "openai.conversationMode")
 
         // UI preferences
         UserDefaults.standard.set(showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
@@ -612,9 +691,10 @@ final class SettingsViewModel: ObservableObject {
         // Logging
         defaults.set(logMinimumLevel.rawValue, forKey: SettingsStorageKeys.logMinimumLevel)
 
-        // Persist Pinecone location prefs
+        // Persist Pinecone location prefs, and the metric for new indexes
         store.setPineconeCloud(pineconeCloud)
         store.setPineconeRegion(pineconeRegion)
+        defaults.set(newIndexMetric, forKey: SettingsStorageKeys.newIndexMetric)
 
         // MARK: - Advanced Settings Saving
 
@@ -629,7 +709,7 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(similarityThreshold, forKey: "search.similarityThreshold")
         defaults.set(includeMetadataInResults, forKey: "search.includeMetadata")
         defaults.set(maxContextTokens, forKey: "search.maxContextTokens")
-        defaults.set(maxOutputTokens, forKey: "search.maxOutputTokens")
+        writeRequestOptions()
         defaults.set(streamingEnabled, forKey: "search.streamingEnabled")
         defaults.set(webSearchEnabled, forKey: "search.webSearchEnabled")
         defaults.set(codeInterpreterEnabled, forKey: "search.codeInterpreterEnabled")
@@ -662,7 +742,6 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(showDebugInfo, forKey: "debug.showDebugInfo")
 
         // Conversation settings
-        defaults.set(maxConversationTurns, forKey: "conversation.maxTurns")
         defaults.set(systemPromptOverride, forKey: "conversation.systemPromptOverride")
 
         secureResetStatus = nil
@@ -687,7 +766,7 @@ final class SettingsViewModel: ObservableObject {
         temperature = 0.3
         topP = 0.95
         reasoningEffort = CurrentModelCatalog.normalizedEffort("none", model: completionModel)
-        conversationMode = "server"
+        resetRequestOptions()
 
         // Search
         defaultTopK = 10
@@ -704,12 +783,12 @@ final class SettingsViewModel: ObservableObject {
         // Advanced - Embedding
         embeddingBatchSize = 50
         embeddingDimension = Configuration.embeddingDimension
+        newIndexMetric = "cosine"
 
         // Advanced - Search
         similarityThreshold = 0.0
         includeMetadataInResults = true
         maxContextTokens = 32000
-        maxOutputTokens = 4000
         streamingEnabled = true
         webSearchEnabled = false
         codeInterpreterEnabled = false
@@ -720,11 +799,12 @@ final class SettingsViewModel: ObservableObject {
         rerankModel = "bge-reranker-v2-m3"
         rerankTopN = 5
 
-        // Advanced - Pinecone API versions
-        pineconeControlPlaneVersion = "2024-07"
-        pineconeDataPlaneVersion = "2024-07"
-        pineconeNamespaceVersion = "2025-01"
-        pineconeMetadataFetchVersion = "2025-01"
+        // Advanced - Pinecone API versions. Creating a namespace and fetching by metadata arrived in
+        // 2025-10 (Pinecone's 2025 changelog, read 2026-10-01), so an earlier version breaks them.
+        pineconeControlPlaneVersion = PineconeAPIVersions.controlPlane
+        pineconeDataPlaneVersion = PineconeAPIVersions.dataPlane
+        pineconeNamespaceVersion = PineconeAPIVersions.namespaces
+        pineconeMetadataFetchVersion = PineconeAPIVersions.metadataFetch
 
         // Advanced - Network
         requestTimeoutSeconds = 30
@@ -735,7 +815,6 @@ final class SettingsViewModel: ObservableObject {
         showDebugInfo = false
 
         // Advanced - Conversation
-        maxConversationTurns = 10
         systemPromptOverride = ""
 
         // Auto-save stays enabled
@@ -754,10 +833,41 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
+    /// A cloud or region Pinecone doesn't create serverless indexes in becomes the cloud's first region.
+    /// Returns whether anything changed.
+    @discardableResult
+    private func normalizeLocation() -> Bool {
+        guard !availableClouds.contains(pineconeCloud) || !availableRegions.contains(pineconeRegion) else { return false }
+        if !availableClouds.contains(pineconeCloud) {
+            pineconeCloud = "aws"
+        }
+        if !availableRegions.contains(pineconeRegion) {
+            pineconeRegion = availableRegions.first ?? "us-east-1"
+        }
+        return true
+    }
+
+    /// Keep a tier the selected model is offered at; Auto otherwise
+    private func clampServiceTier() {
+        if !availableServiceTiers.contains(serviceTier) {
+            serviceTier = "auto"
+        }
+    }
+
+    /// Keep the answer length within what the selected model writes
+    private func clampAnswerLength() {
+        let limit = ModelLimits.maxOutputTokens(for: completionModel)
+        if maxOutputTokens > limit {
+            maxOutputTokens = limit
+        }
+    }
+
     /// Once per launch, as OpenResponses does: the account's models and their shutdown dates (GET /models), the
     /// settings of any newer model from its page on OpenAI's docs site, and a move off the selected model if it
     /// is now retired
     func refreshAccountModels() async {
+        // Demo mode makes no requests and saves nothing
+        guard !DemoMode.isActive else { return }
         let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, let models = try? await ResponsesClient(apiKey: key).listModels() else { return }
         let store = ModelCatalogStore.shared
@@ -964,6 +1074,16 @@ final class SettingsViewModel: ObservableObject {
             "openai.reasoningEffort",
             "openai.conversationMode",
             "openai.conversationId",
+            "search.maxOutputTokens",
+            "search.webSearchEnabled",
+            "search.codeInterpreterEnabled",
+            RequestSettings.Key.verbosity,
+            RequestSettings.Key.serviceTier,
+            RequestSettings.Key.webSearchContextSize,
+            RequestSettings.Key.webSearchDomains,
+            RequestSettings.Key.historyExchanges,
+            SettingsStorageKeys.newIndexMetric,
+            Self.answerLengthRaisedKey,
             "ui.showAnswerPanelBelowChat",
             SettingsStorageKeys.searchTopK,
             SettingsStorageKeys.searchEnforcePreferredIndex,
@@ -1004,13 +1124,7 @@ final class SettingsViewModel: ObservableObject {
             .forEach { defaults.removeObject(forKey: $0) }
     }
 
-    // MARK: - Quick Actions
-
-    /// Clear conversation history (removes server-side conversation ID)
-    func clearConversationHistory() {
-        defaults.removeObject(forKey: "openai.conversationId")
-        logger.log(level: .info, message: "Conversation history cleared")
-    }
+    // MARK: - Export and import
 
     /// Export current settings as JSON for backup/sharing
     func exportSettingsAsJSON() -> String? {
@@ -1031,7 +1145,15 @@ final class SettingsViewModel: ObservableObject {
                 "temperature": temperature,
                 "topP": topP,
                 "reasoningEffort": reasoningEffort,
-                "conversationMode": conversationMode,
+                "maxOutputTokens": maxOutputTokens,
+                "verbosity": verbosity,
+                "serviceTier": serviceTier,
+            ],
+            "tools": [
+                "webSearch": webSearchEnabled,
+                "webSearchContextSize": webSearchContextSize,
+                "webSearchAllowedDomains": webSearchDomainList,
+                "codeInterpreter": codeInterpreterEnabled,
             ],
             "search": [
                 "topK": defaultTopK,
@@ -1046,6 +1168,7 @@ final class SettingsViewModel: ObservableObject {
             "pinecone": [
                 "cloud": pineconeCloud,
                 "region": pineconeRegion,
+                "newIndexMetric": newIndexMetric,
                 "controlPlaneVersion": pineconeControlPlaneVersion,
                 "dataPlaneVersion": pineconeDataPlaneVersion,
                 "namespaceVersion": pineconeNamespaceVersion,
@@ -1060,7 +1183,7 @@ final class SettingsViewModel: ObservableObject {
                 "maxRetries": maxRetries,
             ],
             "conversation": [
-                "maxTurns": maxConversationTurns,
+                "historyExchanges": historyExchanges,
                 "systemPromptOverride": systemPromptOverride,
             ],
             "ui": [
@@ -1110,9 +1233,23 @@ final class SettingsViewModel: ObservableObject {
             if let temp = gen["temperature"] as? Double { temperature = temp }
             if let tp = gen["topP"] as? Double { topP = tp }
             if let effort = gen["reasoningEffort"] as? String { reasoningEffort = effort }
-            if let convMode = gen["conversationMode"] as? String { conversationMode = convMode }
+            if let length = gen["maxOutputTokens"] as? Int, length > 0 { maxOutputTokens = length }
+            if let value = gen["verbosity"] as? String, RequestSettings.verbosityOptions.contains(value) { verbosity = value }
+            if let value = gen["serviceTier"] as? String, RequestSettings.serviceTierOptions.contains(value) { serviceTier = value }
         }
         clampReasoningEffort()
+        clampAnswerLength()
+        clampServiceTier()
+
+        // Tools
+        if let tools = dict["tools"] as? [String: Any] {
+            if let on = tools["webSearch"] as? Bool { webSearchEnabled = on }
+            if let value = tools["webSearchContextSize"] as? String, RequestSettings.searchContextOptions.contains(value) {
+                webSearchContextSize = value
+            }
+            if let domains = tools["webSearchAllowedDomains"] as? [String] { webSearchDomains = domains.joined(separator: ", ") }
+            if let on = tools["codeInterpreter"] as? Bool { codeInterpreterEnabled = on }
+        }
 
         // Search
         if let search = dict["search"] as? [String: Any] {
@@ -1130,6 +1267,8 @@ final class SettingsViewModel: ObservableObject {
         if let pc = dict["pinecone"] as? [String: Any] {
             if let cloud = pc["cloud"] as? String { pineconeCloud = cloud }
             if let region = pc["region"] as? String { pineconeRegion = region }
+            if let metric = pc["newIndexMetric"] as? String, availableMetrics.contains(metric) { newIndexMetric = metric }
+            normalizeLocation()
             if let cpv = pc["controlPlaneVersion"] as? String { pineconeControlPlaneVersion = cpv }
             if let dpv = pc["dataPlaneVersion"] as? String { pineconeDataPlaneVersion = dpv }
             if let nsv = pc["namespaceVersion"] as? String { pineconeNamespaceVersion = nsv }
@@ -1150,7 +1289,9 @@ final class SettingsViewModel: ObservableObject {
 
         // Conversation
         if let conv = dict["conversation"] as? [String: Any] {
-            if let maxTurns = conv["maxTurns"] as? Int { maxConversationTurns = maxTurns }
+            if let exchanges = conv["historyExchanges"] as? Int {
+                historyExchanges = min(max(exchanges, 0), RequestSettings.maxHistoryExchanges)
+            }
             if let sysPrompt = conv["systemPromptOverride"] as? String { systemPromptOverride = sysPrompt }
         }
 

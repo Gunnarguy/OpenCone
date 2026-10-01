@@ -137,7 +137,8 @@ flowchart TD
 - **Query Embedding**: User prompt texts or voice transcription tokens are converted into embeddings matching the dimension of document vectors (3072 by default).
 - **Vector Search**: Performs similarity searches against Pinecone index namespaces, supporting custom metadata filters ($eq, $in, $gte, $lte, $contains).
 - **Hybrid Search & Reranking**: The query path supports hybrid weighting with a simple alpha slider, but documents are uploaded with dense vectors only, so results come from semantic similarity today. Matches can be refined using BGE, Cohere, or Pinecone inference models.
-- **Answer Streaming**: Grounded context is formatted and submitted to the OpenAI Responses API. Tokens stream into the chat view in real time via Server-Sent Events (SSE). `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic.
+- **Answer Streaming**: Grounded context is formatted and submitted to the OpenAI Responses API. Tokens stream into the chat view in real time via Server-Sent Events (SSE). `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic, and left out for the two models that lack it (GPT-5.4 Pro and GPT-5.2 Pro). Settings > Answers sets the longest answer (up to each model's own maximum: 128,000 tokens for GPT-5 and GPT-6, 32,768 for GPT-4.1, 16,384 for GPT-4o), the detail (`text.verbosity`), the service tier (Auto, Standard, Flex or Fast, offered only where OpenAI prices the selected model at it), web search's results read and allowed sites, and how many earlier exchanges each question carries (4 by default, 0 to 20). The reasoning efforts offered are the selected model's own: GPT-6.1 Sol and GPT-6 Astra take Low to Max, with no Off.
+- **Memory**: Each question carries its earlier exchanges from the phone, as plain text; OpenAI keeps nothing between questions (`store: false`). When the passages, the question and those exchanges would pass the model's context window, the oldest exchanges are left out. OpenAI's `truncation: auto` isn't used, because it drops from the start of the input, where the passages are.
 
 ---
 
@@ -193,6 +194,8 @@ flowchart LR
 | **Text Splitter** | [TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift) | Content tokenization, recursive chunking, and hashing. |
 | **Audio Capture** | [SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift) | Speech-to-text translation and real-time amplitude tracking. |
 | **Security Store** | [SecureSettingsStore.swift](OpenCone/Core/Security/SecureSettingsStore.swift) | Keychain storage for OpenAI/Pinecone keys; UserDefaults for cloud, region and API versions. |
+| **Request options** | [RequestSettings.swift](OpenCone/Core/RequestSettings.swift), [ModelLimits.swift](OpenCone/Core/Models/ModelLimits.swift) | The Responses options each request reads, and what each model accepts: output and context limits, verbosity, service tiers, code interpreter. |
+| **Endpoints** | [APIActivity.swift](OpenCone/Core/Networking/APIActivity.swift), [EndpointsView.swift](OpenCone/Features/Settings/EndpointsView.swift) | Every OpenAI and Pinecone endpoint the app calls, with its purpose, its settings and this session's requests (Settings > Advanced > Endpoints). |
 | **Unit Tests** | [SearchViewModelMetadataPersistenceTests.swift](OpenConeTests/SearchViewModelMetadataPersistenceTests.swift) | Validates filter settings storage and JSON parsing. |
 
 ---
@@ -204,11 +207,18 @@ flowchart LR
 | `OPENAI_API_KEY` | Keychain | None | Yes | OpenAI API requests (embeddings & completions). |
 | `PINECONE_API_KEY` | Keychain | None | Yes | Pinecone database request authorization. |
 | `PINECONE_PROJECT_ID` | Keychain | None | Yes | Targets Pinecone host resolutions. |
-| `PINECONE_CLOUD` | UserDefaults | `aws` | No | Target host environment configuration. |
-| `PINECONE_REGION` | UserDefaults | `us-east-1` | No | Targets serverless regions. |
+| `PINECONE_CLOUD` | UserDefaults | `aws` | No | Where Documents creates a new index: `aws`, `gcp` or `azure`. |
+| `PINECONE_REGION` | UserDefaults | `us-east-1` | No | The serverless region for a new index, from Pinecone's list for that cloud. The Starter plan creates in AWS `us-east-1` only. |
+| `pinecone.metric` | UserDefaults | `cosine` | No | The similarity metric for a new index: `cosine`, `dotproduct` (needed for hybrid search) or `euclidean`. |
 | `defaultChunkSize` | UserDefaults | `1024` | No | Saved preference; not read by the chunker. |
 | `defaultChunkOverlap`| UserDefaults | `256` | No | Saved preference; not read by the chunker. |
 | `completionModel` | UserDefaults | `gpt-6-sol` | No | Model ID used for text completion. The default and the model menu come from the model catalog shared with OpenResponses ([docs/model-catalog.md](docs/model-catalog.md)); a saved model that OpenAI has shut down moves to its documented replacement. |
+| `search.maxOutputTokens` | UserDefaults | `16000` | No | The longest answer, reasoning included (`max_output_tokens`), held to the selected model's maximum. |
+| `openai.verbosity` | UserDefaults | `medium` | No | `text.verbosity` (`low`, `medium`, `high`), sent to GPT-5 and later. |
+| `openai.serviceTier` | UserDefaults | `auto` | No | `service_tier`: `auto` (left out), `default`, `flex` or `fast`; a tier the model isn't offered at is left out. |
+| `openai.webSearchContextSize` | UserDefaults | `medium` | No | The web search tool's `search_context_size`. |
+| `openai.webSearchDomains` | UserDefaults | empty | No | The web search tool's `filters.allowed_domains`, typed as a list of sites. |
+| `conversation.historyExchanges` | UserDefaults | `4` | No | Earlier exchanges sent with each question, 0 to 20. |
 | `searchTopK` | UserDefaults | `10` | No | Nearest-neighbor vector counts retrieved. |
 | `search.scope` | UserDefaults | `auto` | No | How widely a question is searched: `auto`, `everything` or `oneIndex`. Replaces `search.indexRoutingEnabled`, which is still written beside it. |
 | `hybridAlpha` | UserDefaults | `0.5` | No | Used only when hybrid search is on and the index uses dotproduct: scales the dense query by alpha and the sparse query by 1 minus alpha. OpenCone uploads documents with dense vectors only, so any value above `0.0` ranks by semantic similarity, and `0.0` sends an all-zero dense query. |

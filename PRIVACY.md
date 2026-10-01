@@ -22,7 +22,7 @@ OpenCone communicates with third-party service providers only when necessary to 
 | Destination | Data Transmitted | Purpose | Encryption & Retention |
 |---|---|---|---|
 | **OpenAI API** (`/v1/embeddings`) | Batched text chunks (excluding raw document frames or identifiers). | Generates 3072-dimension vectors. | HTTPS. OpenAI processes requests statefully according to their API data-usage agreements. |
-| **OpenAI API** (`/v1/responses`) | RAG context package (composed prompt template containing relevant text chunks + chat history). | Generates streamed token responses. | HTTPS. Stateless transaction. Data is not permanently retained by OpenCone. |
+| **OpenAI API** (`/v1/responses`) | RAG context package: OpenCone's instructions, the relevant passages, your question, and your last exchanges from this conversation (4 by default; 0 to 20 under Settings > Answers > Memory). With web search on, OpenAI searches the web for the answer, only on the sites you list when you list any. | Generates streamed token responses. | HTTPS, sent with `store: false`, so OpenAI keeps no conversation between questions. Data is not permanently retained by OpenCone. |
 | **OpenAI API** (`/v1/responses`), routing | When Ask > Where to search is Auto and you have two or more indexes or namespaces: your question, recent chat history, the names of your indexes and namespaces, their passage counts, and each index's one-line summary. With Auto or Everything, to draft each index's summary: up to 8 sample passages from that index and its namespace names. Everything itself makes no routing call. | Picks which indexes and namespaces to search, and drafts each index's summary. | HTTPS, sent with `store: false`. Summaries and index details are kept on your iPhone. |
 | **OpenAI API** (`/v1/models`) | Your OpenAI key, once per launch. | Lists the models your account can use and their shutdown dates, so the model menu shows newer models and a model about to shut down is replaced. | HTTPS. The list is kept on your iPhone. |
 | **OpenAI's docs site** (`developers.openai.com/api/docs/models/<model>.md`) | Only the model's name, in the page address. No key, no personal data, no chat content. At most 3 pages per launch, each read again after 7 days. | Reads the reasoning settings of a newer model on your account that the app's built-in list doesn't name. | HTTPS. What it reads is kept on your iPhone. |
@@ -46,6 +46,7 @@ OpenCone does **not** host any intermediary collection servers. All network tran
 
 - OpenCone does **not** contain third-party analytics trackers, advertising SDKs, or remote crash reporting libraries.
 - Diagnostic log items (e.g. status changes, pipeline speeds) are written solely to a local memory buffer accessible under **Settings > Advanced > Activity log**. The app never uploads these logs; they leave the device only if you copy or share them from there.
+- **Settings > Advanced > Endpoints** counts the requests made since OpenCone opened: for each, which endpoint, its HTTP status and how long it took. No addresses, questions, passages or keys are kept, the record lives only in memory, and it is never uploaded.
 
 ---
 

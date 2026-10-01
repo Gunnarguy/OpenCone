@@ -102,8 +102,8 @@ struct ModelPickerRow: View {
 
 // MARK: - Answer settings
 
-/// How answers are written: the model and its parameters, tools, retrieval, custom instructions
-/// and memory. One form, shown from the gear above the conversation and in Settings.
+/// How answers are written: the model and its parameters, the request options, tools, retrieval,
+/// custom instructions and memory. One form, shown from the gear above the conversation and in Settings.
 struct AnswerSettingsForm: View {
     @ObservedObject var settings: SettingsViewModel
     @State private var confirmingReset = false
@@ -111,7 +111,7 @@ struct AnswerSettingsForm: View {
     var body: some View {
         Form {
             modelSection
-            lengthSection
+            answerSection
             toolsSection
             retrievalSection
             instructionsSection
@@ -138,12 +138,17 @@ struct AnswerSettingsForm: View {
             NavigationLink {
                 ModelPickerList(settings: settings)
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(settings.completionModel)
-                    Text(CurrentModelCatalog.description(for: settings.completionModel))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(settings.completionModel)
+                            .font(.body.weight(.medium))
+                        Text(CurrentModelCatalog.description(for: settings.completionModel))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ModelLimitChips(model: settings.completionModel)
                 }
+                .padding(.vertical, 2)
             }
             .accessibilityLabel("Model, \(CurrentModelCatalog.spokenName(for: settings.completionModel))")
 
@@ -174,32 +179,85 @@ struct AnswerSettingsForm: View {
         } header: {
             Label("Model", systemImage: "cpu")
         } footer: {
-            Text(settings.isReasoning
-                 ? "More effort means the model thinks longer before it answers: slower, and usually better on hard questions."
-                 : "This model has no reasoning effort, so temperature and Top P shape its answers.")
+            Text(modelFooter)
         }
     }
 
-    // MARK: Length
-
-    private var lengthSection: some View {
-        Section {
-            SliderRow(
-                title: "Longest answer",
-                value: Binding(
-                    get: { Double(settings.maxOutputTokens) },
-                    set: { settings.maxOutputTokens = Int($0) }
-                ),
-                range: 500...32_000,
-                step: 500,
-                format: { "\(Int($0).formatted()) tokens" },
-                caption: nil
-            )
-        } header: {
-            Label("Answer length", systemImage: "text.alignleft")
-        } footer: {
-            Text("The most the model may write for one answer, its reasoning included. An answer that reaches it stops there.")
+    private var modelFooter: String {
+        guard settings.isReasoning else {
+            return "\(settings.completionModel) doesn't reason, so temperature and Top P shape its answers."
         }
+        let efforts = settings.availableReasoningEffortOptions
+        var text = "More effort means the model thinks longer before it answers: slower, and usually better on hard questions."
+        if let lowest = efforts.first, let highest = efforts.last {
+            text += " \(settings.completionModel) takes \(ReasoningEffortText.short(lowest)) to \(ReasoningEffortText.short(highest))"
+            text += efforts.contains("none") ? "." : "; it always reasons, so it has no Off."
+        }
+        return text
+    }
+
+    // MARK: Answer
+
+    private var answerSection: some View {
+        Section {
+            Picker("Longest answer", selection: $settings.maxOutputTokens) {
+                ForEach(settings.answerLengthChoices, id: \.self) { tokens in
+                    Text(Self.lengthName(tokens, model: settings.completionModel)).tag(tokens)
+                }
+            }
+
+            if settings.supportsVerbosity {
+                Picker("Detail", selection: $settings.verbosity) {
+                    Text("Concise").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("Detailed").tag("high")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Detail")
+            }
+
+            Picker("Service tier", selection: $settings.serviceTier) {
+                ForEach(settings.availableServiceTiers, id: \.self) { tier in
+                    Text(AnswerOptionText.serviceTier(tier)).tag(tier)
+                }
+            }
+        } header: {
+            Label("Answer", systemImage: "text.alignleft")
+        } footer: {
+            Text(answerFooter)
+        }
+    }
+
+    private var answerFooter: String {
+        let limit = ModelLimits.maxOutputTokens(for: settings.completionModel)
+        var text = settings.isReasoning
+            ? "The longest answer includes the model's reasoning; \(settings.completionModel) writes up to \(limit.formatted()) tokens."
+            : "\(settings.completionModel) writes up to \(limit.formatted()) tokens in one answer."
+        if settings.isReasoning, settings.reasoningEffort != "none", settings.maxOutputTokens < 8_000 {
+            text += " With reasoning on, a short limit can run out before the answer starts."
+        }
+        switch settings.serviceTier {
+        case "flex":
+            text += " Flex costs half as much and answers slower; when OpenAI is busy it turns a question away, without charging for it."
+        case "fast":
+            text += " Fast answers up to 2.5 times quicker for a higher price per token: twice Standard on the GPT-6 models."
+        case "default":
+            text += " Standard is OpenAI's usual speed and price."
+        default:
+            text += " Auto uses your OpenAI project's tier, which is Standard unless you changed it."
+        }
+        let tiers = settings.availableServiceTiers
+        if !tiers.contains("flex") || !tiers.contains("fast") {
+            let missing = ["flex", "fast"].filter { !tiers.contains($0) }.map(AnswerOptionText.serviceTier)
+            text += " OpenAI doesn't offer \(missing.joined(separator: " or ")) for \(settings.completionModel)."
+        }
+        return text
+    }
+
+    /// "16K tokens", with the model's own limit marked
+    static func lengthName(_ tokens: Int, model: String) -> String {
+        let name = "\(ModelLimits.shortCount(tokens)) tokens"
+        return tokens == ModelLimits.maxOutputTokens(for: model) ? "\(name), the most" : name
     }
 
     // MARK: Tools
@@ -211,14 +269,45 @@ struct AnswerSettingsForm: View {
             }
             .toggleStyle(SwitchToggleStyle(tint: .blue))
 
-            Toggle(isOn: $settings.codeInterpreterEnabled) {
-                Label("Code interpreter", systemImage: "chevron.left.forwardslash.chevron.right")
+            if settings.webSearchEnabled {
+                Picker("Results read", selection: $settings.webSearchContextSize) {
+                    Text("Fewer").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("More").tag("high")
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Only these sites (any site when empty)", text: $settings.webSearchDomains, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .lineLimit(1...4)
+                    if !settings.webSearchDomainList.isEmpty {
+                        Text(settings.webSearchDomainList.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            .toggleStyle(SwitchToggleStyle(tint: .orange))
+
+            if settings.supportsCodeInterpreter {
+                Toggle(isOn: $settings.codeInterpreterEnabled) {
+                    Label("Code interpreter", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .orange))
+            } else {
+                LabeledContent {
+                    Text("Not with this model")
+                } label: {
+                    Label("Code interpreter", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .foregroundStyle(.secondary)
+            }
         } header: {
             Label("Tools", systemImage: "wrench.and.screwdriver")
         } footer: {
-            Text("Web search lets the model add current information from the internet. Code interpreter runs Python for questions that ask for charts, tables or calculations.")
+            Text(settings.webSearchEnabled
+                 ? "Web search lets the model add current information from the internet. Results read sets how much of what it finds goes into the answer: more can help, and costs more tokens. Sites are separated by commas, and their subdomains count too. Code interpreter runs Python for questions that ask for charts, tables or calculations."
+                 : "Web search lets the model add current information from the internet. Code interpreter runs Python for questions that ask for charts, tables or calculations.")
         }
     }
 
@@ -304,17 +393,60 @@ struct AnswerSettingsForm: View {
 
     private var memorySection: some View {
         Section {
-            Picker("Conversation memory", selection: $settings.conversationMode) {
-                Text("Kept by OpenAI").tag("server")
-                Text("Sent from this iPhone").tag("client")
+            Stepper(value: $settings.historyExchanges, in: 0...RequestSettings.maxHistoryExchanges) {
+                LabeledContent("Earlier exchanges", value: settings.historyExchanges == 0 ? "Off" : "\(settings.historyExchanges)")
             }
         } header: {
             Label("Memory", systemImage: "bubble.left.and.bubble.right")
         } footer: {
-            Text(settings.conversationMode == "server"
-                 ? "OpenAI keeps the conversation, so a follow-up question sees the earlier ones. New chat starts a fresh one."
-                 : "Each question carries the last 4 exchanges from this iPhone, and OpenAI keeps no conversation between questions.")
+            Text(memoryFooter)
         }
+    }
+
+    private var memoryFooter: String {
+        let exchanges = settings.historyExchanges
+        guard exchanges > 0 else {
+            return "Each question goes on its own, so a follow-up doesn't see earlier answers."
+        }
+        var text = "Each question carries your last \(exchanges == 1 ? "exchange" : "\(exchanges) exchanges") from this iPhone, so a follow-up sees them. OpenAI keeps nothing between questions, and New chat starts fresh."
+        if let window = ModelLimits.contextWindow(for: settings.completionModel) {
+            text += " \(settings.completionModel) reads \(window.formatted()) tokens at once; when the passages, your question and these exchanges would pass that, the oldest exchanges are left out."
+        }
+        return text
+    }
+}
+
+/// What a model writes and reads at most, as two small capsules under its name
+struct ModelLimitChips: View {
+    let model: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            chip("Writes \(ModelLimits.shortCount(ModelLimits.maxOutputTokens(for: model)))", systemImage: "square.and.pencil")
+            if let window = ModelLimits.contextWindow(for: model) {
+                chip("Reads \(ModelLimits.shortCount(window))", systemImage: "text.book.closed")
+            }
+            if Configuration.isReasoningModel(model) {
+                chip("Reasons", systemImage: "brain")
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func chip(_ text: String, systemImage: String) -> some View {
+        // An HStack, not a Label: a Label in a list row takes the row's wide icon column
+        HStack(spacing: 3) {
+            Image(systemName: systemImage)
+                .imageScale(.small)
+            Text(text)
+        }
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
     }
 }
 

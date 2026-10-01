@@ -69,16 +69,86 @@ final class OpenAIService: Sendable {
         return (UserDefaults.standard.object(forKey: "search.codeInterpreterEnabled") as? Bool) ?? false
     }
 
-    private func currentMaxOutputTokens() -> Int {
+    /// The answer length setting, held to what the model can write (`ModelLimits`)
+    private func currentMaxOutputTokens(for model: String) -> Int {
         let stored = UserDefaults.standard.integer(forKey: "search.maxOutputTokens")
-        return stored > 0 ? stored : 1000
+        let requested = stored > 0 ? stored : RequestSettings.defaultMaxOutputTokens
+        return min(requested, ModelLimits.maxOutputTokens(for: model))
+    }
+
+    /// The settings below are in OpenAI's create-response reference (read 2026-10-01): `text.verbosity`
+    /// (low, medium, high), `service_tier` (auto, default, flex, fast or priority, ultrafast), and the
+    /// web search tool's `search_context_size` and `filters.allowed_domains`. `truncation` stays
+    /// OpenAI's default, disabled: `auto` drops items from the start of the input, which is where the
+    /// passages are, so `historyToSend` keeps the conversation within the model's window instead.
+    private func applyAnswerSettings(to body: inout [String: Any], model: String) {
+        if ModelLimits.supportsVerbosity(model) {
+            body["text"] = ["verbosity": RequestSettings.verbosity]
+        }
+        if let tier = RequestSettings.serviceTier(for: model) {
+            body["service_tier"] = tier
+        }
+    }
+
+    /// Code interpreter is on, wanted for this question, and the model has it
+    private func usesCodeInterpreter(_ allowed: Bool, model: String) -> Bool {
+        allowed && isCodeInterpreterEnabled() && ModelLimits.supportsCodeInterpreter(model)
+    }
+
+    /// How long an answer request may wait without a byte. Flex answers come slower, and OpenAI's Flex
+    /// guide (read 2026-10-01) has its SDKs wait 15 minutes; otherwise URLRequest's default of 60 seconds.
+    private func answerTimeout(for model: String) -> TimeInterval {
+        RequestSettings.serviceTier(for: model) == "flex" ? 900 : 60
+    }
+
+    private func webSearchTool() -> [String: Any] {
+        var tool: [String: Any] = ["type": "web_search"]
+        // Medium is the API's default, so the tool goes as before unless the person changed it
+        let contextSize = RequestSettings.webSearchContextSize
+        if contextSize != "medium" {
+            tool["search_context_size"] = contextSize
+        }
+        let domains = RequestSettings.webSearchDomains
+        if !domains.isEmpty {
+            tool["filters"] = ["allowed_domains": domains]
+        }
+        return tool
     }
 
     // MARK: - Conversation input builder
 
-    private let maxHistoryMessages = 8
+    /// The earlier messages sent with a question: the newest `limit`, less the oldest of those while
+    /// they wouldn't fit the model's context window beside everything else the request carries and
+    /// the answer it may write. A token is counted as 3 bytes of UTF-8: English runs about 4 bytes a
+    /// token and Chinese or Japanese about one 3-byte character, so the estimate errs toward leaving a
+    /// message out.
+    static func historyToSend(
+        _ history: [ChatMessage],
+        limit: Int,
+        model: String,
+        otherTextBytes: Int,
+        maxOutputTokens: Int
+    ) -> [ChatMessage] {
+        guard limit > 0 else { return [] }
+        var kept = Array(history.suffix(limit))
+        guard let window = ModelLimits.contextWindow(for: model) else { return kept }
+        let room = window - maxOutputTokens - otherTextBytes / 3 - 1_000
+        func cost(_ message: ChatMessage) -> Int { message.text.utf8.count / 3 + 4 }
+        var used = kept.reduce(0) { $0 + cost($1) }
+        var trimmed = false
+        while let oldest = kept.first, used > room {
+            used -= cost(oldest)
+            kept.removeFirst()
+            trimmed = true
+        }
+        // An answer whose question was left out would read as the model speaking first
+        if trimmed, kept.first?.role == .assistant {
+            kept.removeFirst()
+        }
+        return kept
+    }
 
-    private func buildResponsesInput(systemPrompt: String, context: String, history: [ChatMessage], userMessage: String) -> [[String: Any]] {
+    private func buildResponsesInput(systemPrompt: String, context: String, history: [ChatMessage], userMessage: String, model: String) -> [[String: Any]] {
         // System message includes instructions and retrieved context
         Logger.shared.log(level: .info, message: "Building Responses input", context: "contextLength=\(context.count)")
         if !context.isEmpty {
@@ -91,17 +161,17 @@ final class OpenAIService: Sendable {
             ["type": "input_text", "text": "\(systemPrompt)\n\nContext:\n\(context)"]
         ]
 
-        // Map bounded history into Responses "input" items
-        let boundedHistory = Array(history.suffix(maxHistoryMessages))
-        var historyItems: [[String: Any]] = []
-        for msg in boundedHistory {
-            let role = (msg.role == .user) ? "user" : "assistant"
-            historyItems.append([
-                "role": role,
-                "content": [
-                    ["type": "input_text", "text": msg.text]
-                ]
-            ])
+        // The earlier exchanges, two messages each, as plain-string content: the create-response
+        // reference (read 2026-10-01) takes a string for a message of any role, earlier answers included
+        let boundedHistory = Self.historyToSend(
+            history,
+            limit: RequestSettings.historyExchanges * 2,
+            model: model,
+            otherTextBytes: systemPrompt.utf8.count + context.utf8.count + userMessage.utf8.count,
+            maxOutputTokens: currentMaxOutputTokens(for: model)
+        )
+        let historyItems: [[String: Any]] = boundedHistory.map { msg in
+            ["role": msg.role == .user ? "user" : "assistant", "content": msg.text]
         }
 
         // Current user turn is always the last item
@@ -176,7 +246,7 @@ final class OpenAIService: Sendable {
         request.httpBody = jsonData
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
@@ -204,20 +274,23 @@ final class OpenAIService: Sendable {
     ///   - userMessage: The user message
     ///   - context: The context from retrieved documents
     /// - Returns: Generated completion text
-    func generateCompletion(systemPrompt: String, userMessage: String, context: String, history: [ChatMessage] = [], conversationId: String? = nil, onConversationId: ((String) -> Void)? = nil, allowCodeInterpreter: Bool = false) async throws -> String { 
+    func generateCompletion(systemPrompt: String, userMessage: String, context: String, history: [ChatMessage] = [], allowCodeInterpreter: Bool = false) async throws -> String { 
         let endpoint = "\(baseURL)/responses"
 
         // Build Responses API "input" with conversation history
-        let input: [[String: Any]] = buildResponsesInput(systemPrompt: systemPrompt, context: context, history: history, userMessage: userMessage)
-
         let model = currentCompletionModel()
+        let input: [[String: Any]] = buildResponsesInput(
+            systemPrompt: systemPrompt, context: context, history: history, userMessage: userMessage, model: model
+        )
         var body: [String: Any] = [
             "model": model,
             "input": input,
-            // Responses API uses max_output_tokens instead of max_tokens
-            "max_output_tokens": 1000,
+            // Responses API uses max_output_tokens instead of max_tokens. It includes reasoning, so the
+            // fallback takes the same limit as the stream: a fixed 1,000 could go entirely to reasoning.
+            "max_output_tokens": currentMaxOutputTokens(for: model),
             "store": false
         ]
+        applyAnswerSettings(to: &body, model: model)
 
         if let cacheKey = promptCacheKey(systemPrompt: systemPrompt, context: context, model: model) {
             body["prompt_cache_key"] = cacheKey
@@ -229,14 +302,11 @@ final class OpenAIService: Sendable {
             body["temperature"] = currentTemperature()
             body["top_p"] = currentTopP()
         }
-        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+        if usesCodeInterpreter(allowCodeInterpreter, model: model) {
             body["tools"] = [[
                 "type": "code_interpreter",
                 "container": ["type": "auto"],
             ]]
-        }
-        if let convId = conversationId {
-            body["conversation"] = convId
         }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
@@ -248,9 +318,10 @@ final class OpenAIService: Sendable {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
+        request.timeoutInterval = answerTimeout(for: model)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request, delegate: APIActivity.recorder)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw APIError.invalidResponse
@@ -266,7 +337,6 @@ final class OpenAIService: Sendable {
             struct ResponsesEnvelope: Decodable {
                 let output_text: String?
                 let output: [OutputItem]?
-                let conversation: ConversationEnvelope?
                 let usage: ResponsesUsage?
                 struct OutputItem: Decodable {
                     let type: String?
@@ -279,16 +349,10 @@ final class OpenAIService: Sendable {
                         }
                     }
                 }
-                struct ConversationEnvelope: Decodable {
-                    let id: String?
-                }
             }
 
             if let envelope = try? JSONDecoder().decode(ResponsesEnvelope.self, from: data) {
                 logPromptCacheUsage(envelope.usage, source: "completion")
-                if let conv = envelope.conversation?.id, conv.hasPrefix("conv") {
-                    onConversationId?(conv)
-                }
                 if let text = envelope.output_text, !text.isEmpty {
                     return text
                 }
@@ -332,8 +396,6 @@ final class OpenAIService: Sendable {
         userMessage: String,
         context: String,
         history: [ChatMessage] = [],
-        conversationId: String? = nil,
-        onConversationId: ((String) -> Void)? = nil,
         onTextDelta: @escaping (String) -> Void,
         allowCodeInterpreter: Bool = true,
         onCodeInterpreterOutput: ((CodeInterpreterOutput) -> Void)? = nil,
@@ -342,16 +404,18 @@ final class OpenAIService: Sendable {
         let endpoint = "\(baseURL)/responses"
 
         // Build Responses API "input" with conversation history
-        let input: [[String: Any]] = buildResponsesInput(systemPrompt: systemPrompt, context: context, history: history, userMessage: userMessage)
-
         let model = currentCompletionModel()
+        let input: [[String: Any]] = buildResponsesInput(
+            systemPrompt: systemPrompt, context: context, history: history, userMessage: userMessage, model: model
+        )
         var body: [String: Any] = [
             "model": model,
             "input": input,
             "stream": true,
-            "max_output_tokens": currentMaxOutputTokens(),
+            "max_output_tokens": currentMaxOutputTokens(for: model),
             "store": false
         ]
+        applyAnswerSettings(to: &body, model: model)
 
         if let cacheKey = promptCacheKey(systemPrompt: systemPrompt, context: context, model: model) {
             body["prompt_cache_key"] = cacheKey
@@ -359,7 +423,7 @@ final class OpenAIService: Sendable {
 
         // Build include array for tool outputs
         var includes: [String] = []
-        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+        if usesCodeInterpreter(allowCodeInterpreter, model: model) {
             includes.append("code_interpreter_call.outputs")
         }
 
@@ -382,10 +446,10 @@ final class OpenAIService: Sendable {
         var tools: [[String: Any]] = []
 
         if isWebSearchEnabled() {
-            tools.append(["type": "web_search"])
+            tools.append(webSearchTool())
         }
 
-        if allowCodeInterpreter, isCodeInterpreterEnabled() {
+        if usesCodeInterpreter(allowCodeInterpreter, model: model) {
             // Code interpreter requires a container parameter
             // Using auto mode creates a new container or reuses an existing one
             tools.append([
@@ -400,9 +464,6 @@ final class OpenAIService: Sendable {
             body["tools"] = tools
         }
 
-        if let convId = conversationId {
-            body["conversation"] = convId
-        }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             throw APIError.invalidRequestData
@@ -420,9 +481,10 @@ final class OpenAIService: Sendable {
         request.addValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
+        request.timeoutInterval = answerTimeout(for: model)
 
         // Use URLSession AsyncBytes to consume SSE stream
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request, delegate: APIActivity.recorder)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
@@ -482,30 +544,14 @@ final class OpenAIService: Sendable {
                     if isImportantEvent, eventCount <= 10 {
                         logger.log(level: .debug, message: "SSE data for event '\(currentEvent ?? "nil")': \(payload.prefix(200))")
                     }
-                    // Handle completion (also try to capture conversation id from payload)
+                    // Handle completion
                     if currentEvent == "response.completed" {
                         if let data = payload.data(using: .utf8),
-                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                            if let completionEvent = try? JSONDecoder().decode(ResponsesCompletedEvent.self, from: data) {
-                                logPromptCacheUsage(
-                                    completionEvent.response?.usage ?? completionEvent.usage,
-                                    source: "stream"
-                                )
-                            }
-                            // Attempt multiple shapes to find conversation id
-                            func extractConvId(from any: Any?) -> String? {
-                                if let s = any as? String { return s }
-                                if let dict = any as? [String: Any] {
-                                    if let s = dict["id"] as? String { return s }
-                                    if let nested = dict["conversation"] { return extractConvId(from: nested) }
-                                    if let resp = dict["response"] { return extractConvId(from: resp) }
-                                }
-                                return nil
-                            }
-                            let convId = extractConvId(from: obj["conversation"]) ?? extractConvId(from: obj["response"])
-                            if let conv = convId, conv.hasPrefix("conv") {
-                                onConversationId?(conv)
-                            }
+                           let completionEvent = try? JSONDecoder().decode(ResponsesCompletedEvent.self, from: data) {
+                            logPromptCacheUsage(
+                                completionEvent.response?.usage ?? completionEvent.usage,
+                                source: "stream"
+                            )
                         }
                         completeOnce()
                         currentEvent = nil

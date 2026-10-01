@@ -286,7 +286,6 @@ final class SearchViewModel: ObservableObject {
     @Published var lastSearchTime: Date? = nil
     @Published var currentTheme: OCTheme = ThemeManager.shared.currentTheme
     @Published var messages: [ChatMessage] = []
-    @Published var conversationId: String? = UserDefaults.standard.string(forKey: "openai.conversationId")
     @Published var metadataFilters: [String: PineconeMetadataFilter] = [:]
     @Published var newFilterField: String = ""
     @Published var newFilterValue: String = ""
@@ -702,7 +701,8 @@ final class SearchViewModel: ObservableObject {
     }
 
     private func shouldUseCodeInterpreter(for query: String) -> Bool {
-        guard settingsViewModel.codeInterpreterEnabled else { return false }
+        // The model must have the tool too; otherwise the passages would be shortened for nothing
+        guard settingsViewModel.codeInterpreterEnabled, settingsViewModel.supportsCodeInterpreter else { return false }
         let lowercased = query.lowercased()
         let keywords = [
             "chart", "plot", "graph", "visualize", "table", "csv", "excel", "spreadsheet",
@@ -1611,13 +1611,19 @@ final class SearchViewModel: ObservableObject {
             self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, sources: sources, status: .streaming))
         }
 
-        let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
-        let historyArg: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-        let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
+        // Memory: the earlier exchanges go with each question, and OpenAIService keeps as many as the
+        // person chose (RequestSettings.historyExchanges). The memory OpenCone used to offer from
+        // OpenAI needed a conversation created through OpenAI's Conversations API, which OpenCone never
+        // made, so that mode sent no history at all.
+        let historyArg = conversationHistory(before: currentQuery)
 
-        // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
+        // Watchdog: if no text arrives within Constants.watchdogDelayNanoseconds (30 s), cancel the stream
+        // and ask once without streaming
         let watchdogTask = Task { [weak self] in
             guard let self = self else { return }
+            // Flex is slower by design: a fallback would ask again at the same tier and pay for both
+            let model = await MainActor.run { self.settingsViewModel.completionModel }
+            guard RequestSettings.serviceTier(for: model) != "flex" else { return }
             try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
             // Check if assistant message is still streaming and empty
             let shouldFallback = await MainActor.run { () -> Bool in
@@ -1637,22 +1643,13 @@ final class SearchViewModel: ObservableObject {
                 Task.detached { [weak self] in
                     guard let self = self else { return }
                     let query = currentQuery
-                    let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                    let fallbackConversationId: String? = useServer ? nil : convIdArg
+                    let fallbackHistory = await MainActor.run { self.conversationHistory(before: query) }
                     do {
                         let fallback = try await self.openAIService.generateCompletion(
                             systemPrompt: systemPrompt,
                             userMessage: query,
                             context: context,
                             history: fallbackHistory,
-                            conversationId: fallbackConversationId,
-                            onConversationId: { conv in
-                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                Task { @MainActor in
-                                    self.conversationId = conv
-                                    self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
-                                }
-                            },
                             allowCodeInterpreter: false
                         )
                         await MainActor.run {
@@ -1696,14 +1693,6 @@ final class SearchViewModel: ObservableObject {
                     userMessage: currentQuery,
                     context: context,
                     history: historyArg,
-                    conversationId: convIdArg,
-                    onConversationId: { conv in
-                        UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                        Task { @MainActor in
-                            self.conversationId = conv
-                            self.logger.log(level: .info, message: "OpenAI conversation established", context: "id=\(conv)")
-                        }
-                    },
                     onTextDelta: { delta in
                         deltaCount += 1
                         Task { @MainActor in
@@ -1741,22 +1730,12 @@ final class SearchViewModel: ObservableObject {
                             if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
                                 if self.messages[index].text.isEmpty {
                                     do {
-                                        let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                                        let fallbackConversationId: String? = useServer ? nil : convIdArg
                                         let fallbackQuery = currentQuery
                                         let fallback = try await self.openAIService.generateCompletion(
                                             systemPrompt: systemPrompt,
                                             userMessage: fallbackQuery,
                                             context: context,
-                                            history: fallbackHistory,
-                                            conversationId: fallbackConversationId,
-                                            onConversationId: { conv in
-                                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                                Task { @MainActor in
-                                                    self.conversationId = conv
-                                                    self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
-                                                }
-                                            },
+                                            history: historyArg,
                                             allowCodeInterpreter: false
                                         )
                                         await MainActor.run {
@@ -1822,10 +1801,9 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Conversation Threads
 
     func newTopic() {
-        // Clear server-managed conversation until a valid conv id is created/upstreamed
+        // An OpenAI conversation id an earlier version stored; nothing reads it now
         UserDefaults.standard.removeObject(forKey: "openai.conversationId")
         Task { @MainActor in
-            self.conversationId = nil
             self.messages.removeAll()
             self.searchResults = []
             self.codeInterpreterOutputs = []
@@ -1834,9 +1812,8 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// Ask the question behind the latest answer again. On this iPhone the new answer replaces the
-    /// old one; with memory kept by OpenAI, OpenAI's conversation keeps both. A question being typed
-    /// in the composer stays there.
+    /// Ask the question behind the latest answer again. The new answer replaces the old one, which
+    /// is not sent as memory. A question being typed in the composer stays there.
     func retryLastAnswer() async {
         guard !isSearching,
               let answerPosition = messages.lastIndex(where: { $0.role == .assistant }),
@@ -1959,14 +1936,15 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Private Helpers
 
-    /// Build conversation history to send to the model, excluding the current user turn.
-    /// Includes only finalized (.normal) messages with non-empty text.
-    private func conversationHistoryExcludingCurrentUser() -> [ChatMessage] {
-        var hist = self.messages.filter { $0.status == .normal && !$0.text.isEmpty }
-        if let last = hist.last, last.role == .user, last.text == self.searchQuery {
-            hist.removeLast()
+    /// The finished messages before the question being answered. The question is the last user
+    /// message by then and goes to OpenAI on its own, so it's left out here; this used to compare it
+    /// with the composer, which is empty once a question is sent, and so sent the question twice.
+    private func conversationHistory(before question: String) -> [ChatMessage] {
+        var history = messages.filter { $0.status == .normal && !$0.text.isEmpty }
+        if let last = history.last, last.role == .user, last.text == question {
+            history.removeLast()
         }
-        return hist
+        return history
     }
 
     private func buildMetadataFilterPayload() -> [String: Any]? {

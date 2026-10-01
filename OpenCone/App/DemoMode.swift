@@ -4,7 +4,8 @@ import Foundation
 /// `-OpenConeDemo`, the app opens on sample indexes and a sample conversation; it makes no requests
 /// unless a question is sent, and saves no settings or keys (the settings stay in memory and the
 /// keys aren't checked). `-OpenConeDemoScreen <name>` also opens one screen (empty, scope,
-/// scope-one, answer-settings, models, sources, passage, settings, documents, index-details, document).
+/// scope-one, answer-settings, models, sources, passage, settings, settings-answers,
+/// settings-advanced, endpoints, endpoint, documents, index-details, document).
 /// Debug builds only: in Release, `isActive` is always false.
 enum DemoMode {
     static var isActive: Bool {
@@ -78,12 +79,47 @@ enum DemoContent {
             settings.searchScope = .oneIndex
         case "empty", "scope":
             settings.searchScope = .auto
+        case "settings-answers":
+            settings.webSearchEnabled = true
+            settings.webSearchDomains = "who.int, https://www.fda.gov/drugs"
         default:
             break
         }
 
         guard DemoMode.screen != "empty" else { return }
         search.messages = conversation()
+    }
+
+    /// Sample requests for Settings > Advanced > Endpoints: a question's worth, an upload, and a
+    /// Flex answer OpenAI turned away
+    static func seedActivity() {
+        let activity = APIActivity.shared
+        guard activity.calls.isEmpty else { return }
+        let samples: [(APIEndpoint, Int?, TimeInterval, TimeInterval)] = [
+            (.listIndexes, 200, 0.21, -1_800),
+            (.models, 200, 0.34, -1_790),
+            (.describeIndex, 200, 0.12, -1_780),
+            (.indexStats, 200, 0.09, -1_200),
+            (.listNamespaces, 200, 0.14, -1_195),
+            (.embeddings, 200, 0.28, -620),
+            (.upsert, 200, 0.46, -615),
+            (.upsert, 200, 0.41, -612),
+            (.indexStats, 200, 0.08, -300),
+            (.responses, 200, 1.9, -299),
+            (.embeddings, 200, 0.22, -297),
+            (.query, 200, 0.18, -296),
+            (.query, 200, 0.16, -296),
+            (.rerank, 200, 0.31, -295),
+            (.responses, 200, 7.4, -294),
+            (.responses, 429, 0.6, -120),
+            (.indexStats, 200, 0.07, -60),
+            (.embeddings, 200, 0.19, -58),
+            (.query, 200, 0.15, -57),
+            (.responses, 200, 5.2, -56),
+        ]
+        for (endpoint, status, duration, offset) in samples {
+            activity.record(APICall(endpoint: endpoint, status: status, duration: duration, date: Date().addingTimeInterval(offset)))
+        }
     }
 
     /// Sample documents in every state, in the "manuals" index

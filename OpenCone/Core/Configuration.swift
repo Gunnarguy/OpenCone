@@ -32,22 +32,22 @@ struct Configuration {
     /// Control plane API version (configurable via secure store)
     static var pineconeControlPlaneVersion: String {
         let version = SecureSettingsStore.shared.getPineconeControlPlaneVersion()
-        return version.isEmpty ? "2024-07" : version
+        return version.isEmpty ? PineconeAPIVersions.controlPlane : version
     }
     /// Data plane API version
     static var pineconeDataPlaneVersion: String {
         let version = SecureSettingsStore.shared.getPineconeDataPlaneVersion()
-        return version.isEmpty ? "2024-07" : version
+        return version.isEmpty ? PineconeAPIVersions.dataPlane : version
     }
     /// Namespace management API version (preview)
     static var pineconeNamespaceVersion: String {
         let version = SecureSettingsStore.shared.getPineconeNamespaceVersion()
-        return version.isEmpty ? "2025-10" : version
+        return version.isEmpty ? PineconeAPIVersions.namespaces : version
     }
     /// Metadata fetch API version (preview)
     static var pineconeMetadataFetchVersion: String {
         let version = SecureSettingsStore.shared.getPineconeMetadataFetchVersion()
-        return version.isEmpty ? "2025-10" : version
+        return version.isEmpty ? PineconeAPIVersions.metadataFetch : version
     }
 
     // MARK: - Document Processing Settings
@@ -114,4 +114,18 @@ struct Configuration {
         return CurrentModelCatalog.isModern(lowercased)
             || reasoningModelPrefixes.contains { lowercased.hasPrefix($0.lowercased()) }
     }
+}
+
+/// The Pinecone API versions OpenCone sends unless Settings names others, in the
+/// `X-Pinecone-Api-Version` header. Pinecone's 2025 changelog (read 2026-10-01): creating a namespace
+/// and fetching by metadata arrived in 2025-10. Its 2026 changelog: 2026-07 is the latest stable
+/// version. The control and data planes stay on 2024-07, the version OpenCone already sends, until a
+/// move to a newer one is tested against a live index.
+enum PineconeAPIVersions {
+    static let controlPlane = "2024-07"
+    static let dataPlane = "2024-07"
+    static let namespaces = "2025-10"
+    static let metadataFetch = "2025-10"
+    /// The latest stable version on 2026-10-01
+    static let latestStable = "2026-07"
 }

@@ -79,7 +79,7 @@ final class SecureSettingsStore: @unchecked Sendable {
     }
 
     func getPineconeControlPlaneVersion() -> String {
-        return UserDefaults.standard.string(forKey: Key.pineconeControlPlaneVersion) ?? "2024-07"
+        return UserDefaults.standard.string(forKey: Key.pineconeControlPlaneVersion) ?? PineconeAPIVersions.controlPlane
     }
 
     func setPineconeControlPlaneVersion(_ version: String) {
@@ -87,7 +87,7 @@ final class SecureSettingsStore: @unchecked Sendable {
     }
 
     func getPineconeDataPlaneVersion() -> String {
-        return UserDefaults.standard.string(forKey: Key.pineconeDataPlaneVersion) ?? "2024-07"
+        return UserDefaults.standard.string(forKey: Key.pineconeDataPlaneVersion) ?? PineconeAPIVersions.dataPlane
     }
 
     func setPineconeDataPlaneVersion(_ version: String) {
@@ -95,7 +95,9 @@ final class SecureSettingsStore: @unchecked Sendable {
     }
 
     func getPineconeNamespaceVersion() -> String {
-        return UserDefaults.standard.string(forKey: Key.pineconeNamespaceVersion) ?? "2025-10"
+        let stored = UserDefaults.standard.string(forKey: Key.pineconeNamespaceVersion) ?? PineconeAPIVersions.namespaces
+        // Reset to defaults stored 2025-01 until 2026-10-01; creating a namespace needs 2025-10 or later
+        return stored < PineconeAPIVersions.namespaces ? PineconeAPIVersions.namespaces : stored
     }
 
     func setPineconeNamespaceVersion(_ version: String) {
@@ -103,7 +105,7 @@ final class SecureSettingsStore: @unchecked Sendable {
     }
 
     func getPineconeMetadataFetchVersion() -> String {
-        return UserDefaults.standard.string(forKey: Key.pineconeMetadataFetchVersion) ?? "2025-10"
+        return UserDefaults.standard.string(forKey: Key.pineconeMetadataFetchVersion) ?? PineconeAPIVersions.metadataFetch
     }
 
     func setPineconeMetadataFetchVersion(_ version: String) {

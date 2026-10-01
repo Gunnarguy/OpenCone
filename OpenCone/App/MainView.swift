@@ -73,7 +73,11 @@ struct MainView: View {
     private func loadInitialData() {
         if DemoMode.isActive {
             switch DemoMode.screen {
-            case "settings": selectedTab = 2
+            case "settings", "settings-answers", "settings-advanced", "endpoints", "endpoint":
+                selectedTab = 2
+                #if DEBUG
+                DemoContent.seedActivity()
+                #endif
             case "documents", "index-details", "document": selectedTab = 1
             default: break
             }

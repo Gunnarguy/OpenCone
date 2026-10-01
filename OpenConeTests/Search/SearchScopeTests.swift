@@ -21,6 +21,8 @@ final class SearchScopeTests: XCTestCase {
         SettingsStorageKeys.hybridSearchEnabled, SettingsStorageKeys.hybridSearchAlpha,
         SettingsStorageKeys.rerankingEnabled, SettingsStorageKeys.rerankModel, SettingsStorageKeys.rerankTopN,
         "conversation.systemPromptOverride",
+        RequestSettings.Key.verbosity, RequestSettings.Key.serviceTier, RequestSettings.Key.webSearchContextSize,
+        RequestSettings.Key.webSearchDomains, RequestSettings.Key.historyExchanges,
     ]
     private var saved: [String: Any] = [:]
 

@@ -169,22 +169,36 @@ final class TextProcessorService {
         }
     }
 
+    /// Passage size and overlap in characters for one kind of file
+    struct ChunkProfile {
+        let kind: String
+        let mimeTypes: Set<String>
+        let size: Int
+        let overlap: Int
+    }
+
+    /// The passage sizes by kind of file; Settings > Endpoints shows the same table
+    static let chunkProfiles: [ChunkProfile] = [
+        ChunkProfile(kind: "PDF", mimeTypes: ["application/pdf"], size: 1200, overlap: 200),
+        ChunkProfile(kind: "Text, Markdown, RTF, CSV",
+                     mimeTypes: ["text/plain", "text/markdown", "text/rtf", "application/rtf", "text/csv", "text/tsv"],
+                     size: 800, overlap: 150),
+        ChunkProfile(kind: "Code and CSS",
+                     mimeTypes: ["application/x-python", "text/x-python", "application/javascript", "text/javascript", "text/css"],
+                     size: 500, overlap: 50),
+        ChunkProfile(kind: "HTML", mimeTypes: ["text/html"], size: 1000, overlap: 200),
+    ]
+
+    static let otherChunkProfile = ChunkProfile(
+        kind: "Everything else", mimeTypes: [], size: Configuration.defaultChunkSize, overlap: Configuration.defaultChunkOverlap
+    )
+
     /// Get the appropriate chunking parameters based on MIME type
     /// - Parameter mimeType: The MIME type of the document
     /// - Returns: A tuple containing chunk size, overlap, and separators
     private func getChunkParametersForMimeType(_ mimeType: String) -> (Int, Int, [String]) {
-        switch mimeType {
-        case "application/pdf":
-            return (1200, 200, ["\n\n", "\n", ". ", " ", ""])
-        case "text/plain", "text/markdown", "text/rtf", "application/rtf", "text/csv", "text/tsv":
-            return (800, 150, ["\n\n", "\n", ". ", " ", ""])
-        case "application/x-python", "text/x-python", "application/javascript", "text/javascript", "text/css":
-            return (500, 50, ["\n\n", "\n", ". ", " ", ""])
-        case "text/html":
-            return (1000, 200, ["\n\n", "\n", ". ", " ", ""])
-        default:
-            return (Configuration.defaultChunkSize, Configuration.defaultChunkOverlap, ["\n\n", "\n", ". ", " ", ""])
-        }
+        let profile = Self.chunkProfiles.first { $0.mimeTypes.contains(mimeType) } ?? Self.otherChunkProfile
+        return (profile.size, profile.overlap, ["\n\n", "\n", ". ", " ", ""])
     }
 
     /// Split text recursively using multiple separators

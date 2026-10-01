@@ -19,8 +19,13 @@ struct ChatStatusBar: View {
                     if settings.webSearchEnabled {
                         toolBadge("globe", tint: .blue, label: "Web search on")
                     }
-                    if settings.codeInterpreterEnabled {
+                    if settings.codeInterpreterEnabled, settings.supportsCodeInterpreter {
                         toolBadge("chevron.left.forwardslash.chevron.right", tint: .orange, label: "Code interpreter on")
+                    }
+                    if settings.serviceTier == "flex" {
+                        toolBadge("tortoise", tint: .green, label: "Flex tier: slower, half the price")
+                    } else if settings.serviceTier == "fast" {
+                        toolBadge("hare", tint: .orange, label: "Fast tier: quicker, higher price")
                     }
                     if settings.rerankingEnabled {
                         toolBadge("arrow.up.arrow.down", tint: .purple, label: "Reranking on")

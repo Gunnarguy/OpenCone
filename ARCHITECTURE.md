@@ -100,7 +100,8 @@ flowchart TD
 
 ### Services Layer
 - **[PineconeService.swift](OpenCone/Services/PineconeService.swift)**: Implements REST operations for index control (list, create, delete) and vector data actions (upsert, query, delete). Features stateful region/host discovery and circuit-breaking error protection.
-- **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
+- **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding. Each answer request reads its options through `RequestSettings` and holds them to the selected model through `ModelLimits`.
+- **[APIActivity.swift](OpenCone/Core/Networking/APIActivity.swift)**: Every request passes `APIActivity.recorder` as its `URLSessionTaskDelegate`; when a task's metrics arrive, the request is matched to one of the endpoints OpenCone calls by host, method and path, and its status and duration are kept in memory for Settings > Advanced > Endpoints. No URL, body or key is kept.
 - **[ResponsesClient.swift](OpenCone/Services/ResponsesClient.swift)**: Non-streamed Responses calls whose output is a decision rather than prose: the routing call, which returns `function_call` items, and drafting an index's one-line summary.
 - **[Routing](OpenCone/Features/Search/Routing/)**: `IndexRouter` builds the `search_index` tool and checks the model's calls; `IndexSurveyor` reads each index's namespaces, finds which OpenAI model built it, and drafts its summary; `IndexProfile` and `IndexCatalogStore` keep that per Pinecone project on the phone, with the indexes the person left out; `IndexDetailView` (in `SearchScopeViews.swift`) lets the person rewrite a summary or leave an index out.
 - **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, extracts PDF text with `PDFKit`, and reads text formats as UTF-8. Its `VNRecognizeTextRequest` OCR path for images never runs, because the document picker does not offer images.
@@ -137,7 +138,7 @@ OpenCone utilizes Swift's structured concurrency (`async/await`) to maintain res
 OpenCone integrates multi-layered network recovery patterns to cope with API failures:
 1. **Exponential Backoff**: Transient errors (e.g. 503 Service Unavailable or network dropouts) trigger up to 3 retry attempts with an increasing sleep duration.
 2. **Circuit Breaker**: Guarded by a circuit breaker state in `PineconeService`. If consecutive API requests fail beyond the threshold, the circuit trips to `.open`. Subsequent requests fail immediately to prevent request flooding, auto-resetting after a timeout or when the user changes indexes.
-3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task cancels the stream and retries the request once without streaming.
+3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task cancels the stream and retries the request once without streaming. At the Flex tier the watchdog stays off, since Flex answers slower by design, and answer requests wait up to 15 minutes for a byte, as OpenAI's Flex guide has its SDKs do.
 
 ---
 
@@ -148,12 +149,15 @@ OpenCone integrates multi-layered network recovery patterns to cope with API fai
 - **Parameters**: 
   - `model`: Defaults to the model catalog's `defaultModel`, `gpt-6-sol` (or custom parameters). The catalog (`OpenCone/Resources/ModelCatalog/ModelCatalog.json`, the same file OpenResponses ships, read by `CurrentModelCatalog` and `ModelCatalogStore`) sets the menu order, each model's reasoning efforts, and where a retired model moves; see `docs/model-catalog.md`.
   - `stream`: Set to `true`.
-  - `input`: Formatted as structured message JSON objects.
-  - `tools`: `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic.
+  - `input`: A system message holding the instructions and the passages, then the earlier exchanges as plain-string messages (the last 4 by default, 0 to 20; `OpenAIService.historyToSend` leaves out the oldest when they wouldn't fit the context window beside everything else), then the question.
+  - `max_output_tokens`: The longest answer from Settings (16,000 by default), held to the model's maximum (`ModelLimits`, from each model's page on OpenAI's docs site).
+  - `text.verbosity`, `service_tier`: From Settings > Answers. Verbosity goes to GPT-5 and later; a tier goes only when OpenAI's pricing page prices the model at it, and Auto leaves the field out. `truncation` isn't sent: its `auto` drops input items from the start, which is where the passages are.
+  - `store`: `false`.
+  - `tools`: `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic and left out for models without it. `web_search` carries `search_context_size` when it isn't the API's default (medium) and, when sites are listed, `filters.allowed_domains`.
   - `reasoning.effort`: Sent for reasoning models (GPT-5.6, GPT-6 and later, `gpt-5`, o-series), kept to a level the model accepts (`CurrentModelCatalog.normalizedEffort`): GPT-6.1 Sol and GPT-6 Astra take `low` through `max` and reject `none`.
 - **Events Handled**:
   - `response.output_text.delta` / `response.text.delta`: Text streaming segments.
-  - `response.completed`: Captures the server conversation ID and finalizes token metrics.
+  - `response.completed`: Finalizes the answer and logs prompt-cache usage. OpenCone keeps no OpenAI conversation: its earlier "server memory" needed a conversation created through the Conversations API, which it never made, so that mode sent no history at all.
 - **Routing call** (the Auto width, with two or more indexes or namespaces): one non-streamed request before the answer, with `store: false`, `tool_choice: "auto"`, `parallel_tool_calls: true` and one strict function tool, `search_index(index, namespace, query)`, whose `index` is an enum of the indexes whose embedding model is known. The app runs at most 5 of the returned calls in parallel, then streams the answer through the request above with the passages, tagged `[S1]` onward and grouped by search, as its context. If the routing call fails, the search falls back to the open index.
 
 ### OpenAI Embeddings API (`/v1/embeddings`)
@@ -162,10 +166,10 @@ OpenCone integrates multi-layered network recovery patterns to cope with API fai
 - **Batching**: Embedded in batches of 50 text chunks.
 
 ### Pinecone REST API
-OpenCone connects to serverless Pinecone indexes using designated versions configurable in the Secure Store:
-- **Control Plane (`/indexes`)**: Used to list, retrieve configuration hosts, or provision serverless indexes. (Header: `X-Pinecone-API-Version: 2024-07`).
-- **Data Plane (`/vectors/upsert`, `/query`, `/vectors/delete`)**: Vector reads, similarity scoring, and namespace removals. (Header: `X-Pinecone-API-Version: 2024-07`).
-- **Namespace Plane (`/describe_index_stats`)**: Gathers counts per namespace to refresh local dashboards. (Header: `X-Pinecone-API-Version: 2025-10`).
+OpenCone connects to serverless Pinecone indexes using designated versions configurable in Settings > Advanced (defaults in `PineconeAPIVersions`; Pinecone's latest stable version is `2026-07`, per its 2026 changelog):
+- **Control Plane (`/indexes`) and inference (`/rerank`, `/embed`)**: List, describe, create and delete indexes; rerank passages; make hybrid search's sparse vector. (Header: `X-Pinecone-API-Version: 2024-07`.) A new index takes the cloud, region and metric from Settings > Advanced > New indexes.
+- **Data Plane (`/query`, `/vectors/upsert`, `/vectors/delete`, `/describe_index_stats`)**: Similarity search, storing and deleting passages, and passage counts per namespace. (Header: `X-Pinecone-API-Version: 2024-07`.)
+- **Namespaces (`/namespaces`)**: List, create and delete namespaces. (Header: `X-Pinecone-API-Version: 2025-10`, the version that added creating a namespace.)
 - **Any index by name**: Routed searches and index surveys call `query(index:...)` and `indexStats(forIndex:)`, which use that index's own cached host. Search and Documents share one `PineconeService`, so these calls never move its `currentIndex` or `indexHost`. The default namespace is sent by leaving `namespace` out.
 
 ---

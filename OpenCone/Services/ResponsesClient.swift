@@ -82,7 +82,7 @@ final class ResponsesClient {
         request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = jsonData
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
@@ -105,7 +105,7 @@ final class ResponsesClient {
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: APIActivity.recorder)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
