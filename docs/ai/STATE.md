@@ -1,102 +1,73 @@
 # Current State
 
 Updated: 2026-10-01
-Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD = origin/main
-Last verified commit: d8f5d8b (the UI overhaul below was verified on the working tree, then committed after it at Gunnar's request)
+Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD 9c9578c = origin/main
+Last verified commit: 9c9578c
 
 ## Objective
-Gunnar, 2026-10-01: the app "needs a slight overhaul because its not formatting responses correctly, its kind of
-clunky, its ugly, and doesnt have much intuitive control when it comes to Indexes/Namespaces/Model
-selection/customization ... make it look more like OpenResponses". Mid-session he added a broad net ("all that exists
-in one's pinecone project ID") beside smaller nets ("per index namespaces"). The earlier routing objective still needs
-its live check (Blockers).
+Gunnar, 2026-10-01: "answer length, 32k? thats not right lol. please update the settings tab as well... make this
+whole app just look crazy good and ensure every single endpoint is properly accounted for, displayed, and customizable
+thats relevant", then "There's no off for the 6.1 sol reasoning. Ensure that's correct and that parameters dynamically
+adjust and show based off of whichever model is selected. Keep it going". His standing flow: commit, push, build to his iPhone.
 
 ## Status
-Overhaul committed and pushed 2026-10-01 as 807f7cc at Gunnar's request and installed on his iPhone. A reviewer agent
-then found 11 problems; the fixes are in the next commit (also pushed and installed): an auto-save that re-saved every
-second forever, edited keys never saved, Stop missing the Pinecone check and the step after reranking, failed
-searches left without an answer, a partly streamed answer stuck streaming, a left-out index searched after leaving One
-index, Everything ordering scores from different indexes as if comparable, euclidean scores read backwards, the reset
-keeping cached index names, retry overwriting a draft, demo mode saving settings. Also fixed: every streamed answer
-was shown twice, because `response.output_item.done` repeats the full text after the deltas (OpenAI's streaming
-events reference, read 2026-10-01). Gunnar's next request (2026-10-01): the Documents tab still looks bad and wasn't
-redesigned; it is next.
+Done and shipped: 9c9578c committed, pushed, installed on "Gunnar's Hand Extension" (iPhone 16 Pro Max,
+`00008140-001130DA1863C01C`). Launch failed only because the phone was locked (`BSErrorCodeDescription = Locked`);
+`devicectl device info apps` lists OpenCone 3.1 (5). Nothing in it has run against live OpenAI or Pinecone yet.
+Earlier commits this session, also on his phone: 807f7cc (Ask overhaul), 5242fda (review fixes), b36add9 (Documents).
 
-## Completed (committed after d8f5d8b)
-- Answers render Markdown: `Features/Search/Components/MarkdownText.swift` (own block parser for headings, nested
-  lists, task items, tables, quotes, rules, code fences that may still be open while streaming; inline through
-  AttributedString). `[S2]` tags become `opencone-source://` links that open that passage.
-- Each answer keeps its passages (`ChatMessage.sources`), tagged by `PassageText.taggedContext`; the one-index path
-  now tags passages and adds `PassageText.citeInstructions` to the system prompt.
-- Ask screen in OpenResponses' layout: `SearchView.swift` (rewritten), `Components/ChatStatusBar.swift` (model menu,
-  effort, tool badges, gear), `MessageBubble.swift` (bubbles, source chips, copy/share/retry), `ChatComposer.swift`,
-  `AnswerSettingsViews.swift` (Choose Model list ported from OpenResponses, `AnswerSettingsForm`),
-  `AnswerSourcesViews.swift`, `SearchScopeViews.swift` (scope bar, Where to search sheet, `IndexDetailView`,
-  metadata filters), `CodeInterpreterOutputsView.swift`.
-- Three search widths (`SearchScope` in `Core/AppSettingsModels.swift`, key `search.scope`; the old
-  `search.indexRoutingEnabled` bool is still written and migrates): Auto = existing routing; Everything =
-  `SearchViewModel.searchEverything` (every namespace of every included index, max 20 searches taken in turns across
-  indexes, merged by rank then score, one rerank when on); One index = `searchOpenIndex`, whose "all namespaces" now
-  searches each namespace (`searchNamespaces`, the 10 largest) instead of only the default one. "All namespaces" is
-  remembered per index under `search.allNamespaces.<index>`. Indexes can be left out (`setIndex(_:included:)`,
-  `IndexCatalogStore.saveExcluded`). One-index questions are embedded with the index's surveyed model when known.
-- Stop: every search path runs in `routingTask`, so Stop cancels searches too; it leaves a retryable "Stopped" answer.
-  `retryLastAnswer()` re-asks the last question.
-- Settings (`Features/Settings/SettingsView.swift`, rewritten): General / Answers / Advanced tabs. Removed controls that
-  changed nothing (similarity threshold, context window, streaming toggle, timeouts, retries, batch size, verbose and
-  debug toggles, max turns, chunk size and overlap, Pinecone cloud and region, theme picker). Removed the 2 s auto-save
-  cooldown that dropped changes; `persistRequestSettings()` runs before every search; `selectCompletionModel` clears
-  the old custom-model override. The log moved to Settings > Advanced > Activity log; tabs are Ask, Documents, Settings.
-- Theme follows the system light/dark setting (`OCTheme.system`); no forced color scheme.
-- Deleted dead files: old chat views, `IndexSummariesSheet`, `DocumentsView`, `DocumentRow`, theme and demo settings
-  views, `SettingsNavigationRow`, `SecureSettingsField` (staged as deletions by `git rm`).
-- `App/DemoMode.swift`: DEBUG-only `-OpenConeDemo [-OpenConeDemoScreen empty|scope|scope-one|answer-settings|models|
-  sources|passage|settings]` opens sample content with no keys and no requests, for screenshots.
-- Docs updated: README, ARCHITECTURE, PRIVACY (log and reset locations, Auto/Everything), CLAUDE.md code map.
+## Completed in 9c9578c
+- Per-model answer settings (`Core/Models/ModelLimits.swift`, `Features/Search/AnswerSettingsViews.swift`): longest
+  answer up to the model's maximum (128,000 GPT-5/6, 32,768 GPT-4.1, 16,384 GPT-4o), default 16,000, a stored old 4,000
+  raised once (`SettingsViewModel.answerLengthRaisedKey`); effort list per model (gpt-6.1-sol: low...max, its page says
+  none/minimal unsupported); temperature/top P only without reasoning; verbosity GPT-5+; service tiers per OpenAI's
+  pricing page (clamped to Auto); code interpreter absent on gpt-5.4-pro/gpt-5.2-pro; fine-tunes read as their base.
+- Request options (`Core/RequestSettings.swift`, `OpenAIService.applyAnswerSettings`, `webSearchTool`): verbosity,
+  service_tier, web search context size (left out at medium) and allowed domains; no `truncation`.
+- Memory: always sends earlier exchanges from the phone (`SearchViewModel.conversationHistory(before:)`,
+  `OpenAIService.historyToSend`, plain-string content, trimmed to the window by UTF-8 bytes / 3, in pairs); 0...20,
+  default 4. The old server mode never sent history; conversation-id code removed.
+- Endpoints (`Core/Networking/APIActivity.swift`, `Features/Settings/EndpointsView.swift`): 17 endpoints, recorded by a
+  per-task delegate on all 27 URLSession calls (test proves a streamed request is recorded).
+- Pinecone: new indexes use Settings' cloud, region, metric (`pinecone.metric`); serverless region list; invalid saved
+  or imported regions corrected and stored; `PineconeAPIVersions`; a stored namespace version below 2025-10 reads as
+  2025-10. Documents' New index alert names where the index will be made.
+- Review: a reviewer agent's 10 findings were applied (footer facts, import normalization, code interpreter heuristic,
+  namespace version, web search default, demo guard on Check now, fine-tunes, pair trimming, comments, 4,000 default).
+- Docs: README, ARCHITECTURE, PRIVACY. Notion rows (IDs in `.claude/skills/notion-roadmap/SKILL.md`): "Conversation memory
+  never reached OpenAI", "Answer settings follow the selected model", "Every endpoint listed, with its settings and
+  requests", "Documents tab in the app's style" (all In Progress, close on a device check), "Streamed answers were
+  written twice" (Completed), Trap "OpenAI's truncation: auto would drop the passages"; notes on three older rows.
 
 ## Active Constraints
-- Build and test only on simulator `OpenCone` `8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D`. Never on `OpenCone demo`
-  (`5D5E8E61-...`), which holds Gunnar's keys.
-- Run `pgrep -x xcodebuild` first; another session (OpenResponses UI tests) built repeatedly on 2026-10-01.
-- Every test run rewrites `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist` (the test uses
-  `UserDefaults(suiteName: #file)`); restore it with `gtimeout 60 git checkout -- <that file>` before committing.
-- Commit to `main` only when Gunnar asks; no co-author trailers; push only when he asks.
-
-## Working Set
-- `OpenCone/Features/Search/SearchViewModel.swift`: `performSearch`, `searchOpenIndex`, `searchNamespaces`,
-  `searchEverything`, `broadSearchRequests`, `mergedAcrossSearches`, `routeAndAnswer`, `cancelActiveSearch`,
-  `retryLastAnswer`, `setNamespace`, `namespacesToSearch`, `setIndex(_:included:)`.
-- `OpenCone/Features/Settings/SettingsViewModel.swift`: `searchScope`, `persistRequestSettings`, `resetAnswerSettings`.
-- The new view files listed above; `OpenConeTests/Search/` (MarkdownParserTests 15, SearchScopeTests 15).
+- Simulator `OpenCone` `8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D` only; never `OpenCone demo` (holds Gunnar's keys). It
+  shuts down after a test run: `xcrun simctl boot` it before installing.
+- `pgrep -x xcodebuild` first. Test runs rewrite `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist`:
+  `gtimeout 60 git checkout --` it before committing.
+- Simulator-tool screenshots lag a frame; use `xcrun simctl io <udid> screenshot` after a 2 s wait.
+- `CLAUDE.md` is stale in two places, left for Gunnar: its Rules still call the prompt-cache work in OpenAIService
+  uncommitted (it is in 7105807), and its code map lacks ModelLimits, RequestSettings, APIActivity, EndpointsView.
+- Commit to `main`, no co-author trailers; push and ship when Gunnar asks.
 
 ## Verification
-- `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "id=8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D"
-  -derivedDataPath /private/tmp/opencone-dd build` -> `** BUILD SUCCEEDED **`, no warnings beyond the 10 old
-  `indexHost` ones.
-- `xcodebuild test` (same project, scheme, destination, DerivedData) `-collect-test-diagnostics never -quiet` ->
-  xcresult summary `{'result': 'Passed', 'totalTestCount': 169, 'passedTests': 169, 'failedTests': 0}` (2026-10-01,
-  after the review fixes; new: `SettingsAutoSaveTests`, `OpenAIStreamTests`, more `SearchScopeTests`).
-- Release: `xcodebuild ... -configuration Release -destination "generic/platform=iOS Simulator" -derivedDataPath
-  /private/tmp/opencone-release-dd build CODE_SIGNING_ALLOWED=NO` -> `** BUILD SUCCEEDED **`; `strings` on the binary
-  finds 0 matches for the demo text "Baxter Sigma".
-- `python3 scripts/secret_scan.py` -> "No secret patterns detected."
-- Demo screenshots (simctl, light, dark, accessibility-large) checked: answer with table, list, quote, code block and
-  source chips; empty state; Where to search in Auto and One index; answer settings; Choose Model; sources; passage;
-  Settings.
-- Not verified: anything against live OpenAI or Pinecone; the UI on a device; VoiceOver.
+- `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination "id=8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D"
+  -derivedDataPath /private/tmp/opencone-dd -quiet -collect-test-diagnostics never -resultBundlePath <path>` ->
+  `{'result': 'Passed', 'totalTestCount': 205, 'passedTests': 205, 'failedTests': 0, 'skippedTests': 0}`.
+- `python3 scripts/secret_scan.py` -> "No secret patterns detected."; no `* 2.*` conflict copies.
+- Ship build from `git checkout-index` in `/private/tmp/opencone-ship-9c9578c` -> `** BUILD SUCCEEDED **`, signed
+  "Apple Development: Gunnar Hostetler"; `devicectl device install app` succeeded; launch -> Locked.
+- Simulator demo screenshots: Settings General, Answers for gpt-6-sol, gpt-6.1-sol, gpt-5.2-pro, gpt-4o; Advanced; Endpoints.
+- Docs read 2026-10-01: OpenAI create-response reference, Flex and Fast guides, pricing page, 20 model pages; Pinecone
+  versioning page, 2025 and 2026 changelogs, "Create an index" regions table.
 
 ## Blockers / Unknowns
-- Documents tab: not redesigned yet (`Features/Documents/DocumentsViewRedesign.swift`, `DocumentDetailsView.swift`);
-  Gunnar, 2026-10-01: "the whole documents tab still kinda looks like shit, you didnt do anythign to it".
-- Roadmap rows for this work were updated 2026-10-01 (IDs in `.claude/skills/notion-roadmap/SKILL.md`): new rows for
-  the Ask screen, Everything, dropped settings changes, Stop, and the open "Chunk size, overlap, cloud and region
-  settings never reach uploads"; "\"All\" namespaces ..." and "Remove the orphaned DocumentsView.swift" Completed.
-  Not yet recorded there: the doubled streamed answer fix and the review fixes.
-- Routing live check still open: needs Gunnar's iPhone with 2+ indexes or namespaces (his project had one index,
-  "test", 109 vectors, one namespace). The 0.6 model-match threshold is unmeasured.
+- Live behavior unverified: plain-string history accepted by the Responses API; Flex/Fast accepted for the selected
+  model; a 900 s `timeoutInterval` on `URLSession.shared`; Endpoints filling with real requests.
+- Still open: chunk size/overlap never reach the chunker (Notion row To Do); Pinecone control/data planes send 2024-07
+  (latest stable 2026-07); unused `fetchVectors`/`fetchVectorsByMetadata` (a task chip was offered).
 
 ## Exact Next Action
-Redesign the Documents tab in the same OpenResponses style as Ask and Settings (`DocumentsViewRedesign.swift`,
-`DocumentDetailsView.swift`): system colors and text styles, grouped lists, Index and Namespace naming, the upload
-flow; check it in the demo (`-OpenConeDemo`) on the `OpenCone` simulator, run the tests, then commit, push and build
-to Gunnar's iPhone (he asked for that flow on 2026-10-01).
+With Gunnar's iPhone unlocked, run `xcrun devicectl device process launch --terminate-existing --console --device
+00008140-001130DA1863C01C AI.FascinAIting.OpenCone`, have him ask a question and then a follow-up that depends on the
+first answer, and read the log for the Responses request's status; then check Settings > Advanced > Endpoints shows
+those calls. Mark the four In Progress Notion rows from this session by what that shows.
