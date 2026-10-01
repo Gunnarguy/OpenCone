@@ -12,9 +12,15 @@ in one's pinecone project ID") beside smaller nets ("per index namespaces"). The
 its live check (Blockers).
 
 ## Status
-Overhaul built (Debug and Release) and tested on the simulator, then committed to `main` and pushed on 2026-10-01 at
-Gunnar's request ("commit and push it, build it to my iphone"), in the commit after d8f5d8b. A reviewer agent was still
-reviewing the change at the commit; its findings were not yet read or applied.
+Overhaul committed and pushed 2026-10-01 as 807f7cc at Gunnar's request and installed on his iPhone. A reviewer agent
+then found 11 problems; the fixes are in the next commit (also pushed and installed): an auto-save that re-saved every
+second forever, edited keys never saved, Stop missing the Pinecone check and the step after reranking, failed
+searches left without an answer, a partly streamed answer stuck streaming, a left-out index searched after leaving One
+index, Everything ordering scores from different indexes as if comparable, euclidean scores read backwards, the reset
+keeping cached index names, retry overwriting a draft, demo mode saving settings. Also fixed: every streamed answer
+was shown twice, because `response.output_item.done` repeats the full text after the deltas (OpenAI's streaming
+events reference, read 2026-10-01). Gunnar's next request (2026-10-01): the Documents tab still looks bad and wasn't
+redesigned; it is next.
 
 ## Completed (committed after d8f5d8b)
 - Answers render Markdown: `Features/Search/Components/MarkdownText.swift` (own block parser for headings, nested
@@ -68,7 +74,8 @@ reviewing the change at the commit; its findings were not yet read or applied.
   -derivedDataPath /private/tmp/opencone-dd build` -> `** BUILD SUCCEEDED **`, no warnings beyond the 10 old
   `indexHost` ones.
 - `xcodebuild test` (same project, scheme, destination, DerivedData) `-collect-test-diagnostics never -quiet` ->
-  xcresult summary `{'result': 'Passed', 'totalTestCount': 157, 'passedTests': 157, 'failedTests': 0}` (2026-10-01).
+  xcresult summary `{'result': 'Passed', 'totalTestCount': 169, 'passedTests': 169, 'failedTests': 0}` (2026-10-01,
+  after the review fixes; new: `SettingsAutoSaveTests`, `OpenAIStreamTests`, more `SearchScopeTests`).
 - Release: `xcodebuild ... -configuration Release -destination "generic/platform=iOS Simulator" -derivedDataPath
   /private/tmp/opencone-release-dd build CODE_SIGNING_ALLOWED=NO` -> `** BUILD SUCCEEDED **`; `strings` on the binary
   finds 0 matches for the demo text "Baxter Sigma".
@@ -79,19 +86,17 @@ reviewing the change at the commit; its findings were not yet read or applied.
 - Not verified: anything against live OpenAI or Pinecone; the UI on a device; VoiceOver.
 
 ## Blockers / Unknowns
-- Reviewer findings: unread at the commit. If this session ended first, run a fresh `reviewer` agent over
-  `gtimeout 60 git diff d8f5d8b` with the change list above, and fix what it confirms.
-- Notion roadmap not yet updated for this work (IDs in `.claude/skills/notion-roadmap/SKILL.md`): set
-  "\"All\" namespaces searches only the default namespace" and "Remove the orphaned DocumentsView.swift" to fixed;
-  repoint "Answer sources showed code instead of file names" `Where` to `Components/MessageBubble.swift`; add rows for
-  the Ask screen overhaul, the Everything width, the dropped auto-save changes and Stop during search, and a To Do Fix
-  "Chunk size, overlap, cloud and region settings never reach uploads" (`TextProcessorService` uses
-  `Configuration` constants; `DocumentsViewModel.createIndex` reads `pinecone.cloud`/`pinecone.region`, keys nothing
-  writes).
+- Documents tab: not redesigned yet (`Features/Documents/DocumentsViewRedesign.swift`, `DocumentDetailsView.swift`);
+  Gunnar, 2026-10-01: "the whole documents tab still kinda looks like shit, you didnt do anythign to it".
+- Roadmap rows for this work were updated 2026-10-01 (IDs in `.claude/skills/notion-roadmap/SKILL.md`): new rows for
+  the Ask screen, Everything, dropped settings changes, Stop, and the open "Chunk size, overlap, cloud and region
+  settings never reach uploads"; "\"All\" namespaces ..." and "Remove the orphaned DocumentsView.swift" Completed.
+  Not yet recorded there: the doubled streamed answer fix and the review fixes.
 - Routing live check still open: needs Gunnar's iPhone with 2+ indexes or namespaces (his project had one index,
   "test", 109 vectors, one namespace). The 0.6 model-match threshold is unmeasured.
 
 ## Exact Next Action
-Apply the reviewer's confirmed findings (or run the review as above), rerun the `xcodebuild test` command above and
-restore the test plist, then update the Notion rows listed under Blockers. Commit and push the fixes and rebuild to
-Gunnar's iPhone only when he asks, with the commands in CLAUDE.md `## Ship`.
+Redesign the Documents tab in the same OpenResponses style as Ask and Settings (`DocumentsViewRedesign.swift`,
+`DocumentDetailsView.swift`): system colors and text styles, grouped lists, Index and Namespace naming, the upload
+flow; check it in the demo (`-OpenConeDemo`) on the `OpenCone` simulator, run the tests, then commit, push and build
+to Gunnar's iPhone (he asked for that flow on 2026-10-01).

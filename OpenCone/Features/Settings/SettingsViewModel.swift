@@ -207,7 +207,10 @@ final class SettingsViewModel: ObservableObject {
         loadSettings()
         isInitialLoad = false
 
+        // Demo mode shows sample content: it neither saves the person's settings nor checks their keys
+        guard !DemoMode.isActive else { return }
         setupAutoSave()
+        setupKeySaving()
         setupValidation()
     }
 
@@ -217,62 +220,62 @@ final class SettingsViewModel: ObservableObject {
         // Break up publishers into smaller groups to help compiler type-checking
         // Use .dropFirst() to skip initial values on subscription
         let chunkPublishers: [AnyPublisher<Void, Never>] = [
-            $defaultChunkSize.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $defaultChunkOverlap.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $embeddingModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $completionModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $temperature.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $topP.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $reasoningEffort.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $conversationMode.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultChunkSize.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultChunkOverlap.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $embeddingModel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $completionModel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $temperature.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $topP.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $reasoningEffort.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $conversationMode.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let searchPublishers: [AnyPublisher<Void, Never>] = [
-            $defaultTopK.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $enforcePreferredIndex.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $preferredIndexName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $preferredNamespace.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $metadataPresets.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $embeddingDimension.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $showAnswerPanelBelowChat.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $logMinimumLevel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $useCustomModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $customCompletionModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $defaultTopK.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $enforcePreferredIndex.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $preferredIndexName.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $preferredNamespace.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $metadataPresets.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $embeddingDimension.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $showAnswerPanelBelowChat.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $logMinimumLevel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $useCustomModel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $customCompletionModel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let advancedPublishers: [AnyPublisher<Void, Never>] = [
-            $embeddingBatchSize.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $similarityThreshold.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $includeMetadataInResults.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $maxContextTokens.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $maxOutputTokens.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $streamingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $webSearchEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $codeInterpreterEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $searchScope.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $requestTimeoutSeconds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $maxRetries.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $verboseLogging.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $embeddingBatchSize.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $similarityThreshold.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $includeMetadataInResults.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $maxContextTokens.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $maxOutputTokens.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $streamingEnabled.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $webSearchEnabled.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $codeInterpreterEnabled.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $searchScope.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $requestTimeoutSeconds.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $maxRetries.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $verboseLogging.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let retrievalPublishers: [AnyPublisher<Void, Never>] = [
-            $hybridSearchEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $hybridSearchAlpha.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $rerankingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $rerankModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $rerankTopN.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $hybridSearchEnabled.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $hybridSearchAlpha.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankingEnabled.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankModel.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankTopN.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let pineconePublishers: [AnyPublisher<Void, Never>] = [
-            $showDebugInfo.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $maxConversationTurns.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $systemPromptOverride.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeCloud.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeRegion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeControlPlaneVersion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeDataPlaneVersion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeNamespaceVersion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $pineconeMetadataFetchVersion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $showDebugInfo.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $maxConversationTurns.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $systemPromptOverride.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeCloud.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeRegion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeControlPlaneVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeDataPlaneVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeNamespaceVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $pineconeMetadataFetchVersion.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let allPublishers = chunkPublishers + searchPublishers + advancedPublishers + retrievalPublishers + pineconePublishers
@@ -282,6 +285,19 @@ final class SettingsViewModel: ObservableObject {
             .sink { [weak self] Void in
                 guard let self = self, self.autoSaveEnabled, !self.isInitialLoad else { return }
                 self.performAutoSave()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Save an edited key to the Keychain. Keys aren't in the auto-save, which writes every preference.
+    private func setupKeySaving() {
+        Publishers.CombineLatest3($openAIAPIKey, $pineconeAPIKey, $pineconeProjectId)
+            .dropFirst()
+            .debounce(for: RunLoop.SchedulerTimeType.Stride(0.6), scheduler: RunLoop.main)
+            .removeDuplicates { $0 == $1 }
+            .sink { [weak self] _ in
+                guard let self, !self.isInitialLoad else { return }
+                self.saveAPIKeys()
             }
             .store(in: &cancellables)
     }
@@ -342,6 +358,8 @@ final class SettingsViewModel: ObservableObject {
     /// search read them there), so a change takes effect on the next question without waiting
     /// for the debounced save
     func persistRequestSettings() {
+        // Demo mode's sample settings stay in memory
+        guard !DemoMode.isActive else { return }
         defaults.set(completionModel, forKey: "completionModel")
         defaults.set(useCustomModel, forKey: "useCustomModel")
         defaults.set(customCompletionModel, forKey: "customCompletionModel")
@@ -570,8 +588,12 @@ final class SettingsViewModel: ObservableObject {
         UserDefaults.standard.set(showAnswerPanelBelowChat, forKey: "ui.showAnswerPanelBelowChat")
 
         // Search defaults
-        defaultTopK = max(1, min(defaultTopK, 100))
-        defaults.set(defaultTopK, forKey: SettingsStorageKeys.searchTopK)
+        // Assigned only when clamping changes it: assigning a watched property restarts the auto-save
+        let clampedTopK = max(1, min(defaultTopK, 100))
+        if clampedTopK != defaultTopK {
+            defaultTopK = clampedTopK
+        }
+        defaults.set(clampedTopK, forKey: SettingsStorageKeys.searchTopK)
         defaults.set(enforcePreferredIndex, forKey: SettingsStorageKeys.searchEnforcePreferredIndex)
         let trimmedIndex = preferredIndexName.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedIndex.isEmpty {
@@ -914,7 +936,9 @@ final class SettingsViewModel: ObservableObject {
 
     private func persistMetadataPresets() {
         let trimmed = metadataPresets.map { $0.trimmed() }.filter { $0.isValid }
-        metadataPresets = trimmed
+        if trimmed != metadataPresets {
+            metadataPresets = trimmed
+        }
 
         guard !trimmed.isEmpty else {
             defaults.removeObject(forKey: SettingsStorageKeys.searchMetadataPresets)
@@ -968,6 +992,7 @@ final class SettingsViewModel: ObservableObject {
             "conversation.systemPromptOverride",
             SettingsStorageKeys.searchScope,
             SettingsStorageKeys.indexRoutingEnabled,
+            "pinecone.cachedIndexList",
         ]
 
         keysToClear.forEach { defaults.removeObject(forKey: $0) }

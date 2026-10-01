@@ -4,7 +4,13 @@ import UIKit
 
 /// One message, in the OpenResponses style: the question in an accent bubble on the right, the
 /// answer in a gray bubble with its Markdown drawn, the documents it cites, and quick actions.
-struct MessageBubble: View {
+/// Equatable on what it shows, so while one answer streams the others keep their drawn Markdown
+/// instead of parsing it again for every new piece of text (the closures change on every update).
+struct MessageBubble: View, Equatable {
+    nonisolated static func == (lhs: MessageBubble, rhs: MessageBubble) -> Bool {
+        lhs.message == rhs.message && lhs.status == rhs.status && lhs.canRetry == rhs.canRetry
+    }
+
     let message: ChatMessage
     /// What the search is doing while this answer waits for its first words
     var status: String? = nil

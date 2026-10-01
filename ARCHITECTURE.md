@@ -96,7 +96,7 @@ flowchart TD
 ### ViewModels (State Orchestration)
 - All view models inherit from `ObservableObject` and utilize `@Published` properties.
 - **[DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift)**: Maintains the queue of local files undergoing extraction, chunking, and upload. Exposes metrics like total namespace counts.
-- **[SearchViewModel.swift](OpenCone/Features/Search/SearchViewModel.swift)**: Runs a question at the width chosen under Where to search (`SearchScope`): `routeAndAnswer` (Auto), `searchEverything` (every namespace of every included index, merged by rank then score), or `searchOpenIndex` (the open index, in one namespace or each of them through `searchNamespaces`). Each answer's message keeps the passages it was written from (`ChatMessage.sources`).
+- **[SearchViewModel.swift](OpenCone/Features/Search/SearchViewModel.swift)**: Runs a question at the width chosen under Where to search (`SearchScope`): `routeAndAnswer` (Auto), `searchEverything` (every namespace of every included index, merged by rank, then by how far each passage stands above the rest of its own search, with a euclidean index's lowest distance read as its best), or `searchOpenIndex` (the open index, in one namespace or each of them through `searchNamespaces`). Each answer's message keeps the passages it was written from (`ChatMessage.sources`).
 
 ### Services Layer
 - **[PineconeService.swift](OpenCone/Services/PineconeService.swift)**: Implements REST operations for index control (list, create, delete) and vector data actions (upsert, query, delete). Features stateful region/host discovery and circuit-breaking error protection.

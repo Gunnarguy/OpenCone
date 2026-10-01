@@ -40,6 +40,16 @@ enum SearchError: LocalizedError {
         }
     }
 
+    /// A failure of one question's search or answer, shown as that question's answer
+    var belongsToAnswer: Bool {
+        switch self {
+        case .embeddingFailed, .queryFailed, .answerGenerationFailed:
+            return true
+        case .indexLoadingFailed, .indexSetFailed, .namespaceLoadingFailed, .missingSelection:
+            return false
+        }
+    }
+
     // Optionally include the underlying error for logging/debugging
     var underlyingError: Error? {
         switch self {
@@ -705,9 +715,9 @@ final class SearchViewModel: ObservableObject {
         return hasDigit || hasKeyword
     }
 
-    /// Perform a search with the current query
-    func performSearch() async {
-        let currentQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Ask a question: the one given, or the one typed in the composer, which is then cleared
+    func performSearch(question: String? = nil) async {
+        let currentQuery = (question ?? searchQuery).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !currentQuery.isEmpty else { 
             handleError(SearchError.missingSelection("a query"))
             return
@@ -722,33 +732,36 @@ final class SearchViewModel: ObservableObject {
         resetSearchState(isPreparingForSearch: true)
         // Append user message to chat history after resetting state
         self.messages.append(ChatMessage(role: .user, text: currentQuery))
-        self.searchQuery = ""
+        if question == nil {
+            self.searchQuery = ""
+        }
 
         // Trace id for this search
         let traceId = UUID().uuidString
         self.logger.log(level: .info, message: "Search started", context: "traceId=\(traceId)")
 
-        // Preflight Pinecone health
-        let healthy = await pineconeService.healthCheck()
-        if !healthy || pineconeService.isCircuitOpen { 
-            self.isSearching = false
-            // An answer that failed, so the question can be retried from the chat
-            self.messages.append(ChatMessage(
-                role: .assistant,
-                text: "",
-                status: .error,
-                error: "Pinecone didn't respond. Try again in a moment."
-            ))
-            self.logger.log(level: .warning, message: "Pinecone preflight failed", context: "traceId=\(traceId)")
-            return
-        }
-
-        // Record search start time
-        let searchStartTime = Date()
-
-        // Every path runs in one task, so Stop cancels the searches too, not only the answer
+        // Every step runs in one task, the Pinecone check included, so Stop cancels the whole search
+        // and not only the streamed answer
         let task = Task { [weak self] in
             guard let self else { return }
+
+            // Preflight Pinecone health
+            let healthy = await self.pineconeService.healthCheck()
+            if Task.isCancelled { return }
+            if !healthy || self.pineconeService.isCircuitOpen {
+                self.isSearching = false
+                // An answer that failed, so the question can be retried from the chat
+                self.messages.append(ChatMessage(
+                    role: .assistant,
+                    text: "",
+                    status: .error,
+                    error: "Pinecone didn't respond. Try again in a moment."
+                ))
+                self.logger.log(level: .warning, message: "Pinecone preflight failed", context: "traceId=\(traceId)")
+                return
+            }
+
+            let searchStartTime = Date()
             if self.searchesEverything {
                 await self.searchEverything(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
             } else if self.shouldRouteSearch {
@@ -844,6 +857,7 @@ final class SearchViewModel: ObservableObject {
 
             // Apply reranking if enabled
             let finalResults = await rerankIfEnabled(matches, query: currentQuery, traceId: traceId)
+            if Task.isCancelled { return }
 
             let avgScore = finalResults.isEmpty ? Float(0) : finalResults.map { $0.score }.reduce(0, +) / Float(finalResults.count)
             let filterDescription = metadataFilters.isEmpty ? "none" : metadataFilters.map { "\($0.key)=\($0.value.displayValue)" }.joined(separator: ", ")
@@ -951,7 +965,17 @@ final class SearchViewModel: ObservableObject {
         }
 
         logger.log(level: .info, message: "Searched \(targets.count) namespaces", context: "index=\(index); matches=\(merged.count); traceId=\(traceId)")
-        return Array(merged.sorted { $0.score > $1.score }.prefix(topK))
+        // A euclidean index scores by squared distance, so its best match has the lowest score
+        // (docs.pinecone.io, "Create an index", similarity metrics, read 2026-10-01)
+        let lowerIsBetter = Self.lowerScoreIsBetter(metric: indexMetric)
+        let ordered = merged.sorted { lowerIsBetter ? $0.score < $1.score : $0.score > $1.score }
+        return Array(ordered.prefix(topK))
+    }
+
+    /// Pinecone's euclidean metric returns squared distances; cosine and dotproduct return
+    /// similarities
+    static func lowerScoreIsBetter(metric: String?) -> Bool {
+        metric?.lowercased() == "euclidean"
     }
 
     /// Rerank with Pinecone when reranking is on; on failure the results keep their vector order
@@ -1287,12 +1311,16 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
-        let merged = Self.mergedAcrossSearches(searches.filter { !$0.failed }.map(\.results))
+        let succeeded = searches.filter { !$0.failed }
+        let merged = Self.mergedAcrossSearches(
+            succeeded.map(\.results),
+            lowerScoreIsBetter: succeeded.map { Self.lowerScoreIsBetter(metric: profilesByName[$0.request.index]?.metric) }
+        )
         let ranked = await rerankIfEnabled(Array(merged.prefix(Constants.broadRerankCandidates)), query: query, traceId: traceId)
         if Task.isCancelled { return }
 
         let useCodeInterpreter = shouldUseCodeInterpreter(for: query)
-        let kept = Array(ranked.prefix(useCodeInterpreter ? 3 : 8))
+        let kept = Array(ranked.prefix(Self.broadKeptCount(searchCount: succeeded.count, usesCodeInterpreter: useCodeInterpreter)))
         let tagged = PassageText.taggedContext(kept, maxCharacters: useCodeInterpreter ? 1200 : 2000, namingScopes: true)
         var context = tagged.text
         let failed = searches.filter(\.failed).map(\.request.scopeLabel)
@@ -1322,6 +1350,13 @@ final class SearchViewModel: ObservableObject {
         )
     }
 
+    /// Passages an Everything answer gets: the usual 8 (3 with code interpreter), or one for every
+    /// search when there are more searches, so each search's best passage reaches the answer;
+    /// scores from different indexes can't decide which ones to drop. At most the search limit.
+    static func broadKeptCount(searchCount: Int, usesCodeInterpreter: Bool) -> Int {
+        min(max(usesCodeInterpreter ? 3 : 8, searchCount), Constants.broadSearchLimit)
+    }
+
     /// One search per namespace that holds passages, in every index whose embedding model is
     /// known, each index's largest namespaces first. Indexes take turns, so when the limit cuts
     /// the list short, every index still gets its largest namespaces searched.
@@ -1347,21 +1382,42 @@ final class SearchViewModel: ObservableObject {
         return requests
     }
 
-    /// Every search's best passage first, then every search's second, and so on; within each
-    /// round, higher scores first. Scores from different indexes aren't on one scale, so rank
-    /// decides first and the score only orders passages of the same rank.
-    static func mergedAcrossSearches(_ lists: [[SearchResultModel]]) -> [SearchResultModel] {
-        var ranked: [(rank: Int, result: SearchResultModel)] = []
-        for list in lists {
+    /// Every search's best passage first, then every search's second, and so on. Raw scores from
+    /// different indexes aren't on one scale (different models, metrics and corpora), so within a
+    /// round passages are ordered by how far each stands above the rest of its own search: its
+    /// score's distance from that search's mean, in that search's standard deviations, flipped for
+    /// a metric where lower is better.
+    static func mergedAcrossSearches(_ lists: [[SearchResultModel]], lowerScoreIsBetter: [Bool] = []) -> [SearchResultModel] {
+        var ranked: [(rank: Int, standing: Double, result: SearchResultModel)] = []
+        for (position, list) in lists.enumerated() {
+            let flip = position < lowerScoreIsBetter.count && lowerScoreIsBetter[position]
+            let scores = list.map { Double($0.score) }
+            let count = Double(max(scores.count, 1))
+            let mean = scores.reduce(0, +) / count
+            let spread = (scores.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / count).squareRoot()
             for (rank, result) in list.enumerated() {
-                ranked.append((rank: rank, result: result))
+                var standing = spread > 0 ? (Double(result.score) - mean) / spread : 0
+                if flip { standing = -standing }
+                ranked.append((rank: rank, standing: standing, result: result))
             }
         }
         ranked.sort { lhs, rhs in
             if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
-            return lhs.result.score > rhs.result.score
+            return lhs.standing > rhs.standing
         }
         return ranked.map { $0.result }
+    }
+
+    /// After the scope changes: Auto and Everything search only included indexes, and the open
+    /// index is their fallback and the one filters apply to, so it must be one of them
+    func scopeDidChange() async {
+        guard settingsViewModel.searchScope != .oneIndex,
+              let open = selectedIndex, excludedIndexes.contains(open),
+              let replacement = includedIndexes.first
+        else {
+            return
+        }
+        await setIndex(replacement)
     }
 
     /// Earlier turns for the router, without the question just asked
@@ -1544,6 +1600,9 @@ final class SearchViewModel: ObservableObject {
         traceId: String,
         searchStartTime: Date
     ) async {
+        // Stop pressed during the search: `cancelActiveSearch` has already answered the question
+        if Task.isCancelled { return }
+
         // Prepare streaming assistant message; its passages are there from the start, so a tag is
         // tappable while the answer is still being written
         let assistantMessageId = UUID()
@@ -1775,7 +1834,9 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// Ask the question behind the latest answer again, in place of that answer
+    /// Ask the question behind the latest answer again. On this iPhone the new answer replaces the
+    /// old one; with memory kept by OpenAI, OpenAI's conversation keeps both. A question being typed
+    /// in the composer stays there.
     func retryLastAnswer() async {
         guard !isSearching,
               let answerPosition = messages.lastIndex(where: { $0.role == .assistant }),
@@ -1786,8 +1847,7 @@ final class SearchViewModel: ObservableObject {
         }
         let question = messages[questionPosition].text
         messages.removeSubrange(questionPosition...answerPosition)
-        searchQuery = question
-        await performSearch()
+        await performSearch(question: question)
     }
 
     // MARK: - Export Conversation
@@ -1938,28 +1998,40 @@ final class SearchViewModel: ObservableObject {
         self.errorMessage = nil
     }
 
-    /// Handles errors by logging them and updating the UI.
+    /// Handles errors by logging them and updating the UI. A failure of a question's search or
+    /// answer becomes that question's answer, where it can be retried; anything else shows in the
+    /// banner.
     /// - Parameter error: The SearchError that occurred.
     @MainActor
     private func handleError(_ error: SearchError) {
-        self.errorMessage = "\(error.localizedDescription) \(error.recoverySuggestion ?? "")"
         self.isSearching = false
 
-        // Mark streaming assistant message as error if present
-        if let lastIdx = self.messages.lastIndex(where: { $0.role == .assistant }) {
-            if self.messages[lastIdx].status == .streaming && self.messages[lastIdx].text.isEmpty {
-                var msg = self.messages[lastIdx]
-                msg.status = .error
-                msg.error = error.localizedDescription
-                self.messages[lastIdx] = msg
-            }
-        }
-
+        let detail = [error.localizedDescription, error.underlyingError?.localizedDescription]
+            .compactMap { $0 }
+            .joined(separator: " ")
         self.logger.log(
             level: ProcessingLogEntry.LogLevel.error,
             message: error.localizedDescription,
             context: error.underlyingError?.localizedDescription ?? "No underlying error details."
         )
+
+        if error.belongsToAnswer {
+            if self.messages.last?.role == .user {
+                self.messages.append(ChatMessage(role: .assistant, text: "", status: .error, error: detail))
+                return
+            }
+            if let lastIdx = self.messages.lastIndex(where: { $0.role == .assistant }),
+               self.messages[lastIdx].status == .streaming {
+                // Partway through: what arrived stays, marked as failed
+                var msg = self.messages[lastIdx]
+                msg.status = .error
+                msg.error = detail
+                self.messages[lastIdx] = msg
+                return
+            }
+        }
+
+        self.errorMessage = "\(error.localizedDescription) \(error.recoverySuggestion ?? "")"
 
         // Auto-dismiss error banner after a short delay if it hasn't changed
         let currentBanner = self.errorMessage

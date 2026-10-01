@@ -226,6 +226,7 @@ struct SearchScopeSheet: View {
             .onChange(of: settings.searchScope) { _, _ in
                 settings.persistRequestSettings()
                 viewModel.scheduleIndexSurvey()
+                Task { await viewModel.scopeDidChange() }
             }
         }
         .presentationDetents([.medium, .large])

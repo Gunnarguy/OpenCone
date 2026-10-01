@@ -1,9 +1,10 @@
 import Foundation
 
 /// Sample content for screenshots and checks of the interface without keys. Launched with
-/// `-OpenConeDemo`, the app opens on sample indexes and a sample conversation and makes no
-/// requests; `-OpenConeDemoScreen <name>` also opens one screen (empty, scope, scope-one,
-/// answer-settings, models, sources, passage, settings). Debug builds only: in Release,
+/// `-OpenConeDemo`, the app opens on sample indexes and a sample conversation; it makes no requests
+/// unless a question is sent, and saves no settings or keys (the settings stay in memory and the
+/// keys aren't checked). `-OpenConeDemoScreen <name>` also opens one screen (empty, scope,
+/// scope-one, answer-settings, models, sources, passage, settings). Debug builds only: in Release,
 /// `isActive` is always false.
 enum DemoMode {
     static var isActive: Bool {

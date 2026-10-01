@@ -169,6 +169,7 @@ struct SearchView: View {
                     onShowSources: { presentedSources = .all(message) },
                     onRetry: { Task { await viewModel.retryLastAnswer() } }
                 )
+                .equatable()
                 .id(message.id)
             }
 

@@ -446,6 +446,11 @@ final class OpenAIService: Sendable {
         var completedCalled = false
         var eventCount = 0
         var deltaCount = 0
+        // Output items whose text already arrived as deltas. `response.output_item.done` repeats an
+        // item's full text (OpenAI's Responses streaming events reference, read 2026-10-01), so it is
+        // used only for an item that streamed no text, or every answer would show twice.
+        var streamedItemIDs = Set<String>()
+        var streamedTextWithoutItemID = false
         func completeOnce() {
             if !completedCalled {
                 completedCalled = true
@@ -536,6 +541,11 @@ final class OpenAIService: Sendable {
                                     if deltaCount <= 3 {
                                         logger.log(level: .debug, message: "Extracted delta: '\(delta.prefix(20))'")
                                     }
+                                    if let itemID = obj["item_id"] as? String {
+                                        streamedItemIDs.insert(itemID)
+                                    } else {
+                                        streamedTextWithoutItemID = true
+                                    }
                                     onTextDelta(delta)
                                 } else {
                                     // Only log warnings occasionally to avoid spam
@@ -559,8 +569,11 @@ final class OpenAIService: Sendable {
                         if let data = payload.data(using: .utf8),
                            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
                         {
-                            // Check for message content in the done event
-                            if let item = obj["item"] as? [String: Any],
+                            // The item's full text, for an item that streamed none
+                            let itemID = (obj["item"] as? [String: Any])?["id"] as? String
+                            let alreadyStreamed = itemID.map { streamedItemIDs.contains($0) } ?? streamedTextWithoutItemID
+                            if !alreadyStreamed,
+                               let item = obj["item"] as? [String: Any],
                                let content = item["content"] as? [[String: Any]]
                             {
                                 for c in content {
