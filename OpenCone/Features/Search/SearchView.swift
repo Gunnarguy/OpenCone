@@ -25,7 +25,7 @@ struct SearchView: View {
             } else {
                 VStack(spacing: 0) {
                     // Compact context selector
-                    CompactContextSelector(viewModel: viewModel)
+                    CompactContextSelector(viewModel: viewModel, settings: viewModel.settingsViewModel)
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
@@ -157,7 +157,9 @@ struct SearchView: View {
 
 struct CompactContextSelector: View { 
     @ObservedObject var viewModel: SearchViewModel
+    @ObservedObject var settings: SettingsViewModel
     @Environment(\.theme) private var theme
+    @State private var showIndexSummaries = false
 
     private var displayIndex: String {
         viewModel.selectedIndex ?? "..."
@@ -168,10 +170,27 @@ struct CompactContextSelector: View {
         return ns.isEmpty ? "All" : ns
     }
 
+    /// True when a question is routed across indexes instead of searching only the open one
+    private var isRouting: Bool {
+        settings.indexRoutingEnabled && viewModel.shouldRouteSearch
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             // Index menu
             Menu {
+                if viewModel.pineconeIndexes.count >= 2 || viewModel.namespaces.count >= 2 {
+                    Section {
+                        Toggle(isOn: $settings.indexRoutingEnabled) {
+                            Label("Search across indexes", systemImage: "arrow.triangle.branch")
+                        }
+                        Button {
+                            showIndexSummaries = true
+                        } label: {
+                            Label("Index summaries", systemImage: "text.alignleft")
+                        }
+                    }
+                }
                 ForEach(viewModel.pineconeIndexes, id: \.self) { index in
                     Button {
                         Task { await viewModel.setIndex(index) }
@@ -186,7 +205,7 @@ struct CompactContextSelector: View {
                 }
             } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: "cylinder.fill")
+                    Image(systemName: isRouting ? "arrow.triangle.branch" : "cylinder.fill")
                         .font(.system(size: 9))
                     Text(displayIndex)
                         .lineLimit(1)
@@ -198,8 +217,12 @@ struct CompactContextSelector: View {
                 .padding(.horizontal, 8)
 .background(Capsule().fill(theme.primaryLight))
     .foregroundColor(theme.primaryColor)
+                .accessibilityLabel(isRouting ? "Searching across indexes, \(displayIndex) open" : "Index \(displayIndex)")
             }
 .disabled(viewModel.isSearching)
+            .sheet(isPresented: $showIndexSummaries) {
+                IndexSummariesSheet(viewModel: viewModel)
+            }
 
             // Namespace menu
             if viewModel.selectedIndex != nil {
@@ -342,6 +365,20 @@ struct QuickSettingsPopover: View {
         Configuration.isReasoningModel(settings.completionModel)
     }
 
+    /// Short labels for the segmented effort picker
+    static func effortLabel(_ level: String) -> String {
+        switch level {
+        case "none": return "Off"
+        case "minimal": return "Min"
+        case "low": return "Low"
+        case "medium": return "Med"
+        case "high": return "High"
+        case "xhigh": return "XHigh"
+        case "max": return "Max"
+        default: return level.capitalized
+        }
+    }
+
     /// Formats token counts with K suffix for readability
     private func formatTokens(_ count: Int) -> String {
         if count >= 1000 {
@@ -391,12 +428,11 @@ struct QuickSettingsPopover: View {
                     // Temperature OR Reasoning (contextual)
                     if isReasoningModel {
                         SettingsSection(title: "Reasoning Effort", icon: "brain", value: settings.reasoningEffort.uppercased()) {
+                            // Only the levels the selected model accepts: GPT-6.1 Sol has no Off
                             Picker("", selection: $settings.reasoningEffort) {
-                                Text("Off").tag("none")
-                                Text("Low").tag("low")
-                                Text("Med").tag("medium")
-                                Text("High").tag("high")
-                                Text("Max").tag("xhigh")
+                                ForEach(settings.availableReasoningEffortOptions, id: \.self) { level in
+                                    Text(Self.effortLabel(level)).tag(level)
+                                }
                             }
                             .pickerStyle(.segmented)
                         }
@@ -1102,6 +1138,16 @@ struct ChatTimelineView: View {
                             }
 
                             if viewModel.isSearching {
+                                // Where a routed search is looking before the answer starts
+                                if let status = viewModel.routingStatus {
+                                    Label(status, systemImage: "arrow.triangle.branch")
+                                        .font(.caption)
+                                        .foregroundColor(theme.textSecondaryColor)
+                                        .lineLimit(2)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .accessibilityAddTraits(.updatesFrequently)
+                                }
                                 TypingIndicatorView()
                                     .padding(.horizontal, 8)
                             }
@@ -2086,6 +2132,13 @@ struct ResultHeaderView: View {
                 HStack(spacing: 8) {
                     documentTypeIcon()
 
+                    // The tag a routed answer cites this passage by, such as [S2]
+                    if let tag = result.citationTag {
+                        Text("[\(tag)]")
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundColor(theme.primaryColor)
+                    }
+
                     Text(sourceFileName(from: result.sourceDocument))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(isHighlighted ? theme.primaryColor : theme.textPrimaryColor)
@@ -2104,6 +2157,15 @@ struct ResultHeaderView: View {
                     Text(String(format: "Score: %.3f", result.score))
                         .font(.caption)
                         .foregroundColor(theme.textSecondaryColor)
+
+                    // Where a routed search found it
+                    if let scope = result.scopeLabel {
+                        Text(scope)
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondaryColor)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
             }
 

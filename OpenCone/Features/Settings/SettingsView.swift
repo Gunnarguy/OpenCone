@@ -310,6 +310,15 @@ struct SettingsView: View {
             .padding(.bottom, 8)
 
             VStack(spacing: 1) {
+                // Routing across indexes
+                ToolToggleRow(
+                    icon: "arrow.triangle.branch",
+                    title: "Search Across Indexes",
+                    subtitle: "Pick the index and namespace for each question",
+                    isOn: $viewModel.indexRoutingEnabled,
+                    theme: theme
+                )
+
                 // Hybrid Search Toggle
                 ToolToggleRow(
                     icon: "arrow.triangle.merge",

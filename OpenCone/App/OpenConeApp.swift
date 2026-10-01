@@ -141,6 +141,9 @@ struct OpenConeApp: App {
 
         // Start loading Pinecone indexes in the background
         self.loadIndexes(documentsVM: viewModels.documentsVM, searchVM: viewModels.searchVM)
+
+        // The account's models and their shutdown dates, once per launch, as OpenResponses does
+        Task { await settingsViewModel.refreshAccountModels() }
     }
 
     /// Validates that essential API keys (OpenAI, Pinecone) and the Pinecone Project ID are configured.
@@ -215,12 +218,23 @@ struct OpenConeApp: App {
             pineconeService: services.pinecone
         )
 
+        // Routing across indexes: the model picks where to search, and the app runs the searches
+        let responsesClient = ResponsesClient(apiKey: settingsViewModel.openAIAPIKey)
+        let indexSurveyor = IndexSurveyor(
+            pinecone: services.pinecone,
+            embeddings: services.embedding,
+            responses: responsesClient
+        )
+
         // Initialize Search view model with its dependencies
         let searchVM = SearchViewModel(
             pineconeService: services.pinecone,
             openAIService: services.openAI,
             embeddingService: services.embedding,
-            settingsViewModel: settingsViewModel
+            settingsViewModel: settingsViewModel,
+            indexRouter: IndexRouter(responses: responsesClient),
+            indexSurveyor: indexSurveyor,
+            indexCatalogStore: IndexCatalogStore(projectId: settingsViewModel.pineconeProjectId)
         )
 
         logger.log(level: .info, message: "Core ViewModels (Documents, Search) created.")

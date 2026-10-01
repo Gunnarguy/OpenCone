@@ -23,7 +23,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var defaultChunkSize: Int = Configuration.defaultChunkSize
     @Published var defaultChunkOverlap: Int = Configuration.defaultChunkOverlap
     @Published var embeddingModel: String = Configuration.embeddingModel
-    @Published var completionModel: String = Configuration.completionModel
+    @Published var completionModel: String = Configuration.completionModel {
+        // A model change can leave an effort the new model rejects, which fails every request
+        didSet { clampReasoningEffort() }
+    }
 
     // OpenAI generation parameters
     @Published var temperature: Double = 0.3
@@ -101,6 +104,9 @@ final class SettingsViewModel: ObservableObject {
         return nil
     }
 
+    // Routing: with two or more indexes or namespaces, the model picks where to search
+    @Published var indexRoutingEnabled: Bool = true
+
     // Reranking settings (two-stage retrieval)
     @Published var rerankingEnabled: Bool = false // Post-retrieval reranking
     @Published var rerankModel: String = "bge-reranker-v2-m3" // Default rerank model
@@ -139,24 +145,19 @@ final class SettingsViewModel: ObservableObject {
     ]
 
     // OpenAI completion models - common options (user can also specify custom models)
-    let availableCompletionModels = [
-        "gpt-5.5",
-        "gpt-5.4",
-        "gpt-5.3",
-        "gpt-5.2",
-        "gpt-5",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4.1-2025-04-14",
-        "gpt-4.1-mini-2025-04-14",
-        "gpt-4.1-nano-2025-04-14",
-        "o3",
-        "o3-mini",
-        "o1",
-        "o1-mini",
-    ]
+    /// Newer models on the person's account that the catalog doesn't list yet (GET /models), kept for the next launch
+    @Published var accountModels: [String] = UserDefaults.standard.stringArray(forKey: "accountModels") ?? []
 
-    let availableReasoningEffortOptions = ["none", "low", "medium", "high", "xhigh"]
+    /// The model menu, as OpenResponses builds it: the account's newer models, then the catalog's current and earlier
+    /// models (Resources/ModelCatalog/ModelCatalog.json), then the selected model if it is neither
+    var availableCompletionModels: [String] {
+        CurrentModelCatalog.selectionModels(including: completionModel, account: accountModels)
+    }
+
+    /// The effort levels the selected model accepts
+    var availableReasoningEffortOptions: [String] {
+        CurrentModelCatalog.reasoningEfforts(for: completionModel)
+    }
     let availableConversationModes = ["server", "client"]
     let availableLogLevels = ProcessingLogEntry.LogLevel.allCases
 
@@ -234,6 +235,7 @@ final class SettingsViewModel: ObservableObject {
             $streamingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $webSearchEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $codeInterpreterEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $indexRoutingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $requestTimeoutSeconds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $maxRetries.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $verboseLogging.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -350,6 +352,12 @@ final class SettingsViewModel: ObservableObject {
             UserDefaults.standard.string(forKey: "embeddingModel") ?? Configuration.embeddingModel
         completionModel =
             UserDefaults.standard.string(forKey: "completionModel") ?? Configuration.completionModel
+        // A model OpenAI has shut down, or shuts down within 30 days, fails every request: move it to the
+        // replacement the catalog names
+        if CurrentModelCatalog.isRetired(completionModel) {
+            completionModel = CurrentModelCatalog.replacement(for: completionModel)
+            UserDefaults.standard.set(completionModel, forKey: "completionModel")
+        }
 
         // Load custom model settings
         useCustomModel = UserDefaults.standard.bool(forKey: "useCustomModel")
@@ -371,8 +379,11 @@ final class SettingsViewModel: ObservableObject {
         // Clamp to valid ranges
         temperature = min(max(temperature, 0.0), 2.0)
         topP = min(max(topP, 0.0), 1.0)
-        if !availableReasoningEffortOptions.contains(reasoningEffort) {
-            reasoningEffort = "none"
+        // Keep an effort the model accepts, and store it now: OpenAIService reads the effort from
+        // UserDefaults, and a missing one means none, which GPT-6.1 Sol and GPT-6 Astra reject
+        reasoningEffort = CurrentModelCatalog.normalizedEffort(reasoningEffort, model: completionModel)
+        if UserDefaults.standard.string(forKey: "openai.reasoningEffort") != reasoningEffort {
+            UserDefaults.standard.set(reasoningEffort, forKey: "openai.reasoningEffort")
         }
 
         // Conversation mode
@@ -425,6 +436,9 @@ final class SettingsViewModel: ObservableObject {
         // Hybrid search settings
         hybridSearchEnabled = (defaults.object(forKey: SettingsStorageKeys.hybridSearchEnabled) as? Bool) ?? false
         hybridSearchAlpha = (defaults.object(forKey: SettingsStorageKeys.hybridSearchAlpha) as? Double) ?? 0.5
+
+        // Routing across indexes
+        indexRoutingEnabled = (defaults.object(forKey: SettingsStorageKeys.indexRoutingEnabled) as? Bool) ?? true
 
         // Reranking settings
         rerankingEnabled = (defaults.object(forKey: SettingsStorageKeys.rerankingEnabled) as? Bool) ?? false
@@ -521,6 +535,9 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(hybridSearchEnabled, forKey: SettingsStorageKeys.hybridSearchEnabled)
         defaults.set(hybridSearchAlpha, forKey: SettingsStorageKeys.hybridSearchAlpha)
 
+        // Routing across indexes
+        defaults.set(indexRoutingEnabled, forKey: SettingsStorageKeys.indexRoutingEnabled)
+
         // Reranking settings
         defaults.set(rerankingEnabled, forKey: SettingsStorageKeys.rerankingEnabled)
         defaults.set(rerankModel, forKey: SettingsStorageKeys.rerankModel)
@@ -565,7 +582,7 @@ final class SettingsViewModel: ObservableObject {
         // Generation parameters
         temperature = 0.3
         topP = 0.95
-        reasoningEffort = "none"
+        reasoningEffort = CurrentModelCatalog.normalizedEffort("none", model: completionModel)
         conversationMode = "server"
 
         // Search
@@ -594,6 +611,7 @@ final class SettingsViewModel: ObservableObject {
         codeInterpreterEnabled = false
         hybridSearchEnabled = false
         hybridSearchAlpha = 0.5
+        indexRoutingEnabled = true
         rerankingEnabled = false
         rerankModel = "bge-reranker-v2-m3"
         rerankTopN = 5
@@ -624,11 +642,45 @@ final class SettingsViewModel: ObservableObject {
     }
 
     /// Clears stored secrets plus onboarding markers so a user can revoke access in Settings.
+    /// Keep the effort to one the selected model accepts
+    private func clampReasoningEffort() {
+        let supported = CurrentModelCatalog.normalizedEffort(reasoningEffort, model: completionModel)
+        if supported != reasoningEffort {
+            reasoningEffort = supported
+        }
+    }
+
+    /// Once per launch, as OpenResponses does: the account's models and their shutdown dates (GET /models), the
+    /// settings of any newer model from its page on OpenAI's docs site, and a move off the selected model if it
+    /// is now retired
+    func refreshAccountModels() async {
+        let key = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, let models = try? await ResponsesClient(apiKey: key).listModels() else { return }
+        let store = ModelCatalogStore.shared
+        // Shutdown dates retire a model 30 days ahead (CurrentModelCatalog.isRetired), so record them first.
+        store.recordShutdowns(Dictionary(models.compactMap { model in model.shutdownDate.map { (model.id, $0) } },
+                                         uniquingKeysWith: { first, _ in first }))
+        let ids = models.map(\.id)
+        let unknown = CurrentModelCatalog.currentAccountModels(ids).filter { CurrentModelCatalog.entry(for: $0) == nil }
+        if await store.learnSettings(for: unknown) { objectWillChange.send() }
+        let current = CurrentModelCatalog.currentAccountModels(ids)
+        if current != accountModels {
+            accountModels = current
+            UserDefaults.standard.set(current, forKey: "accountModels")
+        }
+        if !useCustomModel, CurrentModelCatalog.isRetired(completionModel) {
+            completionModel = CurrentModelCatalog.replacement(for: completionModel)
+            UserDefaults.standard.set(completionModel, forKey: "completionModel")
+            UserDefaults.standard.set(reasoningEffort, forKey: "openai.reasoningEffort")
+        }
+    }
+
     func resetSecureState() {
         logger.log(level: .info, message: "Resetting stored credentials and preferences at user request.")
 
         store.clearSecretsAndPreferences()
         clearPersistedSettings()
+        IndexCatalogStore.removeAllProjects()
         resetToDefaults()
 
         openAIAPIKey = ""
@@ -950,6 +1002,7 @@ final class SettingsViewModel: ObservableObject {
             if let effort = gen["reasoningEffort"] as? String { reasoningEffort = effort }
             if let convMode = gen["conversationMode"] as? String { conversationMode = convMode }
         }
+        clampReasoningEffort()
 
         // Search
         if let search = dict["search"] as? [String: Any] {

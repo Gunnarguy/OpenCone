@@ -1118,6 +1118,15 @@ final class DocumentsViewModel: ObservableObject {
             logger.log(level: .success, message: "Document processed successfully", context: document.fileName)
             await refreshIndexInsights()
 
+            // Search re-reads this index's namespaces and passage counts before routing to it again
+            if let indexSnapshot {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("PineconeIndexContentDidChange"),
+                    object: nil,
+                    userInfo: ["index": indexSnapshot]
+                )
+            }
+
         } catch {
             // Mark progress as complete (even on failure) to avoid stalling average
             updateOverallProgress(for: document.id, progress: 1.0)

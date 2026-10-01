@@ -18,6 +18,8 @@ struct ChatMessage: Identifiable, Equatable {
     let role: ChatRole
     var text: String
     var citations: [String]?
+    /// "index / namespace" for each citation of a routed answer, in the same order
+    var citationScopes: [String]?
     var status: MessageStatus
     let createdAt: Date
     var error: String?
@@ -27,6 +29,7 @@ struct ChatMessage: Identifiable, Equatable {
         role: ChatRole,
         text: String,
         citations: [String]? = nil,
+        citationScopes: [String]? = nil,
         status: MessageStatus = .normal,
         createdAt: Date = Date(),
         error: String? = nil
@@ -35,9 +38,16 @@ struct ChatMessage: Identifiable, Equatable {
         self.role = role
         self.text = text
         self.citations = citations
+        self.citationScopes = citationScopes
         self.status = status
         self.createdAt = createdAt
         self.error = error
+    }
+
+    /// The index and namespace of the citation at `position`, when the answer was routed
+    func citationScope(at position: Int) -> String? {
+        guard let citationScopes, citationScopes.indices.contains(position) else { return nil }
+        return citationScopes[position]
     }
 
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
@@ -45,6 +55,7 @@ struct ChatMessage: Identifiable, Equatable {
         lhs.text == rhs.text && 
         lhs.status == rhs.status && 
         lhs.citations == rhs.citations &&
+        lhs.citationScopes == rhs.citationScopes &&
         lhs.error == rhs.error
     }
 }

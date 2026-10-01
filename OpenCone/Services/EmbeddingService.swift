@@ -176,9 +176,10 @@ final class EmbeddingService: Sendable {
     /// - Parameters:
     ///   - query: The query text
     ///   - dimension: The desired vector dimension
+    ///   - model: Embedding model to use instead of the one in Settings
     /// - Returns: A vector embedding
-    func generateQueryEmbedding(for query: String, dimension: Int? = nil) async throws -> [Float] {
-        let embeddings = try await openAIService.createEmbeddings(texts: [query], dimension: dimension)
+    func generateQueryEmbedding(for query: String, dimension: Int? = nil, model: String? = nil) async throws -> [Float] {
+        let embeddings = try await openAIService.createEmbeddings(texts: [query], dimension: dimension, model: model)
 
         guard let embedding = embeddings.first else {
             await log(level: .error, message: "Failed to generate embedding for query")
@@ -186,6 +187,22 @@ final class EmbeddingService: Sendable {
         }
 
         return embedding
+    }
+
+    /// Embed several query texts in one request, with the model and dimension of one index
+    func generateQueryEmbeddings(for queries: [String], dimension: Int, model: String) async throws -> [[Float]] {
+        let embeddings = try await openAIService.createEmbeddings(texts: queries, dimension: dimension, model: model)
+
+        guard embeddings.count == queries.count else {
+            await log(level: .error, message: "Embedding count mismatch: \(embeddings.count) embeddings for \(queries.count) queries")
+            throw EmbeddingError.countMismatch
+        }
+        guard embeddings.allSatisfy({ $0.count == dimension }) else {
+            await log(level: .error, message: "Embedding dimension mismatch: expected \(dimension) from \(model)")
+            throw EmbeddingError.dimensionMismatch
+        }
+
+        return embeddings
     }
 
 

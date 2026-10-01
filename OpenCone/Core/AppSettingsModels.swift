@@ -42,4 +42,7 @@ enum SettingsStorageKeys {
     static let rerankingEnabled = "search.rerankingEnabled"
     static let rerankModel = "search.rerankModel"
     static let rerankTopN = "search.rerankTopN"
+
+    // Routing: let the model pick which indexes and namespaces to search
+    static let indexRoutingEnabled = "search.indexRoutingEnabled"
 }

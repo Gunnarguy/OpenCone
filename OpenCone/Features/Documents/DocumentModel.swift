@@ -149,12 +149,26 @@ struct SearchResultModel: Identifiable {
     var sourceDocument: String
     var score: Float
     var metadata: [String: String]
-    
-    init(content: String, sourceDocument: String, score: Float, metadata: [String: String]) {
+    /// Where a routed search found this passage; nil for a search of the open index
+    var index: String?
+    var namespace: String?
+    /// The tag a routed answer cites this passage by, such as "S2"
+    var citationTag: String?
+
+    init(content: String, sourceDocument: String, score: Float, metadata: [String: String], index: String? = nil, namespace: String? = nil) {
         self.content = content
         self.sourceDocument = sourceDocument
         self.score = score
         self.metadata = metadata
+        self.index = index
+        self.namespace = namespace
+    }
+
+    /// "index / namespace" for a routed result, "index" for the default namespace
+    var scopeLabel: String? {
+        guard let index else { return nil }
+        guard let namespace, !namespace.isEmpty else { return index }
+        return "\(index) / \(namespace)"
     }
 }
 

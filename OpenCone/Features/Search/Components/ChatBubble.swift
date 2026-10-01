@@ -65,14 +65,22 @@ struct ChatBubble: View {
                                     .foregroundColor(theme.textSecondaryColor)
 
                                 // Enumerate to guarantee stable IDs even when duplicate file names repeat
-                                ForEach(Array(citations.prefix(5).enumerated()), id: \.offset) { _, src in
+                                ForEach(Array(citations.prefix(5).enumerated()), id: \.offset) { position, src in
                                     Button(action: { onCitationTap?(src) }) {
                                         HStack(spacing: 4) {
-                                            Text("• \\(fileName(from: src))")
+                                            Text("• \(fileName(from: src))")
                                                 .font(.caption)
                                                 .foregroundColor(theme.primaryColor)
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
+                                            // Which index and namespace a routed answer found it in
+                                            if let scope = message.citationScope(at: position) {
+                                                Text(scope)
+                                                    .font(.caption2)
+                                                    .foregroundColor(theme.textSecondaryColor)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                            }
                                             Image(systemName: "arrow.up.right")
                                                 .font(.system(size: 10, weight: .semibold))
                                                 .foregroundColor(theme.primaryColor)

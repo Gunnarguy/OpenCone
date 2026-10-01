@@ -177,6 +177,11 @@ final class PineconeService {
             throw PineconeError.requestFailed(statusCode: 0, message: "Failed to describe index: Unknown error")
         }
 
+        // The description carries the host, so later searches of this index skip a lookup
+        cacheQueue.sync {
+            indexHostCache[name] = (host: indexDescription.host, ts: Date())
+        }
+
         return indexDescription
     }
 
@@ -1253,6 +1258,136 @@ final class PineconeService {
         return queryResponse
     }
 
+    // MARK: - Any Index by Name (multi-index search)
+
+    // Search and Documents share one PineconeService, and with it `currentIndex` and `indexHost`.
+    // Searching several indexes for one question must never move the Documents tab's index, so
+    // these calls take the index by name and use that index's own host.
+
+    /// Host of any index, from the cache or a describe call, without changing the current index.
+    func host(forIndex indexName: String) async throws -> String {
+        let cachedHost = cacheQueue.sync { () -> String? in
+            if let cached = indexHostCache[indexName], Date().timeIntervalSince(cached.ts) < hostCacheTTL {
+                return cached.host
+            }
+            return nil
+        }
+        if let host = cachedHost {
+            return host
+        }
+        return try await describeIndex(name: indexName).host
+    }
+
+    /// Namespaces and vector counts of any index, without changing the current index.
+    func indexStats(forIndex indexName: String, forceRefresh: Bool = false) async throws -> IndexStatsResponse {
+        if !forceRefresh, let cached = indexStatsCache[indexName], Date().timeIntervalSince(cached.ts) < indexStatsCacheTTL {
+            return cached.stats
+        }
+
+        let host = try await host(forIndex: indexName)
+        let url = try buildDataPlaneURL(host: host, pathComponents: ["describe_index_stats"])
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+
+        let stats: IndexStatsResponse = try await sendDataPlaneRequest(request, operation: "describeIndexStats(\(indexName))")
+        indexStatsCache[indexName] = (stats: stats, ts: Date())
+        return stats
+    }
+
+    /// Query any index by name.
+    /// - Parameters:
+    ///   - indexName: The index to search; the current index is left alone
+    ///   - vector: Dense query vector, made with the model that built this index
+    ///   - hybrid: Sparse vector and alpha for a dotproduct index, weighted as in `hybridQuery`
+    ///   - topK: Number of results to return
+    ///   - namespace: Namespace to query; nil means the default namespace
+    ///   - filter: Metadata filter
+    ///   - includeValues: Return each match's stored vector, used to check which model built the index
+    func query(
+        index indexName: String,
+        vector: [Float],
+        hybrid: (sparse: SparseVector, alpha: Float)? = nil,
+        topK: Int = 10,
+        namespace: String? = nil,
+        filter: [String: Any]? = nil,
+        includeValues: Bool = false
+    ) async throws -> QueryResponse {
+        let host = try await host(forIndex: indexName)
+        let url = try buildDataPlaneURL(host: host, pathComponents: ["query"])
+
+        var body: [String: Any] = [
+            "topK": topK,
+            "includeMetadata": true,
+            "includeValues": includeValues,
+        ]
+
+        if let hybrid {
+            body["vector"] = vector.map { $0 * hybrid.alpha }
+            body["sparseVector"] = [
+                "indices": hybrid.sparse.indices,
+                "values": hybrid.sparse.values.map { $0 * (1.0 - hybrid.alpha) },
+            ]
+        } else {
+            body["vector"] = vector
+        }
+
+        if let namespace = namespace {
+            body["namespace"] = namespace
+        }
+
+        if let filter = filter {
+            body["filter"] = filter
+        }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            throw PineconeError.invalidRequestData
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        applyStandardHeaders(to: &request, apiVersion: apiConfiguration.dataPlaneVersion)
+        request.httpBody = jsonData
+
+        return try await sendDataPlaneRequest(request, operation: "query(\(indexName))")
+    }
+
+    /// Send a request with the shared rate limit and retries, and decode a 200 reply.
+    private func sendDataPlaneRequest<T: Decodable>(_ request: URLRequest, operation: String) async throws -> T {
+        var result: T?
+
+        try await withRetries(maxRetries: maxRetries) {
+            try await self.applyRateLimit()
+
+            let (data, response) = try await session.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw PineconeError.invalidResponse
+            }
+
+            if httpResponse.statusCode != 200 {
+                let errorResponse = try? JSONDecoder().decode(PineconeErrorResponse.self, from: data)
+                let message = errorResponse?.message ?? String(data: data, encoding: .utf8) ?? "Unknown error"
+                logger.log(level: .error, message: "Pinecone API error (\(operation)): Status \(httpResponse.statusCode), Message: \(message)")
+
+                if self.shouldRetry(statusCode: httpResponse.statusCode) {
+                    throw PineconeError.retryableError(statusCode: httpResponse.statusCode)
+                } else {
+                    throw PineconeError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+                }
+            }
+
+            result = try JSONDecoder().decode(T.self, from: data)
+        }
+
+        guard let decoded = result else {
+            throw PineconeError.requestFailed(statusCode: 0, message: "\(operation) failed with unknown error")
+        }
+
+        return decoded
+    }
+
     // MARK: - Reranking
 
     /// Available reranking models hosted by Pinecone
@@ -1667,6 +1802,15 @@ struct QueryMatch: Codable {
     let id: String
     let score: Double
     let metadata: [String: JSONValue]?
+    /// Present only when the query asked for `includeValues`
+    let values: [Float]?
+
+    init(id: String, score: Double, metadata: [String: JSONValue]?, values: [Float]? = nil) {
+        self.id = id
+        self.score = score
+        self.metadata = metadata
+        self.values = values
+    }
 }
 
 struct PineconeErrorResponse: Codable {
@@ -1693,28 +1837,34 @@ extension PineconeService {
 
     /// Reconstructs and validates URLs safely using URLComponents
     func buildURL(isControlPlane: Bool, pathComponents: [String], queryItems: [URLQueryItem]? = nil) throws -> URL {
+        if isControlPlane {
+            return try makeURL(host: "api.pinecone.io", pathComponents: pathComponents, queryItems: queryItems)
+        }
+        guard let rawHost = indexHost else {
+            throw PineconeError.noIndexSelected
+        }
+        return try buildDataPlaneURL(host: rawHost, pathComponents: pathComponents, queryItems: queryItems)
+    }
+
+    /// Data-plane URL for an explicit index host, which may arrive with a scheme or a path
+    func buildDataPlaneURL(host rawHost: String, pathComponents: [String], queryItems: [URLQueryItem]? = nil) throws -> URL {
+        var cleanHost = rawHost
+        if cleanHost.hasPrefix("https://") {
+            cleanHost = String(cleanHost.dropFirst(8))
+        } else if cleanHost.hasPrefix("http://") {
+            cleanHost = String(cleanHost.dropFirst(7))
+        }
+        if let slashIndex = cleanHost.firstIndex(of: "/") {
+            cleanHost = String(cleanHost[..<slashIndex])
+        }
+        return try makeURL(host: cleanHost, pathComponents: pathComponents, queryItems: queryItems)
+    }
+
+    private func makeURL(host: String, pathComponents: [String], queryItems: [URLQueryItem]?) throws -> URL {
         var components = URLComponents()
         components.scheme = "https"
-        
-        if isControlPlane {
-            components.host = "api.pinecone.io"
-        } else {
-            guard let rawHost = indexHost else {
-                throw PineconeError.noIndexSelected
-            }
-            
-            var cleanHost = rawHost
-            if cleanHost.hasPrefix("https://") {
-                cleanHost = String(cleanHost.dropFirst(8))
-            } else if cleanHost.hasPrefix("http://") {
-                cleanHost = String(cleanHost.dropFirst(7))
-            }
-            if let slashIndex = cleanHost.firstIndex(of: "/") {
-                cleanHost = String(cleanHost[..<slashIndex])
-            }
-            components.host = cleanHost
-        }
-        
+        components.host = host
+
         var path = ""
         for component in pathComponents {
             guard let encodedComponent = component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {

@@ -218,6 +218,16 @@ final class SearchViewModel: ObservableObject {
     private let openAIService: OpenAIService
     private let embeddingService: EmbeddingService
     let settingsViewModel: SettingsViewModel
+    // Routing across indexes; nil where the app is built without it, as in previews and tests
+    private let indexRouter: IndexRouter?
+    private let indexSurveyor: IndexSurveyor?
+    private let indexCatalogStore: IndexCatalogStore?
+    private var indexSurveyTask: Task<Void, Never>? = nil
+    private var routingTask: Task<Void, Never>? = nil
+    private var activeSurveys = 0
+    private var summaryDraftAttempts: [String: Date] = [:]
+    private let routableProfileMaxAge: TimeInterval = 60 * 60
+    private let unroutableProfileMaxAge: TimeInterval = 10 * 60
     private let logger = Logger.shared
     private var themeManager = ThemeManager.shared
     private let defaults = UserDefaults.standard
@@ -266,6 +276,12 @@ final class SearchViewModel: ObservableObject {
     // Code interpreter outputs from current search
     @Published var codeInterpreterOutputs: [CodeInterpreterOutput] = []
 
+    // Routing across indexes
+    @Published var indexProfiles: [String: IndexProfile] = [:]
+    /// What a routed search is doing before the answer starts, such as which indexes it searches
+    @Published var routingStatus: String? = nil
+    @Published var isSurveyingIndexes = false
+
     // Visual state properties
     @Published var searchResultsOpacity: Double = 0.0
     @Published var answerGenerationProgress: Double = 0.0
@@ -278,12 +294,19 @@ final class SearchViewModel: ObservableObject {
         pineconeService: PineconeService,
         openAIService: OpenAIService,
         embeddingService: EmbeddingService,
-        settingsViewModel: SettingsViewModel
+        settingsViewModel: SettingsViewModel,
+        indexRouter: IndexRouter? = nil,
+        indexSurveyor: IndexSurveyor? = nil,
+        indexCatalogStore: IndexCatalogStore? = nil
     ) {
         self.pineconeService = pineconeService
         self.openAIService = openAIService
         self.embeddingService = embeddingService
         self.settingsViewModel = settingsViewModel
+        self.indexRouter = indexRouter
+        self.indexSurveyor = indexSurveyor
+        self.indexCatalogStore = indexCatalogStore
+        self.indexProfiles = indexCatalogStore?.load() ?? [:]
 
         // Subscribe to theme changes
         themeManager.$currentTheme
@@ -301,6 +324,17 @@ final class SearchViewModel: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.loadIndexes()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("PineconeIndexContentDidChange"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let index = notification.userInfo?["index"] as? String
+            Task { @MainActor [weak self] in
+                self?.indexContentDidChange(index)
             }
         }
     }
@@ -416,6 +450,8 @@ final class SearchViewModel: ObservableObject {
                     await loadNamespaces()
                 }
             }
+
+            scheduleIndexSurvey()
         } catch {
             handleError(SearchError.indexLoadingFailed(error))
         }
@@ -487,6 +523,14 @@ final class SearchViewModel: ObservableObject {
                     preferences.clearNamespace(for: index)
                 }
             }
+
+            // A namespace added or removed since the last survey makes that profile stale
+            if let index = selectedIndex, var profile = indexProfiles[index],
+               Set(profile.namespaceNames) != Set(namespaces) {
+                profile.surveyedAt = .distantPast
+                indexProfiles[index] = profile
+            }
+            scheduleIndexSurvey()
         } catch {
             handleError(SearchError.namespaceLoadingFailed(error))
         }
@@ -655,6 +699,16 @@ final class SearchViewModel: ObservableObject {
         // Record search start time
         let searchStartTime = Date()
 
+        if shouldRouteSearch {
+            await performRoutedSearch(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+        } else {
+            await searchOpenIndex(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+        }
+    }
+
+    /// Search the open index and namespace, then stream the answer. Every search took this path
+    /// before routing, and it is the fallback whenever routing can't run.
+    private func searchOpenIndex(query currentQuery: String, traceId: String, searchStartTime: Date) async {
         do {
             // Generate embedding for query, passing the index's dimension
             let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: currentQuery, dimension: indexDimension)
@@ -703,100 +757,16 @@ final class SearchViewModel: ObservableObject {
             }
 
             // Map results to search result models (metadata may contain non-string values)
-            var loggedMetadataKeysOnce = false
-            let results = queryResults.matches.map { match in
 #if DEBUG
-                // Log metadata keys only once per query to reduce verbosity
-                if !loggedMetadataKeysOnce, let metadata = match.metadata {
-                    Logger.shared.log(level: .debug, message: "Pinecone metadata keys", context: metadata.keys.sorted().joined(separator: ", "))
-                    loggedMetadataKeysOnce = true
-                }
-#endif
-
-                // Extract content - try multiple common field names
-                // Priority: _node_content (LlamaIndex), text, content, transcript_preview, body, description
-                var content = "No content"
-                if let nodeContent = match.metadata?["_node_content"]?.string {
-                    // LlamaIndex format - might be JSON that needs parsing
-                    if let jsonData = nodeContent.data(using: .utf8),
-                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                       let textContent = json["text"] as? String {
-                        content = textContent
-                    } else {
-                        content = nodeContent
-                    }
-                } else if let textContent = match.metadata?["text"]?.string {
-                    content = textContent
-                } else if let textContent = match.metadata?["content"]?.string {
-                    content = textContent
-                } else if let textContent = match.metadata?["transcript_preview"]?.string {
-                    content = textContent
-                } else if let textContent = match.metadata?["body"]?.string {
-                    content = textContent
-                } else if let textContent = match.metadata?["description"]?.string {
-                    content = textContent
-                } else if let textContent = match.metadata?["chunk_text"]?.string {
-                    content = textContent
-                }
-
-                // Try multiple possible source fields
-                let source = match.metadata?["title"]?.string ??
-                    match.metadata?["source"]?.string ??
-                            match.metadata?["doc_id"]?.string ??
-                            "Unknown source"
-                // Convert only string-like metadata entries into [String: String] for UI
-                let metaStrings: [String: String] = match.metadata?.reduce(into: [:]) { acc, kv in
-                    if let s = kv.value.string {
-                        acc[kv.key] = s
-                    }
-                } ?? [:]
-                return SearchResultModel(
-                    content: content,
-                    sourceDocument: source,
-                    score: Float(match.score),
-                    metadata: metaStrings
-                )
+            // Log metadata keys only once per query to reduce verbosity
+            if let metadata = queryResults.matches.first(where: { $0.metadata != nil })?.metadata {
+                Logger.shared.log(level: .debug, message: "Pinecone metadata keys", context: metadata.keys.sorted().joined(separator: ", "))
             }
+#endif
+            let results = queryResults.matches.map { PassageText.searchResult(from: $0) }
 
             // Apply reranking if enabled
-            var finalResults = results
-            if settingsViewModel.rerankingEnabled, !results.isEmpty {
-                do {
-                    let rerankModel = PineconeService.RerankModel(rawValue: settingsViewModel.rerankModel) ?? .bgeRerankerV2M3
-                    let topN = settingsViewModel.rerankTopN
-                    logger.log(level: .info, message: "Reranking \(results.count) results", context: "model=\(rerankModel.rawValue); topN=\(topN); traceId=\(traceId)")
-
-                    // Prepare documents for reranking - format as array of dictionaries with "text" key
-                    let documents = results.map { ["text": $0.content] }
-
-                    // Call rerank API
-                    let rerankResponse = try await pineconeService.rerank(
-                        query: currentQuery,
-                        documents: documents,
-                        model: rerankModel,
-                        topN: topN
-                    )
-
-                    // Reorder results based on rerank scores
-                    finalResults = rerankResponse.data.compactMap { rerankResult -> SearchResultModel? in
-                        guard rerankResult.index < results.count else { return nil }
-                        var result = results[rerankResult.index]
-                        // Update score to rerank score (convert from Double to Float)
-                        result = SearchResultModel(
-                            content: result.content,
-                            sourceDocument: result.sourceDocument,
-                            score: Float(rerankResult.score),
-                            metadata: result.metadata
-                        )
-                        return result
-                    }
-
-                    logger.log(level: .success, message: "Reranking complete", context: "reranked \(finalResults.count) results; traceId=\(traceId)")
-                } catch {
-                    // Log error but continue with original results
-                    logger.log(level: .warning, message: "Reranking failed, using original results", context: "\(error.localizedDescription); traceId=\(traceId)")
-                }
-            }
+            let finalResults = await rerankIfEnabled(results, query: currentQuery, traceId: traceId)
 
             let avgScore = finalResults.isEmpty ? Float(0) : finalResults.map { $0.score }.reduce(0, +) / Float(finalResults.count)
             let filterDescription = metadataFilters.isEmpty ? "none" : metadataFilters.map { "\($0.key)=\($0.value.displayValue)" }.joined(separator: ", ")
@@ -831,220 +801,698 @@ final class SearchViewModel: ObservableObject {
                 logger.log(level: .info, message: "Code interpreter skipped", context: "reason=heuristic; traceId=\(traceId)")
             }
 
-            // Prepare streaming assistant message
-            let assistantMessageId = UUID()
-            await MainActor.run {
-                self.generatedAnswer = ""
-                self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
+            await streamAnswer(
+                currentQuery: currentQuery,
+                context: context,
+                citations: citations,
+                citationScopes: nil,
+                resultCount: finalResults.count,
+                useCodeInterpreter: useCodeInterpreter,
+                systemPrompt: effectiveSystemPrompt,
+                traceId: traceId,
+                searchStartTime: searchStartTime
+            )
+        } catch {
+            // Stop during a routed search's fallback cancels this too, which isn't a failure
+            if Task.isCancelled { return }
+            handleError(SearchError.queryFailed(error))
+        }
+    }
+
+    /// Rerank with Pinecone when reranking is on; on failure the results keep their vector order
+    private func rerankIfEnabled(_ results: [SearchResultModel], query: String, traceId: String) async -> [SearchResultModel] {
+        guard settingsViewModel.rerankingEnabled, !results.isEmpty else { return results }
+
+        do {
+            let rerankModel = PineconeService.RerankModel(rawValue: settingsViewModel.rerankModel) ?? .bgeRerankerV2M3
+            let topN = settingsViewModel.rerankTopN
+            logger.log(level: .info, message: "Reranking \(results.count) results", context: "model=\(rerankModel.rawValue); topN=\(topN); traceId=\(traceId)")
+
+            // Prepare documents for reranking - format as array of dictionaries with "text" key
+            let documents = results.map { ["text": $0.content] }
+
+            // Call rerank API
+            let rerankResponse = try await pineconeService.rerank(
+                query: query,
+                documents: documents,
+                model: rerankModel,
+                topN: topN
+            )
+
+            // Reorder results based on rerank scores
+            let reranked = rerankResponse.data.compactMap { rerankResult -> SearchResultModel? in
+                guard rerankResult.index < results.count else { return nil }
+                var result = results[rerankResult.index]
+                // Update score to rerank score (convert from Double to Float)
+                result.score = Float(rerankResult.score)
+                return result
             }
 
-            let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
-            let historyArg: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-            let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
+            logger.log(level: .success, message: "Reranking complete", context: "reranked \(reranked.count) results; traceId=\(traceId)")
+            return reranked
+        } catch {
+            // Log error but continue with original results
+            logger.log(level: .warning, message: "Reranking failed, using original results", context: "\(error.localizedDescription); traceId=\(traceId)")
+            return results
+        }
+    }
 
-            // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
-            let watchdogTask = Task { [weak self] in
-                guard let self = self else { return }
-                try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
-                // Check if assistant message is still streaming and empty
-                let shouldFallback = await MainActor.run { () -> Bool in
-                    if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                        return self.messages[idx].status == .streaming && self.messages[idx].text.isEmpty
-                    }
-                    return false
+    // MARK: - Routed Search Across Indexes
+
+    /// Routing needs the switch on, a router, and at least two places to search
+    var shouldRouteSearch: Bool {
+        guard settingsViewModel.indexRoutingEnabled, indexRouter != nil else { return false }
+        return pineconeIndexes.count >= 2 || namespaces.count >= 2
+    }
+
+    /// Ask the model where to look, run those searches in parallel, then stream the answer from
+    /// their passages. Falls back to searching the open index when routing can't run.
+    private func performRoutedSearch(query: String, traceId: String, searchStartTime: Date) async {
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.routeAndAnswer(query: query, traceId: traceId, searchStartTime: searchStartTime)
+        }
+        routingTask = task
+        await task.value
+        // A search sent after Stop has its own task by now; leave that one alone
+        if routingTask == task {
+            routingTask = nil
+        }
+    }
+
+    /// After Stop, `cancelActiveSearch` has already reset the screen and a new search may be
+    /// running, so a cancelled routing task returns without touching any state
+    private func routeAndAnswer(query: String, traceId: String, searchStartTime: Date) async {
+        guard let router = indexRouter else {
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+
+        routingStatus = "Choosing where to look"
+        let profiles = await profilesForRouting()
+        if Task.isCancelled { return }
+
+        guard profiles.contains(where: { $0.isRoutable }) else {
+            routingStatus = nil
+            logger.log(level: .warning, message: "Routing skipped: no index has a known embedding model yet", context: "traceId=\(traceId)")
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+
+        let decision: IndexRouter.Decision
+        do {
+            decision = try await router.route(
+                question: query,
+                history: historyBeforeCurrentQuestion(),
+                profiles: profiles,
+                hint: IndexRouter.Hint(index: selectedIndex, namespace: selectedNamespace),
+                options: responsesModelOptions(temperature: 0)
+            )
+        } catch {
+            if Task.isCancelled { return }
+            routingStatus = nil
+            logger.log(level: .warning, message: "Routing failed; searching the open index", context: "\(error.localizedDescription); traceId=\(traceId)")
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+        if Task.isCancelled { return }
+
+        switch decision {
+        case .answer:
+            // Nothing to search. The reply still goes through the answer path, so it streams,
+            // follows the person's system prompt, and joins the server conversation.
+            routingStatus = nil
+            logger.log(level: .info, message: "Routing chose no search", context: "traceId=\(traceId)")
+            await streamAnswer(
+                currentQuery: query,
+                context: "No documents were searched for this message.",
+                citations: [],
+                citationScopes: nil,
+                resultCount: 0,
+                useCodeInterpreter: false,
+                systemPrompt: effectiveSystemPrompt,
+                traceId: traceId,
+                searchStartTime: searchStartTime
+            )
+
+        case .search(let requests):
+            routingStatus = "Searching " + requests.map(\.scopeLabel).joined(separator: ", ")
+            logger.log(
+                level: .info,
+                message: "Routed \(requests.count) searches",
+                context: requests.map { "\($0.scopeLabel): \($0.query)" }.joined(separator: " | ") + "; traceId=\(traceId)"
+            )
+
+            let profilesByName = Dictionary(uniqueKeysWithValues: profiles.map { ($0.name, $0) })
+            let searches: [IndexRouter.RoutedSearch]
+            do {
+                searches = try await runRoutedSearches(requests, profiles: profilesByName, traceId: traceId)
+            } catch {
+                if Task.isCancelled { return }
+                routingStatus = nil
+                logger.log(level: .warning, message: "Routed searches failed; searching the open index", context: "\(error.localizedDescription); traceId=\(traceId)")
+                await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+                return
+            }
+            if Task.isCancelled { return }
+
+            // Every search failing is an outage, not an empty answer. The open-index search
+            // reports its own error if it fails too.
+            if searches.allSatisfy(\.failed) {
+                routingStatus = nil
+                logger.log(level: .warning, message: "Every routed search failed; searching the open index", context: "traceId=\(traceId)")
+                await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+                return
+            }
+
+            let useCodeInterpreter = shouldUseCodeInterpreter(for: query)
+            let routed = IndexRouter.context(
+                for: searches,
+                passagesPerSearch: useCodeInterpreter ? 3 : 5,
+                maxCharacters: useCodeInterpreter ? 1200 : 2000
+            )
+            let failedCount = searches.filter(\.failed).count
+            logger.log(
+                level: failedCount > 0 ? .warning : .info,
+                message: "Routed searches returned \(routed.passages.count) passages",
+                context: "failed=\(failedCount) of \(searches.count); traceId=\(traceId)"
+            )
+
+            searchResults = routed.passages
+            searchResultsOpacity = 1.0
+            answerGenerationProgress = 0.6
+            highlightedResultID = nil
+            expandedResultIDs.removeAll()
+            routingStatus = nil
+
+            await streamAnswer(
+                currentQuery: query,
+                context: routed.text,
+                citations: routed.citations,
+                citationScopes: routed.citationScopes,
+                resultCount: routed.passages.count,
+                useCodeInterpreter: useCodeInterpreter,
+                systemPrompt: "\(effectiveSystemPrompt)\n\n\(IndexRouter.answerInstructions)",
+                traceId: traceId,
+                searchStartTime: searchStartTime
+            )
+        }
+    }
+
+    /// Run the routed searches in parallel. Each question is embedded with the model that built
+    /// the index it searches, once per model and dimension, so every index is searched in its own
+    /// vector space and nothing is re-embedded.
+    private func runRoutedSearches(
+        _ requests: [IndexRouter.SearchRequest],
+        profiles: [String: IndexProfile],
+        traceId: String
+    ) async throws -> [IndexRouter.RoutedSearch] {
+        func vectorKey(_ model: String, _ dimension: Int, _ text: String) -> String {
+            "\(model)|\(dimension)|\(text)"
+        }
+
+        var groups: [String: (model: String, dimension: Int, queries: [String])] = [:]
+        for request in requests {
+            guard let profile = profiles[request.index], let model = profile.embeddingModel else { continue }
+            let groupKey = "\(model)|\(profile.dimension)"
+            var group = groups[groupKey] ?? (model: model, dimension: profile.dimension, queries: [])
+            if !group.queries.contains(request.query) {
+                group.queries.append(request.query)
+            }
+            groups[groupKey] = group
+        }
+
+        var vectors: [String: [Float]] = [:]
+        for group in groups.values {
+            let embedded = try await embeddingService.generateQueryEmbeddings(
+                for: group.queries,
+                dimension: group.dimension,
+                model: group.model
+            )
+            for (text, vector) in zip(group.queries, embedded) {
+                vectors[vectorKey(group.model, group.dimension, text)] = vector
+            }
+        }
+
+        let filterPayload = buildMetadataFilterPayload()
+        let openIndex = selectedIndex
+
+        // Each search starts at once on the main actor, like the rest of this view model; the
+        // network waits overlap, and the results come back in the order the model asked for them
+        let searches: [Task<IndexRouter.RoutedSearch, Never>] = requests.map { request in
+            Task {
+                guard let profile = profiles[request.index],
+                      let model = profile.embeddingModel,
+                      let vector = vectors[vectorKey(model, profile.dimension, request.query)]
+                else {
+                    return IndexRouter.RoutedSearch(request: request, results: [], failed: true)
                 }
-                if shouldFallback {
-                    await MainActor.run {
-                        self.logger.log(level: .warning, message: "Watchdog fallback triggered", context: "traceId=\(traceId)")
-                    }
-                    // Cancel stream task
-                    self.currentStreamTask?.cancel()
-                    self.currentStreamTask = nil
-                    // Run fallback in a separate unlinked task so cancellation doesn't propagate
-                    Task.detached { [weak self] in
-                        guard let self = self else { return }
-                        let query = currentQuery
-                        let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                        let fallbackConversationId: String? = useServer ? nil : convIdArg
-                        do {
-                            let fallback = try await self.openAIService.generateCompletion(
-                                systemPrompt: self.effectiveSystemPrompt,
-                                userMessage: query,
-                                context: context,
-                                history: fallbackHistory,
-                                conversationId: fallbackConversationId,
-                                onConversationId: { conv in
-                                    UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                    Task { @MainActor in
-                                        self.conversationId = conv
-                                        self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
-                                    }
-                                },
-                                allowCodeInterpreter: false
-                            )
-                            await MainActor.run {
-                                if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                    var msg = self.messages[idx]
-                                    msg.text = fallback
-                                    msg.status = .normal
-                                    msg.citations = citations
-                                    self.messages[idx] = msg
+                // Metadata filters name fields of the open index, so only its searches use them
+                let filter = request.index == openIndex ? filterPayload : nil
+                return await self.runRoutedSearch(request, profile: profile, vector: vector, filter: filter, traceId: traceId)
+            }
+        }
+
+        return await withTaskCancellationHandler {
+            var completed: [IndexRouter.RoutedSearch] = []
+            for search in searches {
+                completed.append(await search.value)
+            }
+            return completed
+        } onCancel: {
+            searches.forEach { $0.cancel() }
+        }
+    }
+
+    /// One routed search: query the index with its own vector, label the passages with where they
+    /// were found, and rerank them when reranking is on. A search that errors is marked failed.
+    private func runRoutedSearch(
+        _ request: IndexRouter.SearchRequest,
+        profile: IndexProfile,
+        vector: [Float],
+        filter: [String: Any]?,
+        traceId: String
+    ) async -> IndexRouter.RoutedSearch {
+        do {
+            var hybrid: (sparse: PineconeService.SparseVector, alpha: Float)?
+            if settingsViewModel.hybridSearchEnabled, profile.metric.lowercased() == "dotproduct" {
+                let sparse = try await pineconeService.generateSparseEmbedding(for: request.query)
+                hybrid = (sparse: sparse, alpha: Float(settingsViewModel.hybridSearchAlpha))
+            }
+
+            // The default namespace is sent by leaving the field out, which every API version accepts
+            let response = try await pineconeService.query(
+                index: request.index,
+                vector: vector,
+                hybrid: hybrid,
+                topK: configuredTopK,
+                namespace: request.namespace.isEmpty ? nil : request.namespace,
+                filter: filter
+            )
+
+            let results = response.matches.map {
+                PassageText.searchResult(from: $0, index: request.index, namespace: request.namespace)
+            }
+            let ranked = await rerankIfEnabled(results, query: request.query, traceId: traceId)
+            return IndexRouter.RoutedSearch(request: request, results: ranked)
+        } catch {
+            logger.log(level: .warning, message: "Routed search failed", context: "\(request.scopeLabel); \(error.localizedDescription); traceId=\(traceId)")
+            return IndexRouter.RoutedSearch(request: request, results: [], failed: true)
+        }
+    }
+
+    /// Earlier turns for the router, without the question just asked
+    private func historyBeforeCurrentQuestion() -> [ChatMessage] {
+        var earlier = messages
+        if let last = earlier.last, last.role == .user {
+            earlier.removeLast()
+        }
+        return earlier.filter { $0.status == .normal && !$0.text.isEmpty }
+    }
+
+    /// The person's completion model settings, read the way OpenAIService reads them, with the
+    /// effort moved to one the model accepts
+    private func responsesModelOptions(temperature: Double) -> ResponsesClient.ModelOptions {
+        let model = defaults.string(forKey: "completionModel") ?? Configuration.completionModel
+        let effort = defaults.string(forKey: "openai.reasoningEffort") ?? "none"
+        return ResponsesClient.ModelOptions(
+            model: model,
+            reasoningEffort: CurrentModelCatalog.normalizedEffort(effort, model: model),
+            temperature: temperature
+        )
+    }
+
+    /// Drafting an index's summary is background work, so it uses the catalog's small utility model, as
+    /// OpenResponses does for its background probes
+    private var summaryModelOptions: ResponsesClient.ModelOptions {
+        let model = CurrentModelCatalog.utilityModel
+        return ResponsesClient.ModelOptions(
+            model: model,
+            reasoningEffort: CurrentModelCatalog.normalizedEffort("low", model: model),
+            temperature: 0.2
+        )
+    }
+
+    // MARK: - Index Profiles
+
+    /// Profiles of the listed indexes. Stored ones are used as they are, even when due for a
+    /// refresh. Only indexes with no profile are surveyed before the question, without a summary
+    /// draft; the background survey drafts one afterwards.
+    private func profilesForRouting() async -> [IndexProfile] {
+        let missing = pineconeIndexes.filter { indexProfiles[$0] == nil }
+        if !missing.isEmpty {
+            await surveyIndexes(missing, recheckModels: false, draftSummaries: false)
+            scheduleIndexSurvey()
+        }
+        return pineconeIndexes.compactMap { indexProfiles[$0] }
+    }
+
+    /// Survey, in the background, indexes that have no profile or are due for another look
+    func scheduleIndexSurvey(recheckModels: Bool = false) {
+        guard indexSurveyor != nil, settingsViewModel.indexRoutingEnabled, indexSurveyTask == nil else { return }
+        guard !pineconeIndexes.isEmpty, recheckModels || shouldRouteSearch else { return }
+
+        // Forget indexes that no longer exist
+        let listed = Set(pineconeIndexes)
+        if indexProfiles.keys.contains(where: { !listed.contains($0) }) {
+            indexProfiles = indexProfiles.filter { listed.contains($0.key) }
+            indexCatalogStore?.save(indexProfiles)
+        }
+
+        let due = pineconeIndexes.filter { name in
+            guard let profile = indexProfiles[name] else { return true }
+            return isDueForSurvey(profile, recheckModels: recheckModels)
+        }
+        guard !due.isEmpty else { return }
+
+        indexSurveyTask = Task { [weak self] in
+            await self?.surveyIndexes(due, recheckModels: recheckModels, draftSummaries: true)
+            self?.indexSurveyTask = nil
+        }
+    }
+
+    /// A searchable profile is looked at again after an hour, which costs two Pinecone calls while
+    /// its model match and summary hold. An empty or unmatched index is looked at after ten
+    /// minutes, since it may have been filled since. A searchable index without a summary gets a
+    /// draft, tried at most every ten minutes.
+    private func isDueForSurvey(_ profile: IndexProfile, recheckModels: Bool) -> Bool {
+        if recheckModels { return true }
+        let age = Date().timeIntervalSince(profile.surveyedAt)
+        guard profile.isRoutable else { return age > unroutableProfileMaxAge }
+        if age > routableProfileMaxAge { return true }
+        let needsSummary = profile.summarySource == .missing && profile.summary.isEmpty
+        let lastAttempt = summaryDraftAttempts[profile.name] ?? .distantPast
+        return needsSummary && Date().timeIntervalSince(lastAttempt) > unroutableProfileMaxAge
+    }
+
+    private func surveyIndexes(_ names: [String], recheckModels: Bool, draftSummaries: Bool) async {
+        guard let surveyor = indexSurveyor else { return }
+        activeSurveys += 1
+        isSurveyingIndexes = true
+        defer {
+            activeSurveys -= 1
+            isSurveyingIndexes = activeSurveys > 0
+        }
+
+        for name in names {
+            if draftSummaries {
+                summaryDraftAttempts[name] = Date()
+            }
+            do {
+                var profile = try await surveyor.survey(
+                    index: name,
+                    previous: indexProfiles[name],
+                    preferredModel: settingsViewModel.embeddingModel,
+                    summaryOptions: draftSummaries ? summaryModelOptions : nil,
+                    recheckModel: recheckModels
+                )
+                // A summary the person saved while this survey ran wins over what it started from
+                if let current = indexProfiles[name], current.summarySource == .person {
+                    profile.summary = current.summary
+                    profile.summarySource = .person
+                }
+                indexProfiles[name] = profile
+                indexCatalogStore?.save(indexProfiles)
+                logger.log(
+                    level: .info,
+                    message: "Index surveyed",
+                    context: "index=\(name); model=\(profile.embeddingModel ?? "none"); check=\(profile.modelCheck.rawValue); namespaces=\(profile.namespaces.count)"
+                )
+            } catch {
+                // The stored profile stays as it was; a failure is not a finding about the index
+                logger.log(level: .warning, message: "Index survey failed", context: "index=\(name); \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Documents uploaded to an index: look at it again before routing to it
+    private func indexContentDidChange(_ index: String?) {
+        if let index, var profile = indexProfiles[index] {
+            profile.surveyedAt = .distantPast
+            indexProfiles[index] = profile
+        }
+        scheduleIndexSurvey()
+    }
+
+    /// Save a person-written summary; clearing it lets the app draft one again
+    func updateIndexSummary(_ text: String, for index: String) {
+        guard var profile = indexProfiles[index] else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != profile.summary else { return }
+        profile.summary = trimmed
+        profile.summarySource = trimmed.isEmpty ? .missing : .person
+        indexProfiles[index] = profile
+        indexCatalogStore?.save(indexProfiles)
+    }
+
+    /// Draft an index's summary again from a fresh sample of its passages
+    func redraftIndexSummary(for index: String) async {
+        guard let surveyor = indexSurveyor, let profile = indexProfiles[index] else { return }
+        summaryDraftAttempts[index] = Date()
+        do {
+            let drafted = try await surveyor.redraftSummary(of: profile, options: summaryModelOptions)
+            // Only the summary changes; whatever a survey updated meanwhile stays
+            guard var current = indexProfiles[index] else { return }
+            current.summary = drafted.summary
+            current.summarySource = drafted.summarySource
+            indexProfiles[index] = current
+            indexCatalogStore?.save(indexProfiles)
+        } catch {
+            logger.log(level: .warning, message: "Index summary redraft failed", context: "index=\(index); \(error.localizedDescription)")
+        }
+    }
+
+    /// Survey every index again, including which model built it
+    func recheckIndexProfiles() {
+        scheduleIndexSurvey(recheckModels: true)
+    }
+
+    /// Stream the answer for a prepared context, with the watchdog and the fallbacks every search uses
+    private func streamAnswer(
+        currentQuery: String,
+        context: String,
+        citations: [String],
+        citationScopes: [String]?,
+        resultCount: Int,
+        useCodeInterpreter: Bool,
+        systemPrompt: String,
+        traceId: String,
+        searchStartTime: Date
+    ) async {
+        // Prepare streaming assistant message
+        let assistantMessageId = UUID()
+        await MainActor.run {
+            self.generatedAnswer = ""
+            self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
+        }
+
+        let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
+        let historyArg: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
+        let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
+
+        // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
+        let watchdogTask = Task { [weak self] in
+            guard let self = self else { return }
+            try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
+            // Check if assistant message is still streaming and empty
+            let shouldFallback = await MainActor.run { () -> Bool in
+                if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
+                    return self.messages[idx].status == .streaming && self.messages[idx].text.isEmpty
+                }
+                return false
+            }
+            if shouldFallback {
+                await MainActor.run {
+                    self.logger.log(level: .warning, message: "Watchdog fallback triggered", context: "traceId=\(traceId)")
+                }
+                // Cancel stream task
+                self.currentStreamTask?.cancel()
+                self.currentStreamTask = nil
+                // Run fallback in a separate unlinked task so cancellation doesn't propagate
+                Task.detached { [weak self] in
+                    guard let self = self else { return }
+                    let query = currentQuery
+                    let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
+                    let fallbackConversationId: String? = useServer ? nil : convIdArg
+                    do {
+                        let fallback = try await self.openAIService.generateCompletion(
+                            systemPrompt: systemPrompt,
+                            userMessage: query,
+                            context: context,
+                            history: fallbackHistory,
+                            conversationId: fallbackConversationId,
+                            onConversationId: { conv in
+                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
+                                Task { @MainActor in
+                                    self.conversationId = conv
+                                    self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
                                 }
-                                self.generatedAnswer = fallback
+                            },
+                            allowCodeInterpreter: false
+                        )
+                        await MainActor.run {
+                            if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
+                                var msg = self.messages[idx]
+                                msg.text = fallback
+                                msg.status = .normal
+                                msg.citations = citations
+                                msg.citationScopes = citationScopes
+                                self.messages[idx] = msg
+                            }
+                            self.generatedAnswer = fallback
+                            self.isSearching = false
+                            self.answerGenerationProgress = 1.0
+                            self.lastSearchTime = searchStartTime
+                        }
+                    } catch {
+                        await MainActor.run {
+                            if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
+                                var msg = self.messages[idx]
+                                if msg.status == .streaming {
+                                    msg.status = .error
+                                }
+                                msg.error = "No streamed response; watchdog fallback failed: \(error.localizedDescription)"
+                                self.messages[idx] = msg
+                            }
+                            self.isSearching = false
+                        }
+                    }
+                }
+            }
+        }
+
+        self.currentStreamTask = Task {
+            do {
+                var deltaCount = 0
+                // Clear previous code interpreter outputs
+                await MainActor.run { self.codeInterpreterOutputs = [] }
+
+                try await openAIService.streamCompletion(
+                    systemPrompt: systemPrompt,
+                    userMessage: currentQuery,
+                    context: context,
+                    history: historyArg,
+                    conversationId: convIdArg,
+                    onConversationId: { conv in
+                        UserDefaults.standard.set(conv, forKey: "openai.conversationId")
+                        Task { @MainActor in
+                            self.conversationId = conv
+                            self.logger.log(level: .info, message: "OpenAI conversation established", context: "id=\(conv)")
+                        }
+                    },
+                    onTextDelta: { delta in
+                        deltaCount += 1
+                        Task { @MainActor in
+                            self.generatedAnswer += delta
+                            if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
+                                var msg = self.messages[index]
+                                msg.text += delta
+                                self.messages[index] = msg
+                            }
+                        }
+                    },
+                    allowCodeInterpreter: useCodeInterpreter,
+                    onCodeInterpreterOutput: { output in
+                            Task { @MainActor in
+                                let maxOutputs = 8
+                                let maxImageChars = 1_000_000
+
+                                if output.type == .image, output.content.count > maxImageChars {
+                                    self.logger.log(level: .warning, message: "Code interpreter image dropped (too large)", context: "size=\(output.content.count)")
+                                    return
+                                }
+
+                                if self.codeInterpreterOutputs.count >= maxOutputs {
+                                    self.codeInterpreterOutputs.removeFirst(self.codeInterpreterOutputs.count - (maxOutputs - 1))
+                                }
+
+                                self.codeInterpreterOutputs.append(output)
+                                self.logger.log(level: .info, message: "Code interpreter output received", context: "type=\(output.type.rawValue); total=\(self.codeInterpreterOutputs.count)")
+                            }
+                        },
+                    onCompleted: {
+                        // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
+                        Task {
+                            self.logger.log(level: .success, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
+                            if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
+                                if self.messages[index].text.isEmpty {
+                                    do {
+                                        let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
+                                        let fallbackConversationId: String? = useServer ? nil : convIdArg
+                                        let fallbackQuery = currentQuery
+                                        let fallback = try await self.openAIService.generateCompletion(
+                                            systemPrompt: systemPrompt,
+                                            userMessage: fallbackQuery,
+                                            context: context,
+                                            history: fallbackHistory,
+                                            conversationId: fallbackConversationId,
+                                            onConversationId: { conv in
+                                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
+                                                Task { @MainActor in
+                                                    self.conversationId = conv
+                                                    self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
+                                                }
+                                            },
+                                            allowCodeInterpreter: false
+                                        )
+                                        await MainActor.run {
+                                            if self.messages.indices.contains(index) {
+                                                var msg = self.messages[index]
+                                                msg.text = fallback
+                                                msg.status = .normal
+                                                msg.citations = citations
+                                                msg.citationScopes = citationScopes
+                                                self.messages[index] = msg
+                                            }
+                                            self.generatedAnswer = fallback
+                                        }
+                                    } catch {
+                                        await MainActor.run {
+                                            if self.messages.indices.contains(index) {
+                                                var msg = self.messages[index]
+                                                if msg.status == .streaming {
+                                                    msg.status = .error
+                                                }
+                                                msg.error = "No streamed response; fallback failed."
+                                                self.messages[index] = msg
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    await MainActor.run {
+                                        var msg = self.messages[index]
+                                        msg.citations = citations
+                                        msg.citationScopes = citationScopes
+                                        if msg.status == .streaming {
+                                            msg.status = .normal
+                                        }
+                                        self.messages[index] = msg
+                                    }
+                                }
+                            }
+                            await MainActor.run {
+                                watchdogTask.cancel() // Clean up watchdog since stream completed successfully
                                 self.isSearching = false
                                 self.answerGenerationProgress = 1.0
                                 self.lastSearchTime = searchStartTime
-                            }
-                        } catch {
-                            await MainActor.run {
-                                if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                    var msg = self.messages[idx]
-                                    if msg.status == .streaming {
-                                        msg.status = .error
-                                    }
-                                    msg.error = "No streamed response; watchdog fallback failed: \(error.localizedDescription)"
-                                    self.messages[idx] = msg
-                                }
-                                self.isSearching = false
+                                self.currentStreamTask = nil
+                                self.logger.log(
+                                    level: .success,
+                                    message: "Search completed",
+                                    context: "traceId=\(traceId); Found \(resultCount) results"
+                                )
                             }
                         }
                     }
-                }
+                )
+            } catch is CancellationError {
+                watchdogTask.cancel() // Clean up watchdog on cancellation
+                self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
+                // Suppress UI error; watchdog or user cancel will handle state and message finalization
+            } catch {
+                watchdogTask.cancel() // Clean up watchdog on error
+                self.handleError(SearchError.answerGenerationFailed(error))
             }
-
-            self.currentStreamTask = Task {
-                do {
-                    var deltaCount = 0
-                    // Clear previous code interpreter outputs
-                    await MainActor.run { self.codeInterpreterOutputs = [] }
-
-                    try await openAIService.streamCompletion(
-                        systemPrompt: self.effectiveSystemPrompt,
-                        userMessage: currentQuery,
-                        context: context,
-                        history: historyArg,
-                        conversationId: convIdArg,
-                        onConversationId: { conv in
-                            UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                            Task { @MainActor in
-                                self.conversationId = conv
-                                self.logger.log(level: .info, message: "OpenAI conversation established", context: "id=\(conv)")
-                            }
-                        },
-                        onTextDelta: { delta in
-                            deltaCount += 1
-                            Task { @MainActor in
-                                self.generatedAnswer += delta
-                                if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                    var msg = self.messages[index]
-                                    msg.text += delta
-                                    self.messages[index] = msg
-                                }
-                            }
-                        },
-                        allowCodeInterpreter: useCodeInterpreter,
-                        onCodeInterpreterOutput: { output in
-                                Task { @MainActor in
-                                    let maxOutputs = 8
-                                    let maxImageChars = 1_000_000
-
-                                    if output.type == .image, output.content.count > maxImageChars {
-                                        self.logger.log(level: .warning, message: "Code interpreter image dropped (too large)", context: "size=\(output.content.count)")
-                                        return
-                                    }
-
-                                    if self.codeInterpreterOutputs.count >= maxOutputs {
-                                        self.codeInterpreterOutputs.removeFirst(self.codeInterpreterOutputs.count - (maxOutputs - 1))
-                                    }
-
-                                    self.codeInterpreterOutputs.append(output)
-                                    self.logger.log(level: .info, message: "Code interpreter output received", context: "type=\(output.type.rawValue); total=\(self.codeInterpreterOutputs.count)")
-                                }
-                            },
-                        onCompleted: {
-                            // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
-                            Task {
-                                self.logger.log(level: .success, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
-                                if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                    if self.messages[index].text.isEmpty {
-                                        do {
-                                            let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                                            let fallbackConversationId: String? = useServer ? nil : convIdArg
-                                            let fallbackQuery = currentQuery
-                                            let fallback = try await self.openAIService.generateCompletion(
-                                                systemPrompt: self.effectiveSystemPrompt,
-                                                userMessage: fallbackQuery,
-                                                context: context,
-                                                history: fallbackHistory,
-                                                conversationId: fallbackConversationId,
-                                                onConversationId: { conv in
-                                                    UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                                    Task { @MainActor in
-                                                        self.conversationId = conv
-                                                        self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
-                                                    }
-                                                },
-                                                allowCodeInterpreter: false
-                                            )
-                                            await MainActor.run {
-                                                if self.messages.indices.contains(index) {
-                                                    var msg = self.messages[index]
-                                                    msg.text = fallback
-                                                    msg.status = .normal
-                                                    msg.citations = citations
-                                                    self.messages[index] = msg
-                                                }
-                                                self.generatedAnswer = fallback
-                                            }
-                                        } catch {
-                                            await MainActor.run {
-                                                if self.messages.indices.contains(index) {
-                                                    var msg = self.messages[index]
-                                                    if msg.status == .streaming {
-                                                        msg.status = .error
-                                                    }
-                                                    msg.error = "No streamed response; fallback failed."
-                                                    self.messages[index] = msg
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        await MainActor.run {
-                                            var msg = self.messages[index]
-                                            msg.citations = citations
-                                            if msg.status == .streaming {
-                                                msg.status = .normal
-                                            }
-                                            self.messages[index] = msg
-                                        }
-                                    }
-                                }
-                                await MainActor.run {
-                                    watchdogTask.cancel() // Clean up watchdog since stream completed successfully
-                                    self.isSearching = false
-                                    self.answerGenerationProgress = 1.0
-                                    self.lastSearchTime = searchStartTime
-                                    self.currentStreamTask = nil
-                                    self.logger.log(
-                                        level: .success,
-                                        message: "Search completed",
-                                        context: "traceId=\(traceId); Found \(finalResults.count) results"
-                                    )
-                                }
-                            }
-                        }
-                    )
-                } catch is CancellationError {
-                    watchdogTask.cancel() // Clean up watchdog on cancellation
-                    self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
-                    // Suppress UI error; watchdog or user cancel will handle state and message finalization
-                } catch {
-                    watchdogTask.cancel() // Clean up watchdog on error
-                    self.handleError(SearchError.answerGenerationFailed(error))
-                }
-            }
-        } catch {
-            handleError(SearchError.queryFailed(error))
         }
     }
 
@@ -1391,6 +1839,9 @@ final class SearchViewModel: ObservableObject {
     func cancelActiveSearch() {
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        routingTask?.cancel()
+        routingTask = nil
+        routingStatus = nil
         Task { @MainActor in
             self.isSearching = false
             if let lastIdx = self.messages.lastIndex(where: { $0.role == .assistant }) {

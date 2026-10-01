@@ -47,6 +47,7 @@ During queries, OpenCone executes semantic vector lookup against Pinecone, perfo
 - **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages and Apple's native `Vision` OCR framework for images before cloud indexing begins.
 - **On-Device Security-Scoped Access**: Employs sandboxed bookmarks (`startAccessingSecurityScopedResource`) to retain file read permissions across system relaunches without prompts.
 - **Resilient Pinecone & OpenAI Client**: Coordinates exponential backoff retries, request rate limiting (100ms pauses), and an automatic circuit-breaker to gracefully handle vector-store throttling or region failures.
+- **Routing Across Indexes**: With two or more indexes or namespaces, the model picks where to search through one function tool that the app runs with the person's own Pinecone key. One question can search up to 5 places, including both sides of a compare-and-contrast, and each index is searched with the OpenAI embedding model that built it.
 - **Advanced RAG Capabilities**: Orchestrates hybrid searches (combining dense embeddings and sparse keyword vectors), custom metadata presets, and multi-model rerankers (`bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`).
 - **Real-Time Token Streaming**: Implements Server-Sent Events (SSE) parsing to fetch incremental response deltas directly from OpenAI's Responses API.
 - **Speech-to-Text Transcription**: Connects `AVAudioEngine` input taps and Apple's Speech Recognition API to transcribe microphone audio with responsive UI waveform animation.
@@ -132,6 +133,7 @@ flowchart TD
 - **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
 
 ### 2. Retrieval & Generation Details
+- **Routing**: Before searching, a short, non-streamed Responses API call offers the model a `search_index` tool that lists each index's one-line summary and its namespaces. The app checks the model's calls (an offered index, an existing namespace, at most 5), embeds each query with the model that built that index, runs the searches in parallel, and labels every passage with its index and namespace. Summaries are drafted from a sample of each index's passages and can be rewritten under Index summaries in the index menu. To learn which model built an index, the app re-embeds one stored passage and keeps the model that reproduces its stored vector. Metadata filters apply only to searches of the open index, since their field names belong to it. With one index and one namespace, or with routing off in Settings, search works as before.
 - **Query Embedding**: User prompt texts or voice transcription tokens are converted into embeddings matching the dimension of document vectors (3072 by default).
 - **Vector Search**: Performs similarity searches against Pinecone index namespaces, supporting custom metadata filters ($eq, $in, $gte, $lte, $contains).
 - **Hybrid Search & Reranking**: Combines dense semantic search and sparse keyword lists using a simple alpha slider. Matches can be refined using BGE, Cohere, or Pinecone inference models.
@@ -205,7 +207,7 @@ flowchart LR
 | `PINECONE_REGION` | Keychain | `us-east-1` | No | Targets serverless regions. |
 | `defaultChunkSize` | UserDefaults | `1024` | No | Character count limit for text segmentation. |
 | `defaultChunkOverlap`| UserDefaults | `256` | No | Chunk duplication boundary. |
-| `completionModel` | UserDefaults | `gpt-4o` | No | Model ID used for text completion. |
+| `completionModel` | UserDefaults | `gpt-6-sol` | No | Model ID used for text completion. The default and the model menu come from the model catalog shared with OpenResponses ([docs/model-catalog.md](docs/model-catalog.md)); a saved model that OpenAI has shut down moves to its documented replacement. |
 | `searchTopK` | UserDefaults | `10` | No | Nearest-neighbor vector counts retrieved. |
 | `hybridAlpha` | UserDefaults | `0.5` | No | Sparse vs dense search weighting (`1.0`=semantic, `0.0`=keyword). |
 

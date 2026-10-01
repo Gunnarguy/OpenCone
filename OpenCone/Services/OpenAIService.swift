@@ -115,20 +115,26 @@ final class OpenAIService: Sendable {
     /// - Parameters:
     ///   - texts: Array of text strings
     ///   - dimension: The desired vector dimension
+    ///   - model: Embedding model to use instead of the one in Settings, such as the model
+    ///     that built the index being searched
     /// - Returns: Array of vector embeddings
-    func createEmbeddings(texts: [String], dimension: Int? = nil) async throws -> [[Float]] {
+    func createEmbeddings(texts: [String], dimension: Int? = nil, model: String? = nil) async throws -> [[Float]] {
         guard !texts.isEmpty else {
             return []
         }
 
         let endpoint = "\(baseURL)/embeddings"
+        let modelID = model ?? currentEmbeddingModel()
         var body: [String: Any] = [
             "input": texts,
-            "model": currentEmbeddingModel()
+            "model": modelID
         ]
 
-        // Add dimension to the request if provided, otherwise use the default
-        body["dimensions"] = dimension ?? Configuration.embeddingDimension
+        // Add dimension to the request if provided, otherwise use the default.
+        // Only the text-embedding-3 models take `dimensions`; ada-002 is fixed at 1536.
+        if !modelID.hasPrefix("text-embedding-ada") {
+            body["dimensions"] = dimension ?? Configuration.embeddingDimension
+        }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             throw APIError.invalidRequestData
