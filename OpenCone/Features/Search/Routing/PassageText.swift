@@ -54,4 +54,45 @@ enum PassageText {
             namespace: namespace
         )
     }
+
+    // MARK: - Tagged context
+
+    /// Added to the system prompt when the context's passages carry tags, so the answer cites them
+    /// in a form the answer view can link back to each passage
+    static let citeInstructions = """
+    Each passage in the context starts with a tag such as [S2]. Cite the passages you use by their \
+    tags, right after the sentence they support. If the passages don't hold the answer, say so \
+    rather than guessing.
+    """
+
+    /// The document a passage came from, with its page when known
+    static func location(of result: SearchResultModel) -> String {
+        var location = result.sourceDocument
+        if let page = result.metadata["page_number"], !page.isEmpty {
+            location += ", page \(page)"
+        }
+        return location
+    }
+
+    /// Tag the passages S1, S2, … in order and write them as an answer's context. With
+    /// `namingScopes`, each passage also names the index and namespace it came from.
+    static func taggedContext(
+        _ results: [SearchResultModel],
+        maxCharacters: Int,
+        namingScopes: Bool = false
+    ) -> (text: String, passages: [SearchResultModel]) {
+        var blocks: [String] = []
+        var passages: [SearchResultModel] = []
+        for (position, result) in results.enumerated() {
+            var tagged = result
+            tagged.citationTag = "S\(position + 1)"
+            var heading = "[\(tagged.citationTag!)] \(location(of: result))"
+            if namingScopes, let scope = result.scopeLabel {
+                heading += " (\(scope))"
+            }
+            blocks.append("\(heading)\n\(String(result.content.prefix(maxCharacters)))")
+            passages.append(tagged)
+        }
+        return (blocks.joined(separator: "\n\n"), passages)
+    }
 }

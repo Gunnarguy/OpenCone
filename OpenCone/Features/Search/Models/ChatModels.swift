@@ -20,6 +20,8 @@ struct ChatMessage: Identifiable, Equatable {
     var citations: [String]?
     /// "index / namespace" for each citation of a routed answer, in the same order
     var citationScopes: [String]?
+    /// The passages the answer was written from, tagged S1, S2, … as the answer cites them
+    var sources: [SearchResultModel]
     var status: MessageStatus
     let createdAt: Date
     var error: String?
@@ -30,6 +32,7 @@ struct ChatMessage: Identifiable, Equatable {
         text: String,
         citations: [String]? = nil,
         citationScopes: [String]? = nil,
+        sources: [SearchResultModel] = [],
         status: MessageStatus = .normal,
         createdAt: Date = Date(),
         error: String? = nil
@@ -39,6 +42,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.text = text
         self.citations = citations
         self.citationScopes = citationScopes
+        self.sources = sources
         self.status = status
         self.createdAt = createdAt
         self.error = error
@@ -50,12 +54,18 @@ struct ChatMessage: Identifiable, Equatable {
         return citationScopes[position]
     }
 
+    /// The passage an answer cites as `tag`, such as "S2"
+    func source(tagged tag: String) -> SearchResultModel? {
+        sources.first { $0.citationTag?.caseInsensitiveCompare(tag) == .orderedSame }
+    }
+
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool {
-        lhs.id == rhs.id && 
-        lhs.text == rhs.text && 
-        lhs.status == rhs.status && 
+        lhs.id == rhs.id &&
+        lhs.text == rhs.text &&
+        lhs.status == rhs.status &&
         lhs.citations == rhs.citations &&
         lhs.citationScopes == rhs.citationScopes &&
+        lhs.sources.map(\.id) == rhs.sources.map(\.id) &&
         lhs.error == rhs.error
     }
 }

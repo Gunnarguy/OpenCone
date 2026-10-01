@@ -8,7 +8,7 @@ import Foundation
 @MainActor
 final class IndexRouter {
     /// One search per index on Pinecone's Starter plan, which allows 5 indexes per project
-    static let maxSearches = 5
+    nonisolated static let maxSearches = 5
     static let toolName = "search_index"
     /// Namespaces listed per index in the tool description, largest first
     static let maxNamespacesListed = 40
@@ -268,11 +268,7 @@ final class IndexRouter {
             }
             for result in kept {
                 tag += 1
-                var location = result.sourceDocument
-                if let page = result.metadata["page_number"], !page.isEmpty {
-                    location += ", page \(page)"
-                }
-                block += "\n[S\(tag)] \(location)\n\(String(result.content.prefix(maxCharacters)))"
+                block += "\n[S\(tag)] \(PassageText.location(of: result))\n\(String(result.content.prefix(maxCharacters)))"
                 var tagged = result
                 tagged.citationTag = "S\(tag)"
                 passages.append(tagged)

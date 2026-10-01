@@ -43,6 +43,18 @@ enum SettingsStorageKeys {
     static let rerankModel = "search.rerankModel"
     static let rerankTopN = "search.rerankTopN"
 
-    // Routing: let the model pick which indexes and namespaces to search
+    // Routing: let the model pick which indexes and namespaces to search. Kept beside the scope,
+    // which replaced it, so a settings file from before the scope still reads the same.
     static let indexRoutingEnabled = "search.indexRoutingEnabled"
+    static let searchScope = "search.scope"
+}
+
+/// How widely a question is searched
+enum SearchScope: String, CaseIterable {
+    /// The model reads each question and picks the indexes and namespaces to search
+    case auto
+    /// Every namespace of every index the person hasn't left out
+    case everything
+    /// The open index, in one namespace or in each of its namespaces
+    case oneIndex
 }

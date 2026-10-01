@@ -32,8 +32,10 @@ the closing check on a device is still open.
 | `OpenCone/Services/OpenAIService.swift` | Responses API requests, and the tools array (`web_search`, `code_interpreter`) |
 | `OpenCone/Services/ResponsesClient.swift` | Non-streamed Responses calls: the routing call and summary drafts |
 | `OpenCone/Services/PineconeService.swift` | Indexes and namespaces, `query`, `hybridQuery`, the per-index host cache (`indexHostCache`); `query(index:)` and `indexStats(forIndex:)` reach any index without moving `currentIndex` |
-| `OpenCone/Features/Search/SearchViewModel.swift` | The search: `performSearch` picks `performRoutedSearch` (2+ indexes or namespaces, routing on) or `searchOpenIndex`; both stream through `streamAnswer` |
-| `OpenCone/Features/Search/Routing/` | `IndexRouter` (the `search_index` tool, call checks, cap 5), `IndexSurveyor` (namespaces, model check, summary draft), `IndexProfile` and its store, `IndexSummariesSheet` |
+| `OpenCone/Features/Search/SearchViewModel.swift` | The search: `performSearch` runs one cancellable task that picks, by `SearchScope`, `routeAndAnswer` (Auto), `searchEverything` (Everything) or `searchOpenIndex` (One index, with `searchNamespaces` for all namespaces); all stream through `streamAnswer` |
+| `OpenCone/Features/Search/Routing/` | `IndexRouter` (the `search_index` tool, call checks, cap 5), `IndexSurveyor` (namespaces, model check, summary draft), `IndexProfile` and its store (with left-out indexes), `PassageText` (passage text and `[S#]` tagging) |
+| `OpenCone/Features/Search/SearchView.swift`, `Components/`, `SearchScopeViews.swift`, `AnswerSourcesViews.swift`, `AnswerSettingsViews.swift` | The Ask screen in OpenResponses' layout (2026-10-01): status bar, where to search, Markdown answers (`MarkdownText`), sources, composer, model picker, answer settings |
+| `OpenCone/App/DemoMode.swift` | Debug-only `-OpenConeDemo` launch argument: sample indexes and conversation, no keys, no requests; `-OpenConeDemoScreen <name>` opens one screen. For screenshots on the `OpenCone` simulator |
 | `OpenCone/Features/Documents/` | Import, extraction, chunking, upsert |
 | `OpenCone/Core/Models/`, `OpenCone/Resources/ModelCatalog/ModelCatalog.json` | The model catalog ported from OpenResponses (2026-10-01): default model, menu, reasoning efforts, retired models; `docs/model-catalog.md`. Keep the JSON identical to OpenResponses' apart from its notes line |
 | `OpenCone/Core/Configuration/`, `OpenCone/Core/Security/SecureSettingsStore.swift` | Preferences, and the keys in the Keychain |

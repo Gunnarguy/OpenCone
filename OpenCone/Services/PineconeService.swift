@@ -667,6 +667,12 @@ final class PineconeService {
         return Array(stats.namespaces.keys)
     }
 
+    /// Passages in each namespace of the current index; "" is the default namespace
+    func namespaceVectorCounts() async throws -> [String: Int] {
+        let stats = try await describeIndexStats()
+        return stats.namespaces.mapValues(\.vectorCount)
+    }
+
     /// Create a namespace for the current index (preview API)
     func createNamespace(_ namespace: String) async throws {
         guard let indexHost = indexHost else {

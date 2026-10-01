@@ -202,6 +202,15 @@ final class SearchViewModel: ObservableObject {
         ]
 
         static let watchdogDelayNanoseconds: UInt64 = 30_000_000_000
+
+        /// Namespaces searched one by one when every namespace of an index is searched. Pinecone
+        /// queries one namespace per request, so each costs a read.
+        static let namespaceFanOutLimit = 10
+
+        /// Searches an Everything question may run, one per namespace, taken in turns across indexes
+        static let broadSearchLimit = 20
+        /// Passages handed to the reranker from an Everything search, within its per-request limit
+        static let broadRerankCandidates = 40
     }
 
     /// Returns the effective system prompt - custom override if set, otherwise default
@@ -243,17 +252,19 @@ final class SearchViewModel: ObservableObject {
     // Published properties for UI binding
     @Published var searchQuery = ""
     @Published var isSearching = false
+    /// The passages behind the latest answer; each answer keeps its own in `ChatMessage.sources`
     @Published var searchResults: [SearchResultModel] = []
     @Published var generatedAnswer: String = ""
-    @Published var selectedResultIDs: Set<UUID> = []
-    
-    var selectedResults: [SearchResultModel] {
-        searchResults.filter { selectedResultIDs.contains($0.id) }
-    }
     @Published var errorMessage: String? = nil  // Holds user-facing error message
     @Published var pineconeIndexes: [String] = []
+    /// The first full index list has come back, or failed; until then an empty list means "loading"
+    @Published var hasLoadedIndexes = false
+    /// Namespaces of the open index, the default namespace ("") first
     @Published var namespaces: [String] = []
+    /// Passages in each namespace of the open index
+    @Published var namespaceVectorCounts: [String: Int] = [:]
     @Published var selectedIndex: String? = nil
+    /// The namespace searched in the open index; nil searches every namespace
     @Published var selectedNamespace: String? = nil
     @Published var indexDimension: Int? = nil
     @Published var indexMetric: String? = nil // cosine, euclidean, or dotproduct
@@ -266,8 +277,6 @@ final class SearchViewModel: ObservableObject {
     @Published var currentTheme: OCTheme = ThemeManager.shared.currentTheme
     @Published var messages: [ChatMessage] = []
     @Published var conversationId: String? = UserDefaults.standard.string(forKey: "openai.conversationId")
-    @Published var highlightedResultID: UUID? = nil
-    @Published var expandedResultIDs: Set<UUID> = []
     @Published var metadataFilters: [String: PineconeMetadataFilter] = [:]
     @Published var newFilterField: String = ""
     @Published var newFilterValue: String = ""
@@ -278,13 +287,11 @@ final class SearchViewModel: ObservableObject {
 
     // Routing across indexes
     @Published var indexProfiles: [String: IndexProfile] = [:]
-    /// What a routed search is doing before the answer starts, such as which indexes it searches
+    /// Indexes the person left out of searches across indexes
+    @Published private(set) var excludedIndexes: Set<String> = []
+    /// What a search is doing before the answer starts, such as which indexes it searches
     @Published var routingStatus: String? = nil
     @Published var isSurveyingIndexes = false
-
-    // Visual state properties
-    @Published var searchResultsOpacity: Double = 0.0
-    @Published var answerGenerationProgress: Double = 0.0
 
     // Cancellables for managing subscriptions
     private var cancellables = Set<AnyCancellable>()
@@ -307,6 +314,7 @@ final class SearchViewModel: ObservableObject {
         self.indexSurveyor = indexSurveyor
         self.indexCatalogStore = indexCatalogStore
         self.indexProfiles = indexCatalogStore?.load() ?? [:]
+        self.excludedIndexes = indexCatalogStore?.loadExcluded() ?? []
 
         // Subscribe to theme changes
         themeManager.$currentTheme
@@ -416,6 +424,7 @@ final class SearchViewModel: ObservableObject {
         }
 
         // Now load fresh data
+        defer { hasLoadedIndexes = true }
         do {
             let indexes = try await pineconeService.listIndexes(forceRefresh: true)
             self.pineconeIndexes = indexes
@@ -497,31 +506,35 @@ final class SearchViewModel: ObservableObject {
 
     /// Load available namespaces for the current index
     func loadNamespaces() async {
-        guard selectedIndex != nil else { 
+        guard selectedIndex != nil else {
             self.namespaces = []
+            self.namespaceVectorCounts = [:]
             self.selectedNamespace = nil
             return
         }
 
         do {
-            let namespaces = try await pineconeService.listNamespaces()
+            let counts = try await pineconeService.namespaceVectorCounts()
+            let namespaces = Self.orderedNamespaces(counts.keys)
+            self.namespaceVectorCounts = counts
             self.namespaces = namespaces
 
-            let resolvedNamespace = self.preferences.resolveNamespace(
-                availableNamespaces: namespaces,
-                index: self.selectedIndex,
-                currentSelection: self.selectedNamespace
-            )
+            // "All namespaces" is Search's own choice; the namespace preference is shared with
+            // Documents, which always needs one namespace to upload to
+            let resolvedNamespace: String?
+            if let index = selectedIndex, searchesAllNamespaces(of: index) {
+                resolvedNamespace = nil
+            } else {
+                resolvedNamespace = self.preferences.resolveNamespace(
+                    availableNamespaces: namespaces,
+                    index: self.selectedIndex,
+                    currentSelection: self.selectedNamespace
+                )
+            }
 
             self.selectedNamespace = resolvedNamespace
-            let persistence = (self.selectedIndex, resolvedNamespace)
-
-            if let index = persistence.0 {
-                if let namespace = persistence.1 {
-                    preferences.recordNamespace(namespace, for: index)
-                } else {
-                    preferences.clearNamespace(for: index)
-                }
+            if let index = selectedIndex, let namespace = resolvedNamespace {
+                preferences.recordNamespace(namespace, for: index)
             }
 
             // A namespace added or removed since the last survey makes that profile stale
@@ -536,7 +549,15 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    /// Set the current namespace
+    /// The default namespace first, then the rest by name
+    static func orderedNamespaces<Names: Sequence>(_ names: Names) -> [String] where Names.Element == String {
+        names.sorted { lhs, rhs in
+            if lhs.isEmpty != rhs.isEmpty { return lhs.isEmpty }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        }
+    }
+
+    /// Set the namespace searched in the open index; nil searches every namespace
     @MainActor
     func setNamespace(_ namespace: String?) {
         let trimmed = namespace.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -545,11 +566,62 @@ final class SearchViewModel: ObservableObject {
         guard let index = selectedIndex else { return }
 
         if let trimmed {
+            defaults.removeObject(forKey: allNamespacesKey(for: index))
             preferences.recordNamespace(trimmed, for: index)
         } else {
-            preferences.clearNamespace(for: index)
+            defaults.set(true, forKey: allNamespacesKey(for: index))
         }
     }
+
+    private func allNamespacesKey(for index: String) -> String {
+        "search.allNamespaces.\(index)"
+    }
+
+    /// The person chose every namespace of this index
+    private func searchesAllNamespaces(of index: String) -> Bool {
+        defaults.bool(forKey: allNamespacesKey(for: index))
+    }
+
+    /// Namespaces the open index search covers: the chosen one, or every namespace (the largest
+    /// first, up to the fan-out limit). nil is the default namespace.
+    var namespacesToSearch: [String?] {
+        if let selectedNamespace {
+            return [selectedNamespace.isEmpty ? nil : selectedNamespace]
+        }
+        guard namespaces.count > 1 else {
+            return [namespaces.first.flatMap { $0.isEmpty ? nil : $0 }]
+        }
+        let largestFirst = namespaces.sorted {
+            (namespaceVectorCounts[$0] ?? 0) > (namespaceVectorCounts[$1] ?? 0)
+        }
+        return largestFirst.prefix(Constants.namespaceFanOutLimit).map { $0.isEmpty ? nil : $0 }
+    }
+
+    // MARK: - Where to search
+
+    /// Indexes a search across indexes may use: every listed index the person hasn't left out
+    var includedIndexes: [String] {
+        pineconeIndexes.filter { !excludedIndexes.contains($0) }
+    }
+
+    /// Leave an index out of searches across indexes, or bring it back. The last included index
+    /// can't be left out, and leaving out the open one opens another.
+    func setIndex(_ name: String, included: Bool) async {
+        var excluded = excludedIndexes
+        if included {
+            excluded.remove(name)
+        } else {
+            guard includedIndexes.contains(where: { $0 != name }) else { return }
+            excluded.insert(name)
+        }
+        excludedIndexes = excluded
+        indexCatalogStore?.saveExcluded(excluded)
+
+        if !included, selectedIndex == name, let replacement = includedIndexes.first {
+            await setIndex(replacement)
+        }
+    }
+
 
     /// Update or clear a metadata filter applied to Pinecone queries
     func setMetadataFilter(field: String, value: String?) {
@@ -619,40 +691,6 @@ final class SearchViewModel: ObservableObject {
         filterParseError = nil
     }
 
-    /// Toggle selection of a search result
-    func toggleResultSelection(_ result: SearchResultModel) {
-        if selectedResultIDs.contains(result.id) {
-            selectedResultIDs.remove(result.id)
-        } else {
-            selectedResultIDs.insert(result.id)
-        }
-    }
-
-    /// Toggle expansion state for a search result row
-    func toggleResultExpansion(for resultID: UUID) {
-        if expandedResultIDs.contains(resultID) {
-            expandedResultIDs.remove(resultID)
-        } else {
-            expandedResultIDs.insert(resultID)
-        }
-    }
-
-    /// Ensure a specific source becomes visible/highlighted in the sources list
-    func focusResult(for source: String) {
-        guard let match = searchResults.first(where: { sourceMatches($0.sourceDocument, target: source) }) else {
-            return
-        }
-        highlightedResultID = match.id
-        expandedResultIDs.insert(match.id)
-    }
-
-    private func sourceMatches(_ candidate: String, target: String) -> Bool {
-        if candidate.caseInsensitiveCompare(target) == .orderedSame { return true }
-        let candidateFile = candidate.split(separator: "/").last.map(String.init) ?? candidate
-        let targetFile = target.split(separator: "/").last.map(String.init) ?? target
-        return candidateFile.caseInsensitiveCompare(targetFile) == .orderedSame
-    }
-
     private func shouldUseCodeInterpreter(for query: String) -> Bool {
         guard settingsViewModel.codeInterpreterEnabled else { return false }
         let lowercased = query.lowercased()
@@ -678,6 +716,9 @@ final class SearchViewModel: ObservableObject {
             handleError(SearchError.missingSelection("an index"))
             return
         }
+        // The requests read the model, tools and limits from UserDefaults; a change made a moment
+        // ago may still be waiting for the debounced save
+        settingsViewModel.persistRequestSettings()
         resetSearchState(isPreparingForSearch: true)
         // Append user message to chat history after resetting state
         self.messages.append(ChatMessage(role: .user, text: currentQuery))
@@ -691,7 +732,13 @@ final class SearchViewModel: ObservableObject {
         let healthy = await pineconeService.healthCheck()
         if !healthy || pineconeService.isCircuitOpen { 
             self.isSearching = false
-            self.errorMessage = "Pinecone temporarily unavailable; retrying soon."
+            // An answer that failed, so the question can be retried from the chat
+            self.messages.append(ChatMessage(
+                role: .assistant,
+                text: "",
+                status: .error,
+                error: "Pinecone didn't respond. Try again in a moment."
+            ))
             self.logger.log(level: .warning, message: "Pinecone preflight failed", context: "traceId=\(traceId)")
             return
         }
@@ -699,74 +746,104 @@ final class SearchViewModel: ObservableObject {
         // Record search start time
         let searchStartTime = Date()
 
-        if shouldRouteSearch {
-            await performRoutedSearch(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
-        } else {
-            await searchOpenIndex(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+        // Every path runs in one task, so Stop cancels the searches too, not only the answer
+        let task = Task { [weak self] in
+            guard let self else { return }
+            if self.searchesEverything {
+                await self.searchEverything(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+            } else if self.shouldRouteSearch {
+                await self.routeAndAnswer(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+            } else {
+                await self.searchOpenIndex(query: currentQuery, traceId: traceId, searchStartTime: searchStartTime)
+            }
+        }
+        routingTask = task
+        await task.value
+        // A search sent after Stop has its own task by now; leave that one alone
+        if routingTask == task {
+            routingTask = nil
         }
     }
 
-    /// Search the open index and namespace, then stream the answer. Every search took this path
-    /// before routing, and it is the fallback whenever routing can't run.
+    /// Search the open index, in the chosen namespace or in each of its namespaces, then stream the
+    /// answer. Every search took this path before routing, and it is the fallback whenever routing
+    /// can't run.
     private func searchOpenIndex(query currentQuery: String, traceId: String, searchStartTime: Date) async {
         do {
-            // Generate embedding for query, passing the index's dimension
-            let queryEmbedding = try await embeddingService.generateQueryEmbedding(for: currentQuery, dimension: indexDimension)
-
-            // Search Pinecone - use hybrid search if enabled AND index supports it
+            // Embed the question in the index's own vector space: with the model that built it once
+            // the survey has matched one, and the embedding setting until then
+            let indexModel = selectedIndex
+                .flatMap { indexProfiles[$0] }
+                .flatMap { $0.isRoutable ? $0.embeddingModel : nil }
+            let queryEmbedding = try await embeddingService.generateQueryEmbedding(
+                for: currentQuery,
+                dimension: indexDimension,
+                model: indexModel
+            )
             let filterPayload = buildMetadataFilterPayload()
-            var queryResults: QueryResponse
 
-            // Check if hybrid search is enabled and supported by this index
-            let useHybridSearch = settingsViewModel.hybridSearchEnabled && indexSupportsHybridSearch
-
+            // Hybrid search needs the switch on and an index whose metric supports it
             if settingsViewModel.hybridSearchEnabled, !indexSupportsHybridSearch {
-                // User wants hybrid but index doesn't support it
                 logger.log(
                     level: .warning,
                     message: "Hybrid search requires dotproduct metric (index uses \(indexMetric ?? "unknown")), using dense-only",
                     context: "traceId=\(traceId)"
                 )
             }
-
-            if useHybridSearch { 
-                // Generate sparse embedding for hybrid search
+            var sparseVector: PineconeService.SparseVector?
+            if settingsViewModel.hybridSearchEnabled, indexSupportsHybridSearch {
                 logger.log(level: .info, message: "Generating sparse embedding for hybrid search", context: "traceId=\(traceId)")
-                let sparseVector = try await pineconeService.generateSparseEmbedding(for: currentQuery)
+                sparseVector = try await pineconeService.generateSparseEmbedding(for: currentQuery)
+            }
 
-                // Perform hybrid query with alpha weighting
-                let alpha = Float(settingsViewModel.hybridSearchAlpha)
-                logger.log(level: .info, message: "Performing hybrid search", context: "alpha=\(alpha); traceId=\(traceId)")
-
-                queryResults = try await pineconeService.hybridQuery(
-                    denseVector: queryEmbedding,
-                    sparseVector: sparseVector,
-                    topK: configuredTopK,
-                    namespace: selectedNamespace,
-                    filter: filterPayload,
-                    alpha: alpha
-                )
-            } else {
-                // Standard dense-only query
-                queryResults = try await pineconeService.query(
+            let targets = namespacesToSearch
+            let searchesSeveral = targets.count > 1
+            let matches: [SearchResultModel]
+            if searchesSeveral, let index = selectedIndex {
+                routingStatus = "Searching \(targets.count) namespaces of \(index)"
+                matches = try await searchNamespaces(
+                    targets,
+                    of: index,
                     vector: queryEmbedding,
-                    topK: configuredTopK,
-                    namespace: selectedNamespace,
-                    filter: filterPayload
+                    sparse: sparseVector,
+                    filter: filterPayload,
+                    traceId: traceId
                 )
-            }
-
-            // Map results to search result models (metadata may contain non-string values)
+                routingStatus = nil
+            } else {
+                let namespace = targets.first ?? nil
+                let response: QueryResponse
+                if let sparseVector {
+                    let alpha = Float(settingsViewModel.hybridSearchAlpha)
+                    logger.log(level: .info, message: "Performing hybrid search", context: "alpha=\(alpha); traceId=\(traceId)")
+                    response = try await pineconeService.hybridQuery(
+                        denseVector: queryEmbedding,
+                        sparseVector: sparseVector,
+                        topK: configuredTopK,
+                        namespace: namespace,
+                        filter: filterPayload,
+                        alpha: alpha
+                    )
+                } else {
+                    response = try await pineconeService.query(
+                        vector: queryEmbedding,
+                        topK: configuredTopK,
+                        namespace: namespace,
+                        filter: filterPayload
+                    )
+                }
 #if DEBUG
-            // Log metadata keys only once per query to reduce verbosity
-            if let metadata = queryResults.matches.first(where: { $0.metadata != nil })?.metadata {
-                Logger.shared.log(level: .debug, message: "Pinecone metadata keys", context: metadata.keys.sorted().joined(separator: ", "))
-            }
+                // Log metadata keys only once per query to reduce verbosity
+                if let metadata = response.matches.first(where: { $0.metadata != nil })?.metadata {
+                    Logger.shared.log(level: .debug, message: "Pinecone metadata keys", context: metadata.keys.sorted().joined(separator: ", "))
+                }
 #endif
-            let results = queryResults.matches.map { PassageText.searchResult(from: $0) }
+                matches = response.matches.map { PassageText.searchResult(from: $0) }
+            }
+            if Task.isCancelled { return }
 
             // Apply reranking if enabled
-            let finalResults = await rerankIfEnabled(results, query: currentQuery, traceId: traceId)
+            let finalResults = await rerankIfEnabled(matches, query: currentQuery, traceId: traceId)
 
             let avgScore = finalResults.isEmpty ? Float(0) : finalResults.map { $0.score }.reduce(0, +) / Float(finalResults.count)
             let filterDescription = metadataFilters.isEmpty ? "none" : metadataFilters.map { "\($0.key)=\($0.value.displayValue)" }.joined(separator: ", ")
@@ -776,24 +853,13 @@ final class SearchViewModel: ObservableObject {
                 context: "filters: \(filterDescription)"
             )
 
-            // Progress update for visuals
-            await MainActor.run {
-                self.searchResults = finalResults
-                self.searchResultsOpacity = 1.0
-                self.answerGenerationProgress = 0.6
-                self.highlightedResultID = nil
-                self.expandedResultIDs.removeAll()
-            }
-
-            // Prepare context and citations
+            // The passages sent are tagged S1, S2, … so the answer can cite each one
             let useCodeInterpreter = shouldUseCodeInterpreter(for: currentQuery)
             let maxSources = useCodeInterpreter ? 3 : 5
             let maxContentChars = useCodeInterpreter ? 1200 : 4000
-            let context = finalResults.prefix(maxSources).map { result in
-                let trimmed = String(result.content.prefix(maxContentChars))
-                return "Source: \(result.sourceDocument)\n\(trimmed)"
-            }.joined(separator: "\n\n")
-            let citations = finalResults.prefix(maxSources).map { $0.sourceDocument }
+            let sent = Array(finalResults.prefix(maxSources))
+            let tagged = PassageText.taggedContext(sent, maxCharacters: maxContentChars, namingScopes: searchesSeveral)
+            searchResults = tagged.passages
 
             if useCodeInterpreter {
                 logger.log(level: .info, message: "Code interpreter context capped", context: "sources=\(maxSources); maxChars=\(maxContentChars)")
@@ -803,20 +869,89 @@ final class SearchViewModel: ObservableObject {
 
             await streamAnswer(
                 currentQuery: currentQuery,
-                context: context,
-                citations: citations,
-                citationScopes: nil,
+                context: tagged.text,
+                citations: sent.map(\.sourceDocument),
+                citationScopes: searchesSeveral ? sent.map { $0.scopeLabel ?? "" } : nil,
+                sources: tagged.passages,
                 resultCount: finalResults.count,
                 useCodeInterpreter: useCodeInterpreter,
-                systemPrompt: effectiveSystemPrompt,
+                systemPrompt: "\(effectiveSystemPrompt)\n\n\(PassageText.citeInstructions)",
                 traceId: traceId,
                 searchStartTime: searchStartTime
             )
         } catch {
             // Stop during a routed search's fallback cancels this too, which isn't a failure
             if Task.isCancelled { return }
+            routingStatus = nil
             handleError(SearchError.queryFailed(error))
         }
+    }
+
+    /// Query each namespace of the open index with one vector and keep the best matches across
+    /// them. The namespaces share the index's vector space, so their scores compare directly.
+    /// A namespace that fails is skipped; only all of them failing is an error.
+    func searchNamespaces(
+        _ targets: [String?],
+        of index: String,
+        vector: [Float],
+        sparse: PineconeService.SparseVector?,
+        filter: [String: Any]?,
+        traceId: String
+    ) async throws -> [SearchResultModel] {
+        let hybrid = sparse.map { (sparse: $0, alpha: Float(settingsViewModel.hybridSearchAlpha)) }
+        let topK = configuredTopK
+
+        let searches: [Task<Result<[SearchResultModel], Error>, Never>] = targets.map { namespace in
+            Task {
+                do {
+                    let response = try await self.pineconeService.query(
+                        index: index,
+                        vector: vector,
+                        hybrid: hybrid,
+                        topK: topK,
+                        namespace: namespace,
+                        filter: filter
+                    )
+                    return .success(response.matches.map {
+                        PassageText.searchResult(from: $0, index: index, namespace: namespace ?? "")
+                    })
+                } catch {
+                    return .failure(error)
+                }
+            }
+        }
+
+        let outcomes = await withTaskCancellationHandler {
+            var collected: [Result<[SearchResultModel], Error>] = []
+            for search in searches {
+                collected.append(await search.value)
+            }
+            return collected
+        } onCancel: {
+            searches.forEach { $0.cancel() }
+        }
+
+        var merged: [SearchResultModel] = []
+        var firstError: Error?
+        for (namespace, outcome) in zip(targets, outcomes) {
+            switch outcome {
+            case .success(let results):
+                merged += results
+            case .failure(let error):
+                firstError = firstError ?? error
+                logger.log(
+                    level: .warning,
+                    message: "Namespace search failed",
+                    context: "\(index) / \(namespace ?? "default"); \(error.localizedDescription); traceId=\(traceId)"
+                )
+            }
+        }
+        if merged.isEmpty, let firstError {
+            throw firstError
+        }
+
+        logger.log(level: .info, message: "Searched \(targets.count) namespaces", context: "index=\(index); matches=\(merged.count); traceId=\(traceId)")
+        return Array(merged.sorted { $0.score > $1.score }.prefix(topK))
     }
 
     /// Rerank with Pinecone when reranking is on; on failure the results keep their vector order
@@ -859,29 +994,21 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Routed Search Across Indexes
 
-    /// Routing needs the switch on, a router, and at least two places to search
+    /// Routing needs the switch on, a router, and at least two places to search among the indexes
+    /// the person hasn't left out
     var shouldRouteSearch: Bool {
-        guard settingsViewModel.indexRoutingEnabled, indexRouter != nil else { return false }
-        return pineconeIndexes.count >= 2 || namespaces.count >= 2
+        guard settingsViewModel.searchScope == .auto, indexRouter != nil else { return false }
+        let included = includedIndexes
+        if included.count >= 2 { return true }
+        guard let only = included.first else { return false }
+        let namespaceCount = only == selectedIndex ? namespaces.count : (indexProfiles[only]?.namespaces.count ?? 0)
+        return namespaceCount >= 2
     }
 
     /// Ask the model where to look, run those searches in parallel, then stream the answer from
-    /// their passages. Falls back to searching the open index when routing can't run.
-    private func performRoutedSearch(query: String, traceId: String, searchStartTime: Date) async {
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.routeAndAnswer(query: query, traceId: traceId, searchStartTime: searchStartTime)
-        }
-        routingTask = task
-        await task.value
-        // A search sent after Stop has its own task by now; leave that one alone
-        if routingTask == task {
-            routingTask = nil
-        }
-    }
-
-    /// After Stop, `cancelActiveSearch` has already reset the screen and a new search may be
-    /// running, so a cancelled routing task returns without touching any state
+    /// their passages. Falls back to searching the open index when routing can't run. After Stop,
+    /// `cancelActiveSearch` has already reset the screen and a new search may be running, so a
+    /// cancelled task returns without touching any state.
     private func routeAndAnswer(query: String, traceId: String, searchStartTime: Date) async {
         guard let router = indexRouter else {
             await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
@@ -899,13 +1026,14 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
+        // Searching across indexes has no open index to prefer; the person picked "All indexes"
         let decision: IndexRouter.Decision
         do {
             decision = try await router.route(
                 question: query,
                 history: historyBeforeCurrentQuestion(),
                 profiles: profiles,
-                hint: IndexRouter.Hint(index: selectedIndex, namespace: selectedNamespace),
+                hint: IndexRouter.Hint(index: nil, namespace: nil),
                 options: responsesModelOptions(temperature: 0)
             )
         } catch {
@@ -928,6 +1056,7 @@ final class SearchViewModel: ObservableObject {
                 context: "No documents were searched for this message.",
                 citations: [],
                 citationScopes: nil,
+                sources: [],
                 resultCount: 0,
                 useCodeInterpreter: false,
                 systemPrompt: effectiveSystemPrompt,
@@ -979,10 +1108,6 @@ final class SearchViewModel: ObservableObject {
             )
 
             searchResults = routed.passages
-            searchResultsOpacity = 1.0
-            answerGenerationProgress = 0.6
-            highlightedResultID = nil
-            expandedResultIDs.removeAll()
             routingStatus = nil
 
             await streamAnswer(
@@ -990,6 +1115,7 @@ final class SearchViewModel: ObservableObject {
                 context: routed.text,
                 citations: routed.citations,
                 citationScopes: routed.citationScopes,
+                sources: routed.passages,
                 resultCount: routed.passages.count,
                 useCodeInterpreter: useCodeInterpreter,
                 systemPrompt: "\(effectiveSystemPrompt)\n\n\(IndexRouter.answerInstructions)",
@@ -1005,6 +1131,7 @@ final class SearchViewModel: ObservableObject {
     private func runRoutedSearches(
         _ requests: [IndexRouter.SearchRequest],
         profiles: [String: IndexProfile],
+        rerankEach: Bool = true,
         traceId: String
     ) async throws -> [IndexRouter.RoutedSearch] {
         func vectorKey(_ model: String, _ dimension: Int, _ text: String) -> String {
@@ -1049,7 +1176,7 @@ final class SearchViewModel: ObservableObject {
                 }
                 // Metadata filters name fields of the open index, so only its searches use them
                 let filter = request.index == openIndex ? filterPayload : nil
-                return await self.runRoutedSearch(request, profile: profile, vector: vector, filter: filter, traceId: traceId)
+                return await self.runRoutedSearch(request, profile: profile, vector: vector, filter: filter, rerank: rerankEach, traceId: traceId)
             }
         }
 
@@ -1071,6 +1198,7 @@ final class SearchViewModel: ObservableObject {
         profile: IndexProfile,
         vector: [Float],
         filter: [String: Any]?,
+        rerank: Bool = true,
         traceId: String
     ) async -> IndexRouter.RoutedSearch {
         do {
@@ -1093,12 +1221,147 @@ final class SearchViewModel: ObservableObject {
             let results = response.matches.map {
                 PassageText.searchResult(from: $0, index: request.index, namespace: request.namespace)
             }
-            let ranked = await rerankIfEnabled(results, query: request.query, traceId: traceId)
+            let ranked = rerank ? await rerankIfEnabled(results, query: request.query, traceId: traceId) : results
             return IndexRouter.RoutedSearch(request: request, results: ranked)
         } catch {
             logger.log(level: .warning, message: "Routed search failed", context: "\(request.scopeLabel); \(error.localizedDescription); traceId=\(traceId)")
             return IndexRouter.RoutedSearch(request: request, results: [], failed: true)
         }
+    }
+
+    // MARK: - Everything
+
+    /// Everything is chosen: every namespace of every included index is searched
+    var searchesEverything: Bool {
+        settingsViewModel.searchScope == .everything
+    }
+
+    /// Added to the system prompt for an Everything answer
+    static let broadSearchInstructions = """
+    The passages come from searches of every index and namespace the person keeps. When the \
+    answer draws on more than one index or namespace, say which one each point comes from.
+    """
+
+    /// Search every namespace of every included index with the question itself, each index with
+    /// the model that built it, then keep the best passages across all of them. Nothing picks
+    /// where to look, so every place is searched, up to the search limit.
+    private func searchEverything(query: String, traceId: String, searchStartTime: Date) async {
+        routingStatus = "Looking over your indexes"
+        let profiles = await profilesForRouting()
+        if Task.isCancelled { return }
+
+        let requests = Self.broadSearchRequests(for: profiles, query: query, limit: Constants.broadSearchLimit)
+        guard !requests.isEmpty else {
+            routingStatus = nil
+            logger.log(level: .warning, message: "Everything search skipped: no index has a known embedding model yet", context: "traceId=\(traceId)")
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+
+        let indexCount = Set(requests.map(\.index)).count
+        routingStatus = "Searching \(requests.count) \(requests.count == 1 ? "namespace" : "namespaces") in \(indexCount) \(indexCount == 1 ? "index" : "indexes")"
+        logger.log(
+            level: .info,
+            message: "Everything search: \(requests.count) searches",
+            context: requests.map(\.scopeLabel).joined(separator: " | ") + "; traceId=\(traceId)"
+        )
+
+        let profilesByName = Dictionary(uniqueKeysWithValues: profiles.map { ($0.name, $0) })
+        let searches: [IndexRouter.RoutedSearch]
+        do {
+            // Reranked once, all together, below
+            searches = try await runRoutedSearches(requests, profiles: profilesByName, rerankEach: false, traceId: traceId)
+        } catch {
+            if Task.isCancelled { return }
+            routingStatus = nil
+            logger.log(level: .warning, message: "Everything search failed; searching the open index", context: "\(error.localizedDescription); traceId=\(traceId)")
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+        if Task.isCancelled { return }
+
+        if searches.allSatisfy(\.failed) {
+            routingStatus = nil
+            logger.log(level: .warning, message: "Every search failed; searching the open index", context: "traceId=\(traceId)")
+            await searchOpenIndex(query: query, traceId: traceId, searchStartTime: searchStartTime)
+            return
+        }
+
+        let merged = Self.mergedAcrossSearches(searches.filter { !$0.failed }.map(\.results))
+        let ranked = await rerankIfEnabled(Array(merged.prefix(Constants.broadRerankCandidates)), query: query, traceId: traceId)
+        if Task.isCancelled { return }
+
+        let useCodeInterpreter = shouldUseCodeInterpreter(for: query)
+        let kept = Array(ranked.prefix(useCodeInterpreter ? 3 : 8))
+        let tagged = PassageText.taggedContext(kept, maxCharacters: useCodeInterpreter ? 1200 : 2000, namingScopes: true)
+        var context = tagged.text
+        let failed = searches.filter(\.failed).map(\.request.scopeLabel)
+        if !failed.isEmpty {
+            context = "These searches failed, so nothing from them is included: \(failed.joined(separator: ", ")).\n\n" + context
+        }
+
+        searchResults = tagged.passages
+        routingStatus = nil
+        logger.log(
+            level: failed.isEmpty ? .info : .warning,
+            message: "Everything search kept \(kept.count) of \(merged.count) passages",
+            context: "failed=\(failed.count) of \(searches.count); traceId=\(traceId)"
+        )
+
+        await streamAnswer(
+            currentQuery: query,
+            context: context,
+            citations: kept.map(\.sourceDocument),
+            citationScopes: kept.map { $0.scopeLabel ?? "" },
+            sources: tagged.passages,
+            resultCount: merged.count,
+            useCodeInterpreter: useCodeInterpreter,
+            systemPrompt: "\(effectiveSystemPrompt)\n\n\(PassageText.citeInstructions)\n\n\(Self.broadSearchInstructions)",
+            traceId: traceId,
+            searchStartTime: searchStartTime
+        )
+    }
+
+    /// One search per namespace that holds passages, in every index whose embedding model is
+    /// known, each index's largest namespaces first. Indexes take turns, so when the limit cuts
+    /// the list short, every index still gets its largest namespaces searched.
+    static func broadSearchRequests(for profiles: [IndexProfile], query: String, limit: Int) -> [IndexRouter.SearchRequest] {
+        let perIndex: [[IndexRouter.SearchRequest]] = profiles
+            .filter(\.isRoutable)
+            .sorted { $0.name < $1.name }
+            .map { profile in
+                profile.namespaces
+                    .filter { $0.vectorCount > 0 }
+                    .sorted { $0.vectorCount > $1.vectorCount }
+                    .map { IndexRouter.SearchRequest(index: profile.name, namespace: $0.name, query: query) }
+            }
+
+        var requests: [IndexRouter.SearchRequest] = []
+        var depth = 0
+        while requests.count < limit {
+            let round = perIndex.compactMap { depth < $0.count ? $0[depth] : nil }
+            guard !round.isEmpty else { break }
+            requests += round.prefix(limit - requests.count)
+            depth += 1
+        }
+        return requests
+    }
+
+    /// Every search's best passage first, then every search's second, and so on; within each
+    /// round, higher scores first. Scores from different indexes aren't on one scale, so rank
+    /// decides first and the score only orders passages of the same rank.
+    static func mergedAcrossSearches(_ lists: [[SearchResultModel]]) -> [SearchResultModel] {
+        var ranked: [(rank: Int, result: SearchResultModel)] = []
+        for list in lists {
+            for (rank, result) in list.enumerated() {
+                ranked.append((rank: rank, result: result))
+            }
+        }
+        ranked.sort { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+            return lhs.result.score > rhs.result.score
+        }
+        return ranked.map { $0.result }
     }
 
     /// Earlier turns for the router, without the question just asked
@@ -1139,18 +1402,19 @@ final class SearchViewModel: ObservableObject {
     /// refresh. Only indexes with no profile are surveyed before the question, without a summary
     /// draft; the background survey drafts one afterwards.
     private func profilesForRouting() async -> [IndexProfile] {
-        let missing = pineconeIndexes.filter { indexProfiles[$0] == nil }
+        let candidates = includedIndexes
+        let missing = candidates.filter { indexProfiles[$0] == nil }
         if !missing.isEmpty {
             await surveyIndexes(missing, recheckModels: false, draftSummaries: false)
             scheduleIndexSurvey()
         }
-        return pineconeIndexes.compactMap { indexProfiles[$0] }
+        return candidates.compactMap { indexProfiles[$0] }
     }
 
     /// Survey, in the background, indexes that have no profile or are due for another look
     func scheduleIndexSurvey(recheckModels: Bool = false) {
         guard indexSurveyor != nil, settingsViewModel.indexRoutingEnabled, indexSurveyTask == nil else { return }
-        guard !pineconeIndexes.isEmpty, recheckModels || shouldRouteSearch else { return }
+        guard !pineconeIndexes.isEmpty, recheckModels || shouldRouteSearch || searchesEverything else { return }
 
         // Forget indexes that no longer exist
         let listed = Set(pineconeIndexes)
@@ -1273,17 +1537,19 @@ final class SearchViewModel: ObservableObject {
         context: String,
         citations: [String],
         citationScopes: [String]?,
+        sources: [SearchResultModel],
         resultCount: Int,
         useCodeInterpreter: Bool,
         systemPrompt: String,
         traceId: String,
         searchStartTime: Date
     ) async {
-        // Prepare streaming assistant message
+        // Prepare streaming assistant message; its passages are there from the start, so a tag is
+        // tappable while the answer is still being written
         let assistantMessageId = UUID()
         await MainActor.run {
             self.generatedAnswer = ""
-            self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
+            self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, sources: sources, status: .streaming))
         }
 
         let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
@@ -1341,7 +1607,6 @@ final class SearchViewModel: ObservableObject {
                             }
                             self.generatedAnswer = fallback
                             self.isSearching = false
-                            self.answerGenerationProgress = 1.0
                             self.lastSearchTime = searchStartTime
                         }
                     } catch {
@@ -1473,259 +1738,12 @@ final class SearchViewModel: ObservableObject {
                             await MainActor.run {
                                 watchdogTask.cancel() // Clean up watchdog since stream completed successfully
                                 self.isSearching = false
-                                self.answerGenerationProgress = 1.0
                                 self.lastSearchTime = searchStartTime
                                 self.currentStreamTask = nil
                                 self.logger.log(
                                     level: .success,
                                     message: "Search completed",
                                     context: "traceId=\(traceId); Found \(resultCount) results"
-                                )
-                            }
-                        }
-                    }
-                )
-            } catch is CancellationError {
-                watchdogTask.cancel() // Clean up watchdog on cancellation
-                self.logger.log(level: .info, message: "Responses streaming cancelled", context: "traceId=\(traceId)")
-                // Suppress UI error; watchdog or user cancel will handle state and message finalization
-            } catch {
-                watchdogTask.cancel() // Clean up watchdog on error
-                self.handleError(SearchError.answerGenerationFailed(error))
-            }
-        }
-    }
-
-    /// Generate an answer based on selected results
-    func generateAnswerFromSelected() async {
-        guard !selectedResults.isEmpty else {
-            handleError(SearchError.missingSelection("at least one source document"))
-            return
-        }
-        let currentQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !currentQuery.isEmpty else { 
-            handleError(SearchError.missingSelection("a query"))
-            return
-        }
-
-        self.isSearching = true
-        self.generatedAnswer = ""
-        self.errorMessage = nil
-        self.searchQuery = ""
-
-        let traceId = UUID().uuidString
-        self.logger.log(level: .info, message: "Generate from selected started", context: "traceId=\(traceId)")
-
-        // Build context and citations
-        let useCodeInterpreter = shouldUseCodeInterpreter(for: currentQuery)
-        let maxSources = useCodeInterpreter ? 3 : selectedResults.count
-        let maxContentChars = useCodeInterpreter ? 1200 : 4000
-        let cappedResults = Array(self.selectedResults.prefix(maxSources))
-        let context = cappedResults.map { result in
-            let trimmed = String(result.content.prefix(maxContentChars))
-            return "Source: \(result.sourceDocument)\n\(trimmed)"
-        }.joined(separator: "\n\n")
-        let citations = cappedResults.map { $0.sourceDocument }
-
-        if useCodeInterpreter {
-            logger.log(level: .info, message: "Code interpreter context capped", context: "sources=\(maxSources); maxChars=\(maxContentChars)")
-        } else if settingsViewModel.codeInterpreterEnabled {
-            logger.log(level: .info, message: "Code interpreter skipped", context: "reason=heuristic; traceId=\(traceId)")
-        }
-
-        let assistantMessageId = UUID()
-        self.generatedAnswer = ""
-        self.messages.append(ChatMessage(id: assistantMessageId, role: .assistant, text: "", citations: nil, status: .streaming))
-
-        let useServer = (UserDefaults.standard.string(forKey: "openai.conversationMode") ?? "server") == "server"
-        let historyArg: [ChatMessage] = useServer ? [] : self.conversationHistoryExcludingCurrentUser()
-        let convIdArg: String? = (useServer && (self.conversationId?.hasPrefix("conv") ?? false)) ? self.conversationId : nil
-
-        // Watchdog: if no deltas within 7s, cancel stream and fallback to non-stream completion
-        let watchdogTask = Task { [weak self] in
-            guard let self = self else { return }
-            try? await Task.sleep(nanoseconds: Constants.watchdogDelayNanoseconds)
-            let shouldFallback = await MainActor.run { () -> Bool in
-                if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                    return self.messages[idx].status == .streaming && self.messages[idx].text.isEmpty
-                }
-                return false
-            }
-            if shouldFallback {
-                await MainActor.run {
-                    self.logger.log(level: .warning, message: "Watchdog fallback triggered", context: "traceId=\(traceId)")
-                }
-                self.currentStreamTask?.cancel()
-                self.currentStreamTask = nil
-                Task.detached { [weak self] in
-                    guard let self = self else { return }
-                    let query = currentQuery
-                    let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                    let fallbackConversationId: String? = useServer ? nil : convIdArg
-                    do {
-                        let fallback = try await self.openAIService.generateCompletion(
-                            systemPrompt: self.effectiveSystemPrompt,
-                            userMessage: query,
-                            context: context,
-                            history: fallbackHistory,
-                            conversationId: fallbackConversationId,
-                            onConversationId: { conv in
-                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                Task { @MainActor in
-                                    self.conversationId = conv
-                                    self.logger.log(level: .info, message: "OpenAI conversation established (watchdog)", context: "id=\(conv)")
-                                }
-                            },
-                            allowCodeInterpreter: false
-                        )
-                        await MainActor.run {
-                            if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                var msg = self.messages[idx]
-                                msg.text = fallback
-                                msg.status = .normal
-                                msg.citations = citations
-                                self.messages[idx] = msg
-                            }
-                            self.generatedAnswer = fallback
-                            self.isSearching = false
-                            self.currentStreamTask = nil
-                        }
-                    } catch {
-                        await MainActor.run {
-                            if let idx = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                var msg = self.messages[idx]
-                                if msg.status == .streaming {
-                                    msg.status = .error
-                                }
-                                msg.error = "No streamed response; watchdog fallback failed: \(error.localizedDescription)"
-                                self.messages[idx] = msg
-                            }
-                            self.isSearching = false
-                            self.currentStreamTask = nil
-                        }
-                    }
-                }
-            }
-        }
-
-        self.currentStreamTask = Task {
-            do {
-                var deltaCount = 0
-                // Clear previous code interpreter outputs for regeneration
-                await MainActor.run { self.codeInterpreterOutputs = [] }
-
-                try await openAIService.streamCompletion(
-                    systemPrompt: self.effectiveSystemPrompt,
-                    userMessage: currentQuery,
-                    context: context,
-                    history: historyArg,
-                    conversationId: convIdArg,
-                    onConversationId: { conv in
-                        UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                        Task { @MainActor in
-                            self.conversationId = conv
-                            self.logger.log(level: .info, message: "OpenAI conversation established", context: "id=\(conv)")
-                        }
-                    },
-                    onTextDelta: { delta in
-                        deltaCount += 1
-                        Task { @MainActor in
-                            self.generatedAnswer += delta
-                            if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                var msg = self.messages[index]
-                                if msg.status == .streaming {
-                                    msg.status = .normal
-                                }
-                                msg.text += delta
-                                self.messages[index] = msg
-                            }
-                        }
-                    },
-                    allowCodeInterpreter: useCodeInterpreter,
-                    onCodeInterpreterOutput: { output in
-                            Task { @MainActor in
-                                let maxOutputs = 8
-                                let maxImageChars = 1_000_000
-
-                                if output.type == .image, output.content.count > maxImageChars {
-                                    self.logger.log(level: .warning, message: "Code interpreter image dropped (too large)", context: "size=\(output.content.count)")
-                                    return
-                                }
-
-                                if self.codeInterpreterOutputs.count >= maxOutputs {
-                                    self.codeInterpreterOutputs.removeFirst(self.codeInterpreterOutputs.count - (maxOutputs - 1))
-                                }
-
-                                self.codeInterpreterOutputs.append(output)
-                                self.logger.log(level: .info, message: "Code interpreter output received", context: "type=\(output.type.rawValue); total=\(self.codeInterpreterOutputs.count)")
-                            }
-                        },
-                    onCompleted: {
-                        // Finalize even if no deltas arrived; if empty, fallback to non-stream completion once
-                        Task {
-                            self.logger.log(level: .success, message: "OpenAI stream completed", context: "deltaCount=\(deltaCount); traceId=\(traceId)")
-                            if let index = self.messages.firstIndex(where: { $0.id == assistantMessageId }) {
-                                if self.messages[index].text.isEmpty {
-                                    do {
-                                        let fallbackHistory: [ChatMessage] = useServer ? [] : await MainActor.run { self.conversationHistoryExcludingCurrentUser() }
-                                        let fallbackConversationId: String? = useServer ? nil : convIdArg
-                                        let fallbackQuery = currentQuery
-                                        let fallback = try await self.openAIService.generateCompletion(
-                                            systemPrompt: self.effectiveSystemPrompt,
-                                            userMessage: fallbackQuery,
-                                            context: context,
-                                            history: fallbackHistory,
-                                            conversationId: fallbackConversationId,
-                                            onConversationId: { conv in
-                                                UserDefaults.standard.set(conv, forKey: "openai.conversationId")
-                                                Task { @MainActor in
-                                                    self.conversationId = conv
-                                                    self.logger.log(level: .info, message: "OpenAI conversation established (fallback)", context: "id=\(conv)")
-                                                }
-                                            },
-                                            allowCodeInterpreter: false
-                                        )
-                                            await MainActor.run {
-                                                if self.messages.indices.contains(index) {
-                                                    var msg = self.messages[index]
-                                                    msg.text = fallback
-                                                    msg.status = .normal
-                                                    msg.citations = citations
-                                                    self.messages[index] = msg
-                                                }
-                                                self.generatedAnswer = fallback
-                                            }
-                                    } catch {
-                                        await MainActor.run {
-                                            if self.messages.indices.contains(index) {
-                                                var msg = self.messages[index]
-                                                if msg.status == .streaming {
-                                                    msg.status = .error
-                                                }
-                                                msg.error = "No streamed response; fallback failed."
-                                                self.messages[index] = msg
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    await MainActor.run {
-                                        var msg = self.messages[index]
-                                        msg.citations = citations
-                                        if msg.status == .streaming {
-                                            msg.status = .normal
-                                        }
-                                        self.messages[index] = msg
-                                    }
-                                }
-                            }
-                            await MainActor.run {
-                                watchdogTask.cancel() // Clean up watchdog since stream completed successfully
-                                self.isSearching = false
-                                self.currentStreamTask = nil
-                                self.logger.log(
-                                    level: .success,
-                                    message: "Answer generated from selected results",
-                                    context: "traceId=\(traceId); Using \(self.selectedResults.count) results"
                                 )
                             }
                         }
@@ -1750,9 +1768,26 @@ final class SearchViewModel: ObservableObject {
         Task { @MainActor in
             self.conversationId = nil
             self.messages.removeAll()
+            self.searchResults = []
+            self.codeInterpreterOutputs = []
             self.generatedAnswer = ""
             self.errorMessage = nil
         }
+    }
+
+    /// Ask the question behind the latest answer again, in place of that answer
+    func retryLastAnswer() async {
+        guard !isSearching,
+              let answerPosition = messages.lastIndex(where: { $0.role == .assistant }),
+              answerPosition == messages.count - 1,
+              let questionPosition = messages[..<answerPosition].lastIndex(where: { $0.role == .user })
+        else {
+            return
+        }
+        let question = messages[questionPosition].text
+        messages.removeSubrange(questionPosition...answerPosition)
+        searchQuery = question
+        await performSearch()
     }
 
     // MARK: - Export Conversation
@@ -1844,11 +1879,18 @@ final class SearchViewModel: ObservableObject {
         routingStatus = nil
         Task { @MainActor in
             self.isSearching = false
-            if let lastIdx = self.messages.lastIndex(where: { $0.role == .assistant }) {
-                if self.messages[lastIdx].text.isEmpty {
-                    var msg = self.messages[lastIdx]
+            if self.messages.last?.role == .user {
+                // Stopped while searching, before the answer began: leave an answer that can be retried
+                self.messages.append(ChatMessage(role: .assistant, text: "", status: .error, error: "Stopped"))
+            } else if let lastIdx = self.messages.lastIndex(where: { $0.role == .assistant }) {
+                var msg = self.messages[lastIdx]
+                if msg.text.isEmpty {
                     msg.status = .error
-                    msg.error = "Generation canceled"
+                    msg.error = "Stopped"
+                    self.messages[lastIdx] = msg
+                } else if msg.status == .streaming {
+                    // What arrived before Stop stays, as a finished answer
+                    msg.status = .normal
                     self.messages[lastIdx] = msg
                 }
             }
@@ -1893,10 +1935,7 @@ final class SearchViewModel: ObservableObject {
         self.isSearching = isPreparingForSearch
         self.searchResults = []
         self.generatedAnswer = ""
-        self.selectedResultIDs.removeAll()
         self.errorMessage = nil
-        self.highlightedResultID = nil
-        self.expandedResultIDs.removeAll()
     }
 
     /// Handles errors by logging them and updating the UI.

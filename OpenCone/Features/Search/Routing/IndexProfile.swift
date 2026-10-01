@@ -104,8 +104,25 @@ final class IndexCatalogStore {
         defaults.set(data, forKey: key)
     }
 
+    /// Indexes the person left out of searches across indexes. Under the same prefix, so the
+    /// reset in Settings clears them with the profiles.
+    func loadExcluded() -> Set<String> {
+        Set(defaults.stringArray(forKey: excludedKey) ?? [])
+    }
+
+    func saveExcluded(_ names: Set<String>) {
+        if names.isEmpty {
+            defaults.removeObject(forKey: excludedKey)
+        } else {
+            defaults.set(names.sorted(), forKey: excludedKey)
+        }
+    }
+
+    private var excludedKey: String { "\(key).excluded" }
+
     func removeAll() {
         defaults.removeObject(forKey: key)
+        defaults.removeObject(forKey: excludedKey)
     }
 }
 

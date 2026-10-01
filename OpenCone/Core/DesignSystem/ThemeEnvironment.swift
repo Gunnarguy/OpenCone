@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Environment key to access the current theme
 struct ThemeKey: EnvironmentKey {
-    static let defaultValue: OCTheme = .light
+    static let defaultValue: OCTheme = .system
 }
 
 extension EnvironmentValues {
@@ -12,7 +12,8 @@ extension EnvironmentValues {
     }
 }
 
-/// View modifier to apply theme to a view hierarchy
+/// View modifier to apply theme to a view hierarchy. The color scheme is left to the system, so
+/// the app is light or dark with the rest of iOS.
 struct ThemeModifier: ViewModifier {
     @ObservedObject var themeManager = ThemeManager.shared
 
@@ -21,12 +22,6 @@ struct ThemeModifier: ViewModifier {
             .environment(\.theme, themeManager.currentTheme)
             // Apply global accent color to controls (buttons, links, toggles, etc.)
             .tint(themeManager.currentTheme.accentColor)
-            // Ensure the theme's background color fills the screen behind all content
-            .background(themeManager.currentTheme.backgroundColor.ignoresSafeArea())
-            // Keep system chrome in the correct light/dark mode
-            .preferredColorScheme(
-                themeManager.currentTheme.id == "dark" || themeManager.currentTheme.id == "midnight"
-                    ? .dark : .light)
     }
 }
 

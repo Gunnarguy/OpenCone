@@ -31,12 +31,12 @@ struct OCTheme {
     var primaryLight: Color { primaryColor.opacity(0.15) }
     var primaryMedium: Color { primaryColor.opacity(0.5) }
 
-    /// Built-in light theme
-    static let light = OCTheme(
-        id: "light",
-        name: "Light",
+    /// The only theme: system colors, which follow the light or dark appearance chosen in iOS
+    static let system = OCTheme(
+        id: "system",
+        name: "System",
         primaryColor: Color.blue,
-        secondaryColor: Color(hex: "#6C63FF"),
+        secondaryColor: Color.indigo,
         backgroundColor: Color(.systemBackground),
         cardBackgroundColor: Color(.secondarySystemBackground),
         textPrimaryColor: Color(.label),
@@ -47,59 +47,4 @@ struct OCTheme {
         errorColor: Color.red,
         infoColor: Color.blue
     )
-
-    /// Built-in dark theme
-    static let dark = OCTheme(
-        id: "dark",
-        name: "Dark",
-    // Deep, high-contrast palette for true dark mode
-    primaryColor: Color(hex: "#3366FF"),
-    secondaryColor: Color(hex: "#7E76FF"),
-    backgroundColor: Color(hex: "#121A2B"), // deep desaturated blue/black
-    cardBackgroundColor: Color(hex: "#1A2540"), // slightly lifted from background
-    textPrimaryColor: Color.white,
-    textSecondaryColor: Color.white.opacity(0.7),
-    accentColor: Color(hex: "#3366FF"),
-    successColor: Color(hex: "#4CD964"),
-    warningColor: Color(hex: "#FF9500"),
-    errorColor: Color(hex: "#FF3B30"),
-    infoColor: Color(hex: "#5AC8FA")
-    )
-
-    /// Midnight blue theme
-    static let midnight = OCTheme(
-        id: "midnight",
-        name: "Midnight",
-        primaryColor: Color(hex: "#3366FF"),
-        secondaryColor: Color(hex: "#6C63FF"),
-        backgroundColor: Color(hex: "#121A2B"),
-        cardBackgroundColor: Color(hex: "#1A2540"),
-        textPrimaryColor: Color.white,
-        textSecondaryColor: Color.white.opacity(0.7),
-        accentColor: Color(hex: "#3366FF"),
-        successColor: Color(hex: "#4CD964"),
-        warningColor: Color(hex: "#FF9500"),
-        errorColor: Color(hex: "#FF3B30"),
-        infoColor: Color(hex: "#5AC8FA")
-    )
-
-    /// Forest green theme
-    static let forest = OCTheme(
-        id: "forest",
-        name: "Forest",
-        primaryColor: Color(hex: "#2E8B57"),
-        secondaryColor: Color(hex: "#8FBC8F"),
-        backgroundColor: Color(hex: "#F5F9F5"),
-        cardBackgroundColor: Color(hex: "#E8F5E9"),
-        textPrimaryColor: Color(hex: "#212121"),
-        textSecondaryColor: Color(hex: "#757575"),
-        accentColor: Color(hex: "#2E8B57"),
-        successColor: Color(hex: "#4CAF50"),
-        warningColor: Color(hex: "#FF9800"),
-        errorColor: Color(hex: "#F44336"),
-        infoColor: Color(hex: "#03A9F4")
-    )
-
-    /// All available themes
-    static let allThemes: [OCTheme] = [.light, .dark, .midnight, .forest]
 }

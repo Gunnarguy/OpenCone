@@ -75,6 +75,11 @@ struct OpenConeApp: App {
     /// Determines whether to show the welcome screen or proceed to initialize services.
     @MainActor
     private func handleAppLaunch() {
+        if DemoMode.isActive {
+            startDemo()
+            return
+        }
+
         // Check if this is the very first time the app is launched
         let isFirstLaunch = !UserDefaults.standard.bool(forKey: "hasLaunchedBefore")
         logger.log(level: .info, message: "App launching. First launch? \(isFirstLaunch)")
@@ -88,6 +93,38 @@ struct OpenConeApp: App {
             settingsViewModel.loadAPIKeys()
             initializeServices()
         }
+    }
+
+    /// Sample indexes and a sample conversation, with no keys and no requests (`DemoMode`)
+    @MainActor
+    private func startDemo() {
+        #if DEBUG
+        logger.log(level: .info, message: "Demo mode: sample content, no requests")
+        let openAI = OpenAIService(apiKey: "demo")
+        let pinecone = PineconeService(apiKey: "demo", projectId: "demo")
+        let embedding = EmbeddingService(openAIService: openAI)
+        let documents = DocumentsViewModel(
+            fileProcessorService: FileProcessorService(),
+            textProcessorService: TextProcessorService(),
+            embeddingService: embedding,
+            pineconeService: pinecone
+        )
+        let search = SearchViewModel(
+            pineconeService: pinecone,
+            openAIService: openAI,
+            embeddingService: embedding,
+            settingsViewModel: settingsViewModel,
+            indexRouter: IndexRouter(responses: ResponsesClient(apiKey: "demo")),
+            indexSurveyor: nil,
+            indexCatalogStore: nil
+        )
+        Task {
+            await DemoContent.seed(search, settings: settingsViewModel)
+            documentsViewModel = documents
+            searchViewModel = search
+            appState = .main
+        }
+        #endif
     }
 
     /// Sets a flag in UserDefaults to indicate the app has been launched at least once.

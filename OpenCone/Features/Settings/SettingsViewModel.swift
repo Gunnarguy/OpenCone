@@ -104,8 +104,20 @@ final class SettingsViewModel: ObservableObject {
         return nil
     }
 
-    // Routing: with two or more indexes or namespaces, the model picks where to search
-    @Published var indexRoutingEnabled: Bool = true
+    /// How widely questions are searched: picked per question, everything, or one index
+    @Published var searchScope: SearchScope = .auto
+
+    /// The search reaches beyond the open index (Auto or Everything)
+    var indexRoutingEnabled: Bool {
+        get { searchScope != .oneIndex }
+        set {
+            if !newValue {
+                searchScope = .oneIndex
+            } else if searchScope == .oneIndex {
+                searchScope = .auto
+            }
+        }
+    }
 
     // Reranking settings (two-stage retrieval)
     @Published var rerankingEnabled: Bool = false // Post-retrieval reranking
@@ -220,6 +232,8 @@ final class SettingsViewModel: ObservableObject {
             $enforcePreferredIndex.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $preferredIndexName.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $preferredNamespace.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $metadataPresets.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $embeddingDimension.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $showAnswerPanelBelowChat.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $logMinimumLevel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $useCustomModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -235,10 +249,18 @@ final class SettingsViewModel: ObservableObject {
             $streamingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $webSearchEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $codeInterpreterEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            $indexRoutingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $searchScope.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $requestTimeoutSeconds.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $maxRetries.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             $verboseLogging.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+        ]
+
+        let retrievalPublishers: [AnyPublisher<Void, Never>] = [
+            $hybridSearchEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $hybridSearchAlpha.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankingEnabled.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankModel.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            $rerankTopN.dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
         let pineconePublishers: [AnyPublisher<Void, Never>] = [
@@ -253,7 +275,7 @@ final class SettingsViewModel: ObservableObject {
             $pineconeMetadataFetchVersion.dropFirst().map { _ in () }.eraseToAnyPublisher(),
         ]
 
-        let allPublishers = chunkPublishers + searchPublishers + advancedPublishers + pineconePublishers
+        let allPublishers = chunkPublishers + searchPublishers + advancedPublishers + retrievalPublishers + pineconePublishers
 
         Publishers.MergeMany(allPublishers)
             .debounce(for: RunLoop.SchedulerTimeType.Stride(1.0), scheduler: RunLoop.main)
@@ -297,11 +319,8 @@ final class SettingsViewModel: ObservableObject {
     private func performAutoSave() {
         guard !isInitialLoad else { return }
 
-        // Cooldown: don't save if we saved less than 2 seconds ago
-        if let lastSave = lastAutoSaveTime, Date().timeIntervalSince(lastSave) < 2.0 {
-            return
-        }
-
+        // The debounce already groups a burst of changes. A cooldown here used to drop a change
+        // made within 2 seconds of the previous save, and nothing saved it later.
         isSaving = true
         saveSettings()
         lastAutoSaveTime = Date()
@@ -317,6 +336,62 @@ final class SettingsViewModel: ObservableObject {
         openAIAPIKey = store.getOpenAIKey()
         pineconeAPIKey = store.getPineconeAPIKey()
         pineconeProjectId = store.getPineconeProjectId()
+    }
+
+    /// Write the settings a question's requests read from UserDefaults (OpenAIService and the
+    /// search read them there), so a change takes effect on the next question without waiting
+    /// for the debounced save
+    func persistRequestSettings() {
+        defaults.set(completionModel, forKey: "completionModel")
+        defaults.set(useCustomModel, forKey: "useCustomModel")
+        defaults.set(customCompletionModel, forKey: "customCompletionModel")
+        defaults.set(temperature, forKey: "openai.temperature")
+        defaults.set(topP, forKey: "openai.topP")
+        defaults.set(reasoningEffort, forKey: "openai.reasoningEffort")
+        defaults.set(conversationMode, forKey: "openai.conversationMode")
+        defaults.set(maxOutputTokens, forKey: "search.maxOutputTokens")
+        defaults.set(webSearchEnabled, forKey: "search.webSearchEnabled")
+        defaults.set(codeInterpreterEnabled, forKey: "search.codeInterpreterEnabled")
+        defaults.set(max(1, min(defaultTopK, 100)), forKey: SettingsStorageKeys.searchTopK)
+        defaults.set(searchScope.rawValue, forKey: SettingsStorageKeys.searchScope)
+        defaults.set(indexRoutingEnabled, forKey: SettingsStorageKeys.indexRoutingEnabled)
+        defaults.set(hybridSearchEnabled, forKey: SettingsStorageKeys.hybridSearchEnabled)
+        defaults.set(hybridSearchAlpha, forKey: SettingsStorageKeys.hybridSearchAlpha)
+        defaults.set(rerankingEnabled, forKey: SettingsStorageKeys.rerankingEnabled)
+        defaults.set(rerankModel, forKey: SettingsStorageKeys.rerankModel)
+        defaults.set(rerankTopN, forKey: SettingsStorageKeys.rerankTopN)
+        defaults.set(systemPromptOverride, forKey: "conversation.systemPromptOverride")
+    }
+
+    /// Use a model picked from a menu or typed as an ID. It replaces an older "custom model"
+    /// setting, which would otherwise win again at the next launch.
+    func selectCompletionModel(_ id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        useCustomModel = false
+        customCompletionModel = ""
+        completionModel = trimmed
+        persistRequestSettings()
+    }
+
+    /// Put the answer settings (model parameters, tools, retrieval, instructions) back to their
+    /// defaults, leaving the model, keys and everything else alone
+    func resetAnswerSettings() {
+        temperature = 0.3
+        topP = 0.95
+        reasoningEffort = CurrentModelCatalog.normalizedEffort("none", model: completionModel)
+        maxOutputTokens = 4000
+        webSearchEnabled = false
+        codeInterpreterEnabled = false
+        defaultTopK = 10
+        hybridSearchEnabled = false
+        hybridSearchAlpha = 0.5
+        rerankingEnabled = false
+        rerankModel = "bge-reranker-v2-m3"
+        rerankTopN = 5
+        systemPromptOverride = ""
+        conversationMode = "server"
+        persistRequestSettings()
     }
 
     /// Save API keys to secure storage
@@ -438,7 +513,13 @@ final class SettingsViewModel: ObservableObject {
         hybridSearchAlpha = (defaults.object(forKey: SettingsStorageKeys.hybridSearchAlpha) as? Double) ?? 0.5
 
         // Routing across indexes
-        indexRoutingEnabled = (defaults.object(forKey: SettingsStorageKeys.indexRoutingEnabled) as? Bool) ?? true
+        if let raw = defaults.string(forKey: SettingsStorageKeys.searchScope), let scope = SearchScope(rawValue: raw) {
+            searchScope = scope
+        } else {
+            // Settings from before the scope: the routing switch on meant Auto
+            let routing = (defaults.object(forKey: SettingsStorageKeys.indexRoutingEnabled) as? Bool) ?? true
+            searchScope = routing ? .auto : .oneIndex
+        }
 
         // Reranking settings
         rerankingEnabled = (defaults.object(forKey: SettingsStorageKeys.rerankingEnabled) as? Bool) ?? false
@@ -536,6 +617,7 @@ final class SettingsViewModel: ObservableObject {
         defaults.set(hybridSearchAlpha, forKey: SettingsStorageKeys.hybridSearchAlpha)
 
         // Routing across indexes
+        defaults.set(searchScope.rawValue, forKey: SettingsStorageKeys.searchScope)
         defaults.set(indexRoutingEnabled, forKey: SettingsStorageKeys.indexRoutingEnabled)
 
         // Reranking settings
@@ -611,7 +693,7 @@ final class SettingsViewModel: ObservableObject {
         codeInterpreterEnabled = false
         hybridSearchEnabled = false
         hybridSearchAlpha = 0.5
-        indexRoutingEnabled = true
+        searchScope = .auto
         rerankingEnabled = false
         rerankModel = "bge-reranker-v2-m3"
         rerankTopN = 5
@@ -883,14 +965,17 @@ final class SettingsViewModel: ObservableObject {
             "debug.verboseLogging",
             "debug.showDebugInfo",
             "conversation.maxTurns",
-            "conversation.systemPromptOverride"
+            "conversation.systemPromptOverride",
+            SettingsStorageKeys.searchScope,
+            SettingsStorageKeys.indexRoutingEnabled,
         ]
 
         keysToClear.forEach { defaults.removeObject(forKey: $0) }
 
-        let namespacePrefix = "oc.lastNamespace."
+        // Per-index choices name the person's indexes
+        let indexKeyPrefixes = ["oc.lastNamespace.", "search.allNamespaces."]
         defaults.dictionaryRepresentation().keys
-            .filter { $0.hasPrefix(namespacePrefix) }
+            .filter { key in indexKeyPrefixes.contains { key.hasPrefix($0) } }
             .forEach { defaults.removeObject(forKey: $0) }
     }
 

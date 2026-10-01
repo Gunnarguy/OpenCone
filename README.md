@@ -22,7 +22,7 @@
 ## Overview
 OpenCone is a cloud-hybrid RAG client designed to transform personal documents (PDFs, plain text, JavaScript, and CSS) into a searchable knowledge base backed by user-owned OpenAI and Pinecone accounts. Designed for researchers, engineers, and privacy-conscious professionals, the app parses local files, extracts text, recursively chunks content using MIME-aware rules, embeds them via OpenAI, and persists indexing vectors inside a serverless Pinecone database.
 
-During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and dynamic theme synchronization.
+During queries, OpenCone executes semantic vector lookup against Pinecone, performs reranking, manages local session memory, and streams grounded responses from OpenAI's Responses API token-by-token. It operates as a native Apple client over a cloud-backed RAG stack, integrating MIME-aware parsing pipelines, rate-limited Pinecone clients with circuit-breaker protection, Apple's Speech Recognition framework for voice query input, and an interface that follows the system's light or dark appearance, laid out like OpenResponses so the two apps look and work alike.
 
 ---
 
@@ -47,11 +47,12 @@ During queries, OpenCone executes semantic vector lookup against Pinecone, perfo
 - **MIME-Aware Ingestion Pipeline**: Extracts structured text from multiple formats, utilizing `PDFKit` for PDF pages before cloud indexing begins.
 - **On-Device Security-Scoped Access**: Employs sandboxed bookmarks (`startAccessingSecurityScopedResource`) to retain file read permissions across system relaunches without prompts.
 - **Resilient Pinecone & OpenAI Client**: Coordinates exponential backoff retries, request rate limiting (100ms pauses), and an automatic circuit-breaker to gracefully handle vector-store throttling or region failures.
-- **Routing Across Indexes**: With two or more indexes or namespaces, the model picks where to search through one function tool that the app runs with the person's own Pinecone key. One question can search up to 5 places, including both sides of a compare-and-contrast, and each index is searched with the OpenAI embedding model that built it.
+- **Three Search Widths**: Ask > Where to search. **Auto**: the model picks where to search through one function tool that the app runs with the person's own Pinecone key, up to 5 places a question, including both sides of a compare-and-contrast. **Everything**: every namespace of every index, up to 20 searches a question, with the best passages kept across all of them. **One index**: one namespace, or each namespace of the index. Every index is searched with the OpenAI embedding model that built it, and any index can be left out.
 - **Advanced RAG Capabilities**: Orchestrates custom metadata presets and multi-model rerankers (`bge-reranker-v2-m3`, `cohere-rerank-3.5`, `pinecone-rerank-v0`). The query path supports hybrid weighting, but documents are uploaded with dense vectors only, so results come from semantic similarity today.
 - **Real-Time Token Streaming**: Implements Server-Sent Events (SSE) parsing to fetch incremental response deltas directly from OpenAI's Responses API.
 - **Speech-to-Text Transcription**: Connects `AVAudioEngine` input taps and Apple's Speech Recognition API to transcribe microphone audio with responsive UI waveform animation.
-- **Bespoke Theme System**: Centralizes look-and-feel variables under a theme environment manager, supplying customized Light and Dark color palettes.
+- **Readable, Checkable Answers**: Answers render their Markdown (headings, lists, tables, quotes, code blocks with a copy button). Every passage an answer cites carries a tag such as [S2]; tapping a tag or a source chip opens that passage with its document, index, namespace, page and score.
+- **OpenResponses Layout**: The Ask screen uses OpenResponses' status bar (model, reasoning effort and tool badges, answer settings), bubbles, composer and model picker. Settings use its segmented tabs (General, Answers, Advanced).
 
 ---
 
@@ -132,7 +133,7 @@ flowchart TD
 - **Deduplication & Batching**: SHA256 hashes are calculated on document contents to guarantee ingestion idempotency. Embeddings are created in batches of 50 to avoid API thread exhaustion.
 
 ### 2. Retrieval & Generation Details
-- **Routing**: Before searching, a short, non-streamed Responses API call offers the model a `search_index` tool that lists each index's one-line summary and its namespaces. The app checks the model's calls (an offered index, an existing namespace, at most 5), embeds each query with the model that built that index, runs the searches in parallel, and labels every passage with its index and namespace. Summaries are drafted from a sample of each index's passages and can be rewritten under Index summaries in the index menu. To learn which model built an index, the app re-embeds one stored passage and keeps the model that reproduces its stored vector. Metadata filters apply only to searches of the open index, since their field names belong to it. With one index and one namespace, or with routing off in Settings, search works as before.
+- **Routing**: Before searching, a short, non-streamed Responses API call offers the model a `search_index` tool that lists each index's one-line summary and its namespaces. The app checks the model's calls (an offered index, an existing namespace, at most 5), embeds each query with the model that built that index, runs the searches in parallel, and labels every passage with its index and namespace. Summaries are drafted from a sample of each index's passages and can be rewritten by opening the index under Ask > Where to search. To learn which model built an index, the app re-embeds one stored passage and keeps the model that reproduces its stored vector. Metadata filters apply only to searches of the open index, since their field names belong to it. This is the Auto width. Everything skips the model call: it searches every namespace of every included index with the question itself, takes each search's best passage first, then each one's second, and reranks the lot once when reranking is on. One index searches the open index, in its chosen namespace or in each namespace (the 10 largest), and keeps the best matches across them.
 - **Query Embedding**: User prompt texts or voice transcription tokens are converted into embeddings matching the dimension of document vectors (3072 by default).
 - **Vector Search**: Performs similarity searches against Pinecone index namespaces, supporting custom metadata filters ($eq, $in, $gte, $lte, $contains).
 - **Hybrid Search & Reranking**: The query path supports hybrid weighting with a simple alpha slider, but documents are uploaded with dense vectors only, so results come from semantic similarity today. Matches can be refined using BGE, Cohere, or Pinecone inference models.
@@ -184,7 +185,8 @@ flowchart LR
 | Concern | Files | Responsibility |
 |---|---|---|
 | **App Entry** | [OpenConeApp.swift](OpenCone/App/OpenConeApp.swift) | Bootstrapping, AppState machine, and Release credential check. |
-| **Main UI** | [MainView.swift](OpenCone/App/MainView.swift) | Tab routing (Search, Documents, Logs, Settings) and view-model synchronization. |
+| **Main UI** | [MainView.swift](OpenCone/App/MainView.swift) | Tabs (Ask, Documents, Settings) and view-model synchronization. The activity log is under Settings > Advanced. |
+| **Ask** | [SearchView.swift](OpenCone/Features/Search/SearchView.swift), [Components/](OpenCone/Features/Search/Components) | The conversation: status bar, where to search, Markdown answers with their sources, composer. |
 | **Ingestion View** | [DocumentsViewRedesign.swift](OpenCone/Features/Documents/DocumentsViewRedesign.swift) | Document list, dashboards, and bulk action triggers. |
 | **Ingestion Engine** | [DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift) | Pipeline scheduling, progress tracking, and bookmarks updates. |
 | **API Clients** | [PineconeService.swift](OpenCone/Services/PineconeService.swift), [OpenAIService.swift](OpenCone/Services/OpenAIService.swift) | Low-level REST connections, retry logic, SSE parsing, and circuit breakers. |
@@ -208,6 +210,7 @@ flowchart LR
 | `defaultChunkOverlap`| UserDefaults | `256` | No | Saved preference; not read by the chunker. |
 | `completionModel` | UserDefaults | `gpt-6-sol` | No | Model ID used for text completion. The default and the model menu come from the model catalog shared with OpenResponses ([docs/model-catalog.md](docs/model-catalog.md)); a saved model that OpenAI has shut down moves to its documented replacement. |
 | `searchTopK` | UserDefaults | `10` | No | Nearest-neighbor vector counts retrieved. |
+| `search.scope` | UserDefaults | `auto` | No | How widely a question is searched: `auto`, `everything` or `oneIndex`. Replaces `search.indexRoutingEnabled`, which is still written beside it. |
 | `hybridAlpha` | UserDefaults | `0.5` | No | Used only when hybrid search is on and the index uses dotproduct: scales the dense query by alpha and the sparse query by 1 minus alpha. OpenCone uploads documents with dense vectors only, so any value above `0.0` ranks by semantic similarity, and `0.0` sends an all-zero dense query. |
 
 ---
@@ -246,7 +249,7 @@ flowchart LR
 | **Unit Tests** | `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=iPhone 16" -quiet` | All unit tests pass successfully. |
 | **Secret Scan** | `python3 scripts/secret_scan.py` | Prints `✅ No secret patterns detected.` and exits with code 0. |
 | **Preflight check** | `scripts/preflight_check.sh` | Performs all scans, Plist verification, and runs tests. |
-| **Manual Ingestion** | Run app, pick a PDF, inspect logs in Logs tab | Ingestion log shows success and vector counts update on dashboard. |
+| **Manual Ingestion** | Run app, pick a PDF, inspect Settings > Advanced > Activity log | Ingestion log shows success and vector counts update on dashboard. |
 | **Manual RAG Search** | Enter query matching ingested file, inspect citations | Streams completion citing source names and chunks. |
 
 ---

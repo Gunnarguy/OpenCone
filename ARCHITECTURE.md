@@ -28,10 +28,10 @@ flowchart TD
         AS -->|.main| MV[MainView Tabs]
         AS -->|.error| EV[ErrorView]
 
-        MV -->|Tab 1| SV[SearchView]
-        MV -->|Tab 2| DV[DocumentsViewRedesign]
-        MV -->|Tab 3| PV[ProcessingView]
-        MV -->|Tab 4| SetV[SettingsView]
+        MV -->|Ask| SV[SearchView]
+        MV -->|Documents| DV[DocumentsViewRedesign]
+        MV -->|Settings| SetV[SettingsView]
+        SetV -->|Advanced| PV[ProcessingView]
     end
 
     subgraph MVVM["ViewModels (ObservableObjects)"]
@@ -86,20 +86,23 @@ flowchart TD
 - **Release Safety Enforcer**: Inside `enforceNoBundledSecrets()`, the app calls a fatal assertion in non-debug targets if OpenAI/Pinecone keys are set as environment variables.
 
 ### Views (SwiftUI Presentation)
-- **[MainView.swift](OpenCone/App/MainView.swift)**: Hosts the primary tab switcher. Hooks into the scene lifecycle to trigger refresh updates (index stats, document states) on tab selections.
+- **[MainView.swift](OpenCone/App/MainView.swift)**: Three tabs (Ask, Documents, Settings), each in a `NavigationStack`. Reloads the index list when Ask is opened. Errors from Documents and Settings show as an alert; Ask shows its own in place.
 - **[DocumentsViewRedesign.swift](OpenCone/Features/Documents/DocumentsViewRedesign.swift)**: Card-based dashboard reporting file status metrics, ingestion success/failure bars, and floating context action popups.
-- **[SearchView.swift](OpenCone/Features/Search/SearchView.swift)**: Main interaction canvas for semantic lookup, displaying streaming tokens, query suggestions, interactive citation details, and audio waveforms.
+- **[SearchView.swift](OpenCone/Features/Search/SearchView.swift)**: The Ask screen, laid out like OpenResponses' chat: `ChatStatusBar` (model menu, reasoning effort, tool badges, the gear for `AnswerSettingsPanel`), `SearchScopeBar` (where to search, opening `SearchScopeSheet`), the conversation in `MessageBubble`s, and `ChatComposer`. Answers render through `MarkdownText`, which parses blocks itself (headings, lists, tables, quotes, code) and turns passage tags such as [S2] into `opencone-source://` links; a tag or a source chip opens `SourcesPresentationView`.
+- **[SettingsView.swift](OpenCone/Features/Settings/SettingsView.swift)**: Segmented tabs over grouped forms, as in OpenResponses: General (keys, your data, about), Answers (the same `AnswerSettingsForm` as the gear in Ask), Advanced (search defaults, uploads, log level and the activity log, Pinecone API versions).
+- **Appearance**: One theme built from system colors (`OCTheme.system`); the app follows the system's light or dark setting and Dynamic Type.
+- **[DemoMode.swift](OpenCone/App/DemoMode.swift)**: Debug builds only. The `-OpenConeDemo` launch argument opens the app on sample indexes and a sample conversation with no keys and no requests, for screenshots; `-OpenConeDemoScreen <name>` also opens one sheet or tab.
 
 ### ViewModels (State Orchestration)
 - All view models inherit from `ObservableObject` and utilize `@Published` properties.
 - **[DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift)**: Maintains the queue of local files undergoing extraction, chunking, and upload. Exposes metrics like total namespace counts.
-- **[SearchViewModel.swift](OpenCone/Features/Search/SearchViewModel.swift)**: Converts user prompt texts or voice transcription tokens into queries, executes searches, and streams response tokens.
+- **[SearchViewModel.swift](OpenCone/Features/Search/SearchViewModel.swift)**: Runs a question at the width chosen under Where to search (`SearchScope`): `routeAndAnswer` (Auto), `searchEverything` (every namespace of every included index, merged by rank then score), or `searchOpenIndex` (the open index, in one namespace or each of them through `searchNamespaces`). Each answer's message keeps the passages it was written from (`ChatMessage.sources`).
 
 ### Services Layer
 - **[PineconeService.swift](OpenCone/Services/PineconeService.swift)**: Implements REST operations for index control (list, create, delete) and vector data actions (upsert, query, delete). Features stateful region/host discovery and circuit-breaking error protection.
 - **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
 - **[ResponsesClient.swift](OpenCone/Services/ResponsesClient.swift)**: Non-streamed Responses calls whose output is a decision rather than prose: the routing call, which returns `function_call` items, and drafting an index's one-line summary.
-- **[Routing](OpenCone/Features/Search/Routing/)**: `IndexRouter` builds the `search_index` tool and checks the model's calls; `IndexSurveyor` reads each index's namespaces, finds which OpenAI model built it, and drafts its summary; `IndexProfile` and `IndexCatalogStore` keep that per Pinecone project on the phone; `IndexSummariesSheet` lets the person rewrite a summary.
+- **[Routing](OpenCone/Features/Search/Routing/)**: `IndexRouter` builds the `search_index` tool and checks the model's calls; `IndexSurveyor` reads each index's namespaces, finds which OpenAI model built it, and drafts its summary; `IndexProfile` and `IndexCatalogStore` keep that per Pinecone project on the phone, with the indexes the person left out; `IndexDetailView` (in `SearchScopeViews.swift`) lets the person rewrite a summary or leave an index out.
 - **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, extracts PDF text with `PDFKit`, and reads text formats as UTF-8. Its `VNRecognizeTextRequest` OCR path for images never runs, because the document picker does not offer images.
 - **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively, splitting every type on paragraphs, lines, sentences, then words, and computes SHA256 hashes.
 - **[SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift)**: Listens to the device microphone, performs speech-to-text conversion via Apple's Speech API, and publishes normalize audio amplitudes (0.0 - 1.0) for UI waveforms.
@@ -124,7 +127,7 @@ OpenCone relies on a top-down state model:
 OpenCone utilizes Swift's structured concurrency (`async/await`) to maintain responsive UI behaviors:
 - **Main Actor Thread safety**: ViewModels are decorated with `@MainActor`. All property updates that mutate UI elements are guaranteed to execute on the main thread, eliminating thread-safety assertions.
 - **Task Boundaries**: Background workloads (such as text extraction and Pinecone vector uploads) are dispatched to detached tasks, freeing the main thread to handle user scrolls and animations.
-- **Task Cancellation**: Active streaming requests (`currentStreamTask`) are canceled when a user navigates away from the Search tab or requests a query stop, preventing memory leaks and resource drain.
+- **Task Cancellation**: Every search runs in one task (`routingTask`) and the answer in another (`currentStreamTask`); Stop cancels both, so it works during the searches as well as while the answer streams, and leaves an answer that can be asked again.
 - **Autoreleasepool**: Chunking and embedding loops run inside `autoreleasepool`.
 
 ---
@@ -151,7 +154,7 @@ OpenCone integrates multi-layered network recovery patterns to cope with API fai
 - **Events Handled**:
   - `response.output_text.delta` / `response.text.delta`: Text streaming segments.
   - `response.completed`: Captures the server conversation ID and finalizes token metrics.
-- **Routing call** (two or more indexes or namespaces, routing on): one non-streamed request before the answer, with `store: false`, `tool_choice: "auto"`, `parallel_tool_calls: true` and one strict function tool, `search_index(index, namespace, query)`, whose `index` is an enum of the indexes whose embedding model is known. The app runs at most 5 of the returned calls in parallel, then streams the answer through the request above with the passages, tagged `[S1]` onward and grouped by search, as its context. If the routing call fails, the search falls back to the open index.
+- **Routing call** (the Auto width, with two or more indexes or namespaces): one non-streamed request before the answer, with `store: false`, `tool_choice: "auto"`, `parallel_tool_calls: true` and one strict function tool, `search_index(index, namespace, query)`, whose `index` is an enum of the indexes whose embedding model is known. The app runs at most 5 of the returned calls in parallel, then streams the answer through the request above with the passages, tagged `[S1]` onward and grouped by search, as its context. If the routing call fails, the search falls back to the open index.
 
 ### OpenAI Embeddings API (`/v1/embeddings`)
 - **Model**: `text-embedding-3-large`.

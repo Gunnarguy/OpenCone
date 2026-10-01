@@ -3,24 +3,32 @@ import XCTest
 
 @MainActor
 final class SearchRoutingStateTests: XCTestCase {
-    private var originalRouting: Any?
+    private let scopeKeys = [SettingsStorageKeys.indexRoutingEnabled, SettingsStorageKeys.searchScope]
+    private var saved: [String: Any] = [:]
     private var suiteName = ""
     private var defaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
-        originalRouting = UserDefaults.standard.object(forKey: SettingsStorageKeys.indexRoutingEnabled)
-        UserDefaults.standard.removeObject(forKey: SettingsStorageKeys.indexRoutingEnabled)
+        for key in scopeKeys {
+            if let value = UserDefaults.standard.object(forKey: key) {
+                saved[key] = value
+            }
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         suiteName = "SearchRoutingStateTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
     override func tearDown() {
-        if let originalRouting {
-            UserDefaults.standard.set(originalRouting, forKey: SettingsStorageKeys.indexRoutingEnabled)
-        } else {
-            UserDefaults.standard.removeObject(forKey: SettingsStorageKeys.indexRoutingEnabled)
+        for key in scopeKeys {
+            if let value = saved[key] {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
         }
+        saved = [:]
         defaults.removePersistentDomain(forName: suiteName)
         super.tearDown()
     }
@@ -45,6 +53,7 @@ final class SearchRoutingStateTests: XCTestCase {
         XCTAssertTrue(sut.settingsViewModel.indexRoutingEnabled)
 
         sut.pineconeIndexes = ["manuals"]
+        sut.selectedIndex = "manuals"
         sut.namespaces = [""]
         XCTAssertFalse(sut.shouldRouteSearch, "one index, one namespace: search it directly")
 
@@ -57,6 +66,20 @@ final class SearchRoutingStateTests: XCTestCase {
 
         sut.settingsViewModel.indexRoutingEnabled = false
         XCTAssertFalse(sut.shouldRouteSearch, "switched off in Settings")
+        XCTAssertEqual(sut.settingsViewModel.searchScope, .oneIndex)
+
+        sut.settingsViewModel.searchScope = .everything
+        XCTAssertFalse(sut.shouldRouteSearch, "Everything searches every namespace instead of asking the model")
+        XCTAssertTrue(sut.searchesEverything)
+        XCTAssertTrue(sut.settingsViewModel.indexRoutingEnabled)
+    }
+
+    func testTheScopeIsReadFromTheOlderRoutingSwitch() {
+        UserDefaults.standard.set(false, forKey: SettingsStorageKeys.indexRoutingEnabled)
+        XCTAssertEqual(SettingsViewModel().searchScope, .oneIndex)
+
+        UserDefaults.standard.set(SearchScope.everything.rawValue, forKey: SettingsStorageKeys.searchScope)
+        XCTAssertEqual(SettingsViewModel().searchScope, .everything, "the scope wins once it's stored")
     }
 
     func testNoRoutingWithoutARouter() {

@@ -1,6 +1,6 @@
 # OpenCone Privacy Policy
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-10-01
 
 OpenCone is a native RAG (Retrieval-Augmented Generation) client designed with a strong focus on privacy. This policy outlines how local files, metadata segments, and API authorization keys are processed, cached, and transmitted.
 
@@ -23,7 +23,7 @@ OpenCone communicates with third-party service providers only when necessary to 
 |---|---|---|---|
 | **OpenAI API** (`/v1/embeddings`) | Batched text chunks (excluding raw document frames or identifiers). | Generates 3072-dimension vectors. | HTTPS. OpenAI processes requests statefully according to their API data-usage agreements. |
 | **OpenAI API** (`/v1/responses`) | RAG context package (composed prompt template containing relevant text chunks + chat history). | Generates streamed token responses. | HTTPS. Stateless transaction. Data is not permanently retained by OpenCone. |
-| **OpenAI API** (`/v1/responses`), routing | When you have two or more indexes or namespaces and routing is on: your question, recent chat history, the names of your indexes and namespaces, their passage counts, and each index's one-line summary. To draft a summary, up to 8 sample passages from that index and its namespace names. | Picks which indexes and namespaces to search, and drafts each index's summary. | HTTPS, sent with `store: false`. Summaries and index details are kept on your iPhone. |
+| **OpenAI API** (`/v1/responses`), routing | When Ask > Where to search is Auto and you have two or more indexes or namespaces: your question, recent chat history, the names of your indexes and namespaces, their passage counts, and each index's one-line summary. With Auto or Everything, to draft each index's summary: up to 8 sample passages from that index and its namespace names. Everything itself makes no routing call. | Picks which indexes and namespaces to search, and drafts each index's summary. | HTTPS, sent with `store: false`. Summaries and index details are kept on your iPhone. |
 | **OpenAI API** (`/v1/models`) | Your OpenAI key, once per launch. | Lists the models your account can use and their shutdown dates, so the model menu shows newer models and a model about to shut down is replaced. | HTTPS. The list is kept on your iPhone. |
 | **OpenAI's docs site** (`developers.openai.com/api/docs/models/<model>.md`) | Only the model's name, in the page address. No key, no personal data, no chat content. At most 3 pages per launch, each read again after 7 days. | Reads the reasoning settings of a newer model on your account that the app's built-in list doesn't name. | HTTPS. What it reads is kept on your iPhone. |
 | **OpenAI API** (`/v1/embeddings`), model check | One stored passage per index, embedded with each OpenAI model that fits the index's size. | Learns which model built each index, so questions are embedded to match it. | HTTPS. The result is kept on your iPhone. |
@@ -45,7 +45,7 @@ OpenCone does **not** host any intermediary collection servers. All network tran
 ## 4. Telemetry & Telemetry Boundaries
 
 - OpenCone does **not** contain third-party analytics trackers, advertising SDKs, or remote crash reporting libraries.
-- Diagnostic log items (e.g. status changes, pipeline speeds) are written solely to a local memory buffer accessible under the **Logs** tab. The app never uploads these logs; they leave the device only if you copy or share them from the **Logs** tab.
+- Diagnostic log items (e.g. status changes, pipeline speeds) are written solely to a local memory buffer accessible under **Settings > Advanced > Activity log**. The app never uploads these logs; they leave the device only if you copy or share them from there.
 
 ---
 
@@ -54,7 +54,7 @@ OpenCone does **not** host any intermediary collection servers. All network tran
 Users have complete control over their local data, keys, and cloud records:
 - **Document Removal**: Deleting a document inside OpenCone deletes the sandbox file copy and triggers a batch delete request to remove the associated vector indexes from Pinecone.
 - **Session Wipe**: Clearing chat logs deletes dialogue histories.
-- **Application Reset**: Under **Settings > Data & Privacy > Reset Stored Keys & Preferences**, users can wipe all Keychain credentials, clear cache values, and reset the sandbox directories, returning the app to its original onboarding state.
+- **Application Reset**: Under **Settings > General > Remove keys and reset everything**, users can wipe all Keychain credentials, clear cache values, and reset the sandbox directories, returning the app to its original onboarding state.
 
 ---
 

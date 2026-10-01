@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Main view for the OpenCone application with tab navigation
-/// Coordinates between document processing, search, logs, and settings
+/// Main view for the OpenCone application with tab navigation: Ask, Documents and Settings
 struct MainView: View {
     // MARK: - View Models
     @StateObject private var documentsViewModel: DocumentsViewModel
@@ -23,55 +22,45 @@ struct MainView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            // MARK: Search Tab
-            NavigationView {
+            // MARK: Ask Tab
+            NavigationStack {
                 SearchView(
                     viewModel: searchViewModel,
+                    settings: settingsViewModel,
                     onRequestDocumentsTab: { selectedTab = 1 }
                 )
-                    .navigationTitle("Document Search")
             }
             .tabItem {
-                Label("Document Search", systemImage: "magnifyingglass")
+                Label("Ask", systemImage: "bubble.left.and.text.bubble.right")
             }
             .tag(0)
 
             // MARK: Documents Tab
-            NavigationView {
+            NavigationStack {
                 DocumentsViewRedesign(viewModel: documentsViewModel)
                     .navigationTitle("Documents")
             }
             .tabItem {
-                Label("Documents", systemImage: "doc.fill")
+                Label("Documents", systemImage: "doc.on.doc")
             }
             .tag(1)
 
-            // MARK: Processing Log Tab
-            NavigationView {
-                ProcessingView()
-                    .navigationTitle("Processing Log")
-            }
-            .tabItem {
-                Label("Logs", systemImage: "list.bullet")
-            }
-            .tag(2)
-
-            // MARK: Settings Tab
-            NavigationView {
+            // MARK: Settings Tab (the processing log lives under Advanced)
+            NavigationStack {
                 SettingsView(viewModel: settingsViewModel)
                     .navigationTitle("Settings")
             }
             .tabItem {
-                Label("Settings", systemImage: "gear")
+                Label("Settings", systemImage: "gearshape")
             }
-            .tag(3)
+            .tag(2)
         }
         .onAppear(perform: loadInitialData)
         .alert(isPresented: errorAlertBinding) {
             errorAlert
         }
         .onChange(of: selectedTab) { _, newValue in
-            guard newValue == 0 else { return }
+            guard newValue == 0, !DemoMode.isActive else { return }
             Task {
                 await searchViewModel.loadIndexes()
             }
@@ -82,6 +71,11 @@ struct MainView: View {
 
     /// Load API keys and initialize data when view appears
     private func loadInitialData() {
+        if DemoMode.isActive {
+            if DemoMode.screen == "settings" { selectedTab = 2 }
+            return
+        }
+
         // Ensure API keys are loaded
         settingsViewModel.loadAPIKeys()
 
@@ -99,15 +93,13 @@ struct MainView: View {
     private var errorAlertBinding: Binding<Bool> {
         Binding<Bool>(
             get: {
-                // Check if any view model has an error message
+                // Ask shows its own errors in place, so only Documents and Settings alert
                 documentsViewModel.errorMessage != nil ||
-                searchViewModel.errorMessage != nil ||
                 settingsViewModel.errorMessage != nil
             },
             set: { _ in
                 // Clear error messages when the alert is dismissed
                 documentsViewModel.errorMessage = nil
-                searchViewModel.errorMessage = nil
                 settingsViewModel.errorMessage = nil
             }
         )
@@ -118,7 +110,6 @@ struct MainView: View {
         // Consolidate error messages from all view models
         let errorMessages = [
             documentsViewModel.errorMessage,
-            searchViewModel.errorMessage,
             settingsViewModel.errorMessage
         ]
         .compactMap { $0 } // Remove nil values
