@@ -78,7 +78,7 @@ struct MainView: View {
                 #if DEBUG
                 DemoContent.seedActivity()
                 #endif
-            case "documents", "index-details", "document": selectedTab = 1
+            case "documents", "documents-indexing", "index-details", "document": selectedTab = 1
             default: break
             }
             return

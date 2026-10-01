@@ -46,3 +46,6 @@ secrets.json
 pr_summary.txt
 update_pbxproj.rb
 .gemini/
+
+# App Store screenshots, made by scripts/appstore_screenshots.py
+fastlane/screenshots/**/*.png

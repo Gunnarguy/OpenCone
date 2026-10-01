@@ -178,4 +178,38 @@ final class MarkdownParserTests: XCTestCase {
         XCTAssertEqual(MarkdownInline.sourceTag(from: link), "S3")
         XCTAssertNil(MarkdownInline.sourceTag(from: URL(string: "https://example.com")!))
     }
+
+    // MARK: Table columns
+
+    /// A long cell takes the widest column, and wraps inside it; a short one keeps its own width
+    func testColumnWidthsFollowTheWidestCellWithinTheLimits() {
+        let widths = MarkdownTableView.columnWidths(
+            header: ["Index", "Content found"],
+            rows: [["`test`", String(repeating: "A 2019 neuroscience article on dopamine signaling. ", count: 4)]]
+        )
+
+        XCTAssertGreaterThanOrEqual(widths[0], MarkdownTableView.minColumnWidth)
+        XCTAssertLessThan(widths[0], 120)
+        XCTAssertEqual(widths[1], MarkdownTableView.maxColumnWidth)
+    }
+
+    /// Too wide for the answer: the narrow column keeps its width and the wide one gives way
+    func testATableNarrowsItsWidestColumnToFit() {
+        // 384 points less 2 x 20 of cell padding and 2 of border leaves 342
+        let fitted = MarkdownTableView.fitted([120, 240], into: 384)
+
+        XCTAssertEqual(fitted, [120, 222])
+    }
+
+    func testATableThatFitsIsLeftAlone() {
+        XCTAssertEqual(MarkdownTableView.fitted([80, 120], into: 384), [80, 120])
+        XCTAssertEqual(MarkdownTableView.fitted([80, 120], into: 0), [80, 120], "before the width is measured")
+    }
+
+    /// Five columns can't fit 300 points at the minimum width, so they stay at it and the table scrolls
+    func testATableTooWideEvenAtTheMinimumScrolls() {
+        let fitted = MarkdownTableView.fitted([100, 100, 100, 100, 100], into: 300)
+
+        XCTAssertEqual(fitted, Array(repeating: MarkdownTableView.minColumnWidth, count: 5))
+    }
 }

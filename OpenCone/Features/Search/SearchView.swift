@@ -139,7 +139,8 @@ struct SearchView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             // A conversation opens at its latest message; an empty screen stays at the top
-            .defaultScrollAnchor(viewModel.messages.isEmpty ? .top : .bottom)
+            // Demo mode's "answer" screen opens at the question, so a screenshot shows it with its answer
+            .defaultScrollAnchor(viewModel.messages.isEmpty || DemoMode.screen == "answer" ? .top : .bottom)
             .safeAreaInset(edge: .bottom) {
                 composer
             }

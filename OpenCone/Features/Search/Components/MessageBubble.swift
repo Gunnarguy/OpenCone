@@ -321,20 +321,20 @@ struct TypingDots: View {
 
 #Preview {
     let passages: [SearchResultModel] = {
-        var first = SearchResultModel(content: "Change the filter every 500 hours.", sourceDocument: "manuals/Baxter Pump.pdf", score: 0.91, metadata: [:], index: "manuals", namespace: "baxter")
+        var first = SearchResultModel(content: "Change the water filter every 500 shots.", sourceDocument: "manuals/Aster Duo User Manual.pdf", score: 0.91, metadata: [:], index: "manuals", namespace: "espresso")
         first.citationTag = "S1"
-        var second = SearchResultModel(content: "Torque to 12 Nm.", sourceDocument: "manuals/BD Alaris.pdf", score: 0.84, metadata: [:], index: "manuals", namespace: "bd")
+        var second = SearchResultModel(content: "Brush the burrs every 2 weeks.", sourceDocument: "manuals/Fenn 64 Grinder Guide.pdf", score: 0.84, metadata: [:], index: "manuals", namespace: "grinder")
         second.citationTag = "S2"
         return [first, second]
     }()
     return ScrollView {
         VStack(spacing: 12) {
-            MessageBubble(message: ChatMessage(role: .user, text: "How often does the Baxter pump need a new filter?"))
+            MessageBubble(message: ChatMessage(role: .user, text: "How often does the Aster Duo need a new filter?"))
             MessageBubble(
-                message: ChatMessage(role: .assistant, text: "Every **500 hours** [S1]. The BD pump is torqued to 12 Nm [S2].", sources: passages),
+                message: ChatMessage(role: .assistant, text: "Every **500 shots** [S1]. Brush the grinder's burrs every 2 weeks [S2].", sources: passages),
                 canRetry: true
             )
-            MessageBubble(message: ChatMessage(role: .assistant, text: "", status: .streaming), status: "Searching manuals / baxter")
+            MessageBubble(message: ChatMessage(role: .assistant, text: "", status: .streaming), status: "Searching manuals / espresso")
             MessageBubble(message: ChatMessage(role: .assistant, text: "", status: .error, error: "Pinecone didn't respond."), canRetry: true)
         }
         .padding()

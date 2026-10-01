@@ -409,7 +409,7 @@ enum MarkdownInline {
         return result
     }
 
-    static func attributed(_ text: String) -> AttributedString {
+    static func attributed(_ text: String, codeStyle: Font.TextStyle = .callout) -> AttributedString {
         let linked = linkingSourceTags(in: text)
         var options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         options.failurePolicy = .returnPartiallyParsedIfPossible
@@ -424,7 +424,7 @@ enum MarkdownInline {
                 attributed[run.range][ForegroundKey.self] = .accentColor
                 attributed[run.range][FontKey.self] = .footnote.weight(.semibold)
             } else if run.attributes[InlineIntentKey.self]?.contains(.code) == true {
-                attributed[run.range][FontKey.self] = .system(.callout, design: .monospaced)
+                attributed[run.range][FontKey.self] = .system(codeStyle, design: .monospaced)
                 attributed[run.range][BackgroundKey.self] = Color.secondary.opacity(0.15)
             }
         }
@@ -607,12 +607,20 @@ struct MarkdownTableView: View {
     let alignments: [MarkdownTableAlignment]
     let rows: [[String]]
 
+    static let minColumnWidth: CGFloat = 56
+    static let maxColumnWidth: CGFloat = 240
+    static let cellPadding: CGFloat = 10
+
+    /// The answer's width, measured, so wide columns can narrow to fit it
+    @State private var availableWidth: CGFloat = 0
+
     var body: some View {
+        let widths = Self.fitted(Self.columnWidths(header: header, rows: rows), into: availableWidth)
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
                 GridRow {
                     ForEach(header.indices, id: \.self) { column in
-                        cell(header[column], column: column)
+                        cell(header[column], column: column, width: widths[column])
                             .fontWeight(.semibold)
                     }
                 }
@@ -622,7 +630,7 @@ struct MarkdownTableView: View {
                     Divider()
                     GridRow {
                         ForEach(header.indices, id: \.self) { column in
-                            cell(column < rows[row].count ? rows[row][column] : "", column: column)
+                            cell(column < rows[row].count ? rows[row][column] : "", column: column, width: widths[column])
                         }
                     }
                 }
@@ -634,9 +642,59 @@ struct MarkdownTableView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(1)
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            availableWidth = width
+        }
     }
 
-    private func cell(_ text: String, column: Int) -> some View {
+    /// The widest columns narrowed until the table fits the answer, so their text wraps more instead
+    /// of the table scrolling sideways. A table that can't fit with every column at the minimum still
+    /// scrolls. Before the width is measured, the widths are left as they are.
+    static func fitted(_ widths: [CGFloat], into available: CGFloat) -> [CGFloat] {
+        let room = available - CGFloat(widths.count) * cellPadding * 2 - 2
+        guard available > 0, widths.reduce(0, +) > room else { return widths }
+        var remaining = room
+        var count = CGFloat(widths.count)
+        var cap = CGFloat.infinity
+        // Narrow columns keep their width; the wide ones share what's left equally
+        for width in widths.sorted() {
+            let share = remaining / count
+            if width <= share {
+                remaining -= width
+                count -= 1
+            } else {
+                cap = share
+                break
+            }
+        }
+        let limit = max(floor(cap), minColumnWidth)
+        return widths.map { min($0, limit) }
+    }
+
+    /// Each column's width: its widest cell on one line, between the minimum and maximum. A cell gets
+    /// exactly that width, so a long cell wraps inside it and its row grows to fit. Given only a range,
+    /// a cell inside the sideways scroll view was measured as one line and then wrapped at the maximum,
+    /// spilling over the rows below (seen on Gunnar's iPhone 2026-10-01).
+    static func columnWidths(header: [String], rows: [[String]]) -> [CGFloat] {
+        let body = UIFont.preferredFont(forTextStyle: .footnote)
+        let bold = UIFont.systemFont(ofSize: body.pointSize, weight: .semibold)
+        // The cell's horizontal padding is outside this width
+        func width(_ text: String, _ font: UIFont) -> CGFloat {
+            let plain = String(MarkdownInline.attributed(text, codeStyle: .footnote).characters)
+            return ceil((plain as NSString).size(withAttributes: [.font: font]).width) + 2
+        }
+        return header.indices.map { column in
+            var widest = width(header[column], bold)
+            for row in rows where column < row.count {
+                widest = max(widest, width(row[column], body))
+            }
+            return min(max(widest, minColumnWidth), maxColumnWidth)
+        }
+    }
+
+    private func cell(_ text: String, column: Int, width: CGFloat) -> some View {
         let alignment = column < alignments.count ? alignments[column] : .leading
         let frameAlignment: Alignment
         let textAlignment: TextAlignment
@@ -651,12 +709,12 @@ struct MarkdownTableView: View {
             frameAlignment = .trailing
             textAlignment = .trailing
         }
-        return Text(MarkdownInline.attributed(text))
+        return Text(MarkdownInline.attributed(text, codeStyle: .footnote))
             .font(.footnote)
             .multilineTextAlignment(textAlignment)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(minWidth: 56, maxWidth: 240, alignment: frameAlignment)
-            .padding(.horizontal, 10)
+            .frame(width: width, alignment: frameAlignment)
+            .padding(.horizontal, Self.cellPadding)
             .padding(.vertical, 6)
     }
 }
@@ -664,23 +722,23 @@ struct MarkdownTableView: View {
 #Preview {
     ScrollView {
         MarkdownText(text: """
-        ## Pump maintenance
+        ## Machine care
 
-        The **Baxter** pump needs a filter change every *500 hours* [S1]. Both manuals agree on the \
-        torque values [S2, S4].
+        The **Aster Duo** needs a new water filter every *500 shots* [S1]. Both manuals agree on the \
+        brew temperature [S2, S4].
 
-        1. Power down the unit
-        2. Remove the `front panel`
-           - keep the screws
+        1. Power down the machine
+        2. Remove the `water tank`
+           - keep the lid
            - [x] note the serial number
         3. Replace the filter
 
         > Never run the pump dry.
 
-        | Model | Interval | Torque |
-        |:------|:--------:|-------:|
-        | Baxter | 500 h | 12 Nm |
-        | BD | 750 h | 10 Nm |
+        | Machine | Filter | Temperature |
+        |:--------|:------:|------------:|
+        | Aster Duo | 500 shots | 93 °C |
+        | Fenn 64 | none | n/a |
 
         ```swift
         let interval = 500

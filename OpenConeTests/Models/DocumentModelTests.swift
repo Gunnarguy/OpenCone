@@ -6,17 +6,28 @@ final class DocumentModelTests: XCTestCase {
     func testDocumentModelEquality() {
         let id1 = UUID()
         let id2 = UUID()
+        let added = Date()
 
         let url = URL(fileURLWithPath: "/test/path.pdf")
 
-        let doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
-        let doc2 = DocumentModel(id: id1, documentId: "doc2", fileName: "test2.pdf", filePath: url, mimeType: "application/pdf", fileSize: 200, dateAdded: Date())
-        let doc3 = DocumentModel(id: id2, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
+        let doc1 = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: added)
+        let same = DocumentModel(id: id1, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: added)
+        let doc3 = DocumentModel(id: id2, documentId: "doc1", fileName: "test1.pdf", filePath: url, mimeType: "application/pdf", fileSize: 100, dateAdded: added)
 
-        // Equality is based solely on id
-        XCTAssertEqual(doc1, doc2)
+        XCTAssertEqual(doc1, same)
         XCTAssertNotEqual(doc1, doc3)
-        XCTAssertNotEqual(doc2, doc3)
+    }
+
+    /// A document that finished indexing isn't equal to its earlier self, so SwiftUI redraws its row
+    func testAnIndexedDocumentDiffersFromItsEarlierSelf() {
+        let before = DocumentModel(fileName: "manual.pdf", filePath: URL(fileURLWithPath: "/test/manual.pdf"), mimeType: "application/pdf", fileSize: 100, dateAdded: Date())
+        var after = before
+        after.isProcessed = true
+        after.chunkCount = 12
+        after.lastIndexedIndexName = "manuals"
+
+        XCTAssertNotEqual(before, after)
+        XCTAssertEqual(before.hashValue, after.hashValue, "the id alone is hashed")
     }
 
     func testDocumentModelHashing() {

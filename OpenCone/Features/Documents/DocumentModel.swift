@@ -21,12 +21,31 @@ struct DocumentModel: Identifiable, Hashable {
     var lastIndexedIndexName: String? = nil
     var lastIndexedAt: Date? = nil
     
+    /// The id alone, which equal documents share
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    
+
+    /// The same document in the same state. Comparing ids alone told SwiftUI an indexed document was
+    /// unchanged, so its row in Documents kept the old status until the app was reopened (Gunnar,
+    /// 2026-10-01); the document's own page, built fresh, showed it indexed.
     static func == (lhs: DocumentModel, rhs: DocumentModel) -> Bool {
         lhs.id == rhs.id
+            && lhs.documentId == rhs.documentId
+            && lhs.fileName == rhs.fileName
+            && lhs.filePath == rhs.filePath
+            && lhs.securityBookmark == rhs.securityBookmark
+            && lhs.mimeType == rhs.mimeType
+            && lhs.fileSize == rhs.fileSize
+            && lhs.dateAdded == rhs.dateAdded
+            && lhs.isProcessed == rhs.isProcessed
+            && lhs.processingError == rhs.processingError
+            && lhs.chunkCount == rhs.chunkCount
+            && lhs.lastIndexedNamespace == rhs.lastIndexedNamespace
+            && lhs.lastIndexedIndexName == rhs.lastIndexedIndexName
+            && lhs.lastIndexedAt == rhs.lastIndexedAt
+            && lhs.processingStats?.startTime == rhs.processingStats?.startTime
+            && lhs.processingStats?.endTime == rhs.processingStats?.endTime
     }
 }
 

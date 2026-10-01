@@ -205,7 +205,7 @@ private extension DocumentProcessingStats.ProcessingPhase {
     stats.chunkSizes = (1...24).map { _ in Int.random(in: 500...2000) }
 
     var document = DocumentModel(
-        fileName: "Baxter Sigma Spectrum Service Manual.pdf",
+        fileName: "Aster Duo User Manual.pdf",
         filePath: URL(string: "file:///sample.pdf")!,
         mimeType: "application/pdf",
         fileSize: 1_048_576,
@@ -215,7 +215,7 @@ private extension DocumentProcessingStats.ProcessingPhase {
     )
     document.processingStats = stats
     document.lastIndexedIndexName = "manuals"
-    document.lastIndexedNamespace = "baxter"
+    document.lastIndexedNamespace = "espresso"
     document.lastIndexedAt = Date()
     return NavigationStack { DocumentDetailsView(document: document) }
 }

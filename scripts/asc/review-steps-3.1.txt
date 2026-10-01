@@ -1,0 +1,6 @@
+1. Launch OpenCone. The welcome screens ask for the three values above; paste them, tap Validate, and continue.
+2. Ask tab: type "What's in each of my indexes?" and send. The answer streams in with tags such as [S1]; tap a tag or a source card to read the passage it came from. The bar above the chat sets where to search: Auto, Everything or One index.
+3. Ask a follow-up, such as "Say more about the first one." It sees the earlier exchange.
+4. Documents tab: under Upload to, pick an index and namespace, tap + to import a PDF or text file, then tap Index. The row turns green when the file is indexed; tap it to see each step.
+5. Settings: Answers holds the model and its options; Advanced > Endpoints lists every OpenAI and Pinecone request the app made; Advanced > Activity log shows each step. General > Remove keys and reset everything deletes the keys and settings.
+OpenCone has no account or sign-in of its own. The keys are kept only in the iPhone's Keychain.
