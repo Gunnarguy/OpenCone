@@ -3,9 +3,9 @@
 OpenCone is Gunnar's second App Store app (id 6744467668): an iPhone RAG client that runs on the
 person's own OpenAI and Pinecone keys. Documents are read and chunked on the phone, embedded with
 OpenAI, stored and searched in the person's own Pinecone index, and answered through OpenAI's
-Responses API with citations. Version 3 is live (since 2026-06-20). 3.1 is `MARKETING_VERSION` and
-the version open in App Store Connect; `scripts/asc/release.py status` shows where it stands. The `v3.1`
-git tag points at 04267d1, older than what 3.1 ships.
+Responses API with citations. Version 3 is live (since 2026-06-20). 3.1 went to App Review on
+2026-10-01 as build 25 (commit eeec127); `zsh -ic 'python3 scripts/asc/release.py status'` shows where
+it stands. The `v3.1` git tag points at 04267d1, older than what 3.1 ships.
 
 ## Start here
 

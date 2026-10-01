@@ -25,13 +25,13 @@ TOP, BOTTOM = (20, 128, 255), (6, 66, 196)  # the icon's blue, darkening downwar
 # Order is store order: the first three show in search results
 SHOTS = [
     ("answer", "01-answer", "Ask your documents", "Answers cite the exact passages they came from"),
-    ("scope", "02-scope", "Search one index or all of them", "Auto picks where to look for each question"),
+    ("scope", "02-scope", "Search one index or all", "Auto picks where to look for each question"),
     ("sources", "03-sources", "Every source, one tap away", "The passages behind each answer, with their scores"),
     ("documents", "04-documents", "Index files from your iPhone", "PDFs, text, Markdown, HTML, images and more"),
     ("document", "05-document", "Watch each file get indexed", "Read, split, embed and store, timed step by step"),
-    ("settings-answers", "06-answer-settings", "Answers shaped by the model", "Length, detail, reasoning and web search for each one"),
+    ("settings-answers", "06-answer-settings", "Tuned to each model", "Reasoning, length, detail and web search"),
     ("models", "07-models", "Choose the model", "Any model your OpenAI key can use"),
-    ("endpoints", "08-endpoints", "Every API call in view", "Each OpenAI and Pinecone endpoint, its settings and status"),
+    ("endpoints", "08-endpoints", "Every API call in view", "Every endpoint, its settings and its status"),
 ]
 
 
@@ -76,7 +76,11 @@ def compose(raw_path, headline, subhead):
     canvas = background()
     draw = ImageDraw.Draw(canvas)
 
-    head_face, sub_face = font(92, "Bold"), font(50, "Regular")
+    # A headline stays on one line: a size step down before it would wrap
+    size = 92
+    while size > 72 and draw.textlength(headline, font=font(size, "Bold")) > 1160:
+        size -= 4
+    head_face, sub_face = font(size, "Bold"), font(50, "Regular")
     y = 150
     for line in wrapped(draw, headline, head_face, 1160):
         draw.text((WIDTH / 2, y), line, font=head_face, fill="white", anchor="ma")
