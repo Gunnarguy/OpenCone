@@ -53,10 +53,9 @@ released, so a release would carry this work as 3.1 or later.
   (+43) still hold Gunnar's uncommitted prompt-cache work (2026-09-02); ec09fb8 left it out by staging a
   copy of the file with only this session's `createEmbeddings` change (`git hash-object -w` plus
   `git update-index --cacheinfo`). His roadmap row decides whether it is committed or dropped.
-- The simulator `OpenCone routing test` (`DFAD63E5-5B77-4BE3-8BA0-1DBBDA68FA60`) is a shut-down clone of
-  `OpenCone demo` made 2026-10-01 for the live check, so it holds a copy of Gunnar's keys. The permission
-  classifier blocked using it in Auto mode. Delete it (`xcrun simctl delete DFAD63E5-5B77-4BE3-8BA0-1DBBDA68FA60`)
-  when the live check is done or if Gunnar says so.
+- A clone of `OpenCone demo` made for the live check (`OpenCone routing test`) was deleted at Gunnar's word on
+  2026-10-01 without being used: the permission classifier blocked booting it in Auto mode as credential
+  exploration. A live check with his saved keys needs a fresh clone and a session out of Auto mode.
 - Build and test only on the `OpenCone` simulator `8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D`. Never on
   `OpenCone demo` (`5D5E8E61-...`): it holds Gunnar's API keys, and erasing it drops them.
 - Commit to `main` only when Gunnar asks; no co-author trailers; push only when he asks.
@@ -102,8 +101,8 @@ released, so a release would carry this work as 3.1 or later.
   file); trap "An index's dimension doesn't say which model built it".
 
 ## Exact Next Action
-Run the live check with Gunnar's saved keys, once he switches the session out of Auto mode (or adds a
-permission rule) so the clone `OpenCone routing test` can be used, or on his iPhone: install ec09fb8's
+Run the live check with Gunnar's saved keys (a fresh clone of `OpenCone demo`, in a session out of Auto
+mode or with a permission rule for `xcrun simctl`), or on his iPhone: install ec09fb8's
 build, open Search > index menu > Index summaries and wait until every index shows "Searched with
 <model>", then (a) with index A open, ask something only index B holds, and (b) ask to compare two
 indexes. Pass means each answer's Sources show the right index and namespace. On a pass, set the
