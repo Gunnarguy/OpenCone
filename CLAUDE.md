@@ -76,6 +76,26 @@ With routing (2026-10-01): build succeeded, no new warnings; tests 105 passed, 0
 otherwise waits 600 s collecting diagnostics from the simulator clone, and on 2026-10-01 the
 session's shell stopped answering while it did.
 
+## Ship
+
+To Gunnar's iPhone (verified 2026-10-01: "Gunnar's Hand Extension", iPhone 16 Pro Max). This builds
+exactly what is committed, from a copy outside iCloud, and replaces the App Store copy on the phone
+with a debug build (same bundle ID and team; the next App Store update puts the store version back).
+
+```bash
+xcrun devicectl list devices    # the iPhone's UDID
+SHIP=/private/tmp/opencone-ship-$(git rev-parse --short HEAD)
+git checkout-index -a -f --prefix="$SHIP/"
+cd "$SHIP" && xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath /private/tmp/opencone-device-dd build
+xcrun devicectl device install app --device <UDID> /private/tmp/opencone-device-dd/Build/Products/Debug-iphoneos/OpenCone.app
+xcrun devicectl device process launch --terminate-existing --device <UDID> AI.FascinAIting.OpenCone
+```
+
+First run 2026-10-01 at 7105807: build 28 s, signed "Apple Development" with the team provisioning
+profile; install printed the bundle ID and its installation URL; launch printed "Launched application
+with AI.FascinAIting.OpenCone bundle identifier". Add `--console` to the launch to read the app's log
+(the Logger prints every line), including the index survey's "Index model check" scores.
+
 ## Rules
 
 - Work on `main`: no branches, no Claude co-author trailers, push only when Gunnar asks.
