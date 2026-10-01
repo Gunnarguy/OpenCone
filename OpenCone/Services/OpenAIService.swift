@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Code Interpreter Output Models
@@ -30,6 +31,7 @@ final class OpenAIService: Sendable {
     private let embeddingModel: String
     private let completionModel: String
     private let baseURL = "https://api.openai.com/v1"
+    private let minimumCacheablePrefixUTF8Bytes = 4096
 
     init(apiKey: String, embeddingModel: String = Configuration.embeddingModel, completionModel: String = Configuration.completionModel) {
         self.apiKey = apiKey
@@ -111,6 +113,33 @@ final class OpenAIService: Sendable {
         return [["role": "system", "content": systemContent]] + historyItems + currentUser
     }
 
+    /// Returns a stable routing key only when the exact reusable prefix is large enough
+    /// to be a plausible prompt-cache candidate (OpenAI caching starts at 1,024 tokens).
+    private func promptCacheKey(systemPrompt: String, context: String, model: String) -> String? {
+        let reusablePrefix = "\(systemPrompt)\n\nContext:\n\(context)"
+        guard reusablePrefix.utf8.count >= minimumCacheablePrefixUTF8Bytes else {
+            return nil
+        }
+
+        let digest = SHA256.hash(data: Data(reusablePrefix.utf8))
+            .prefix(6)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "opencone:rag:v1:\(model):\(digest)"
+    }
+
+    private func logPromptCacheUsage(_ usage: ResponsesUsage?, source: String) {
+        guard let details = usage?.inputTokenDetails else { return }
+        let cached = details.cachedTokens ?? 0
+        let written = details.cacheWriteTokens ?? 0
+        guard cached > 0 || written > 0 else { return }
+        logger.log(
+            level: .info,
+            message: "OpenAI prompt cache usage",
+            context: "source=\(source); cachedInputTokens=\(cached); cacheWriteTokens=\(written)"
+        )
+    }
+
     /// Create embeddings for a list of texts, optionally with a specific dimension
     /// - Parameters:
     ///   - texts: Array of text strings
@@ -190,6 +219,10 @@ final class OpenAIService: Sendable {
             "store": false
         ]
 
+        if let cacheKey = promptCacheKey(systemPrompt: systemPrompt, context: context, model: model) {
+            body["prompt_cache_key"] = cacheKey
+        }
+
         if Configuration.isReasoningModel(model) {
             body["reasoning"] = ["effort": currentReasoningEffort()]
         } else {
@@ -234,6 +267,7 @@ final class OpenAIService: Sendable {
                 let output_text: String?
                 let output: [OutputItem]?
                 let conversation: ConversationEnvelope?
+                let usage: ResponsesUsage?
                 struct OutputItem: Decodable {
                     let type: String?
                     let message: Message?
@@ -251,6 +285,7 @@ final class OpenAIService: Sendable {
             }
 
             if let envelope = try? JSONDecoder().decode(ResponsesEnvelope.self, from: data) {
+                logPromptCacheUsage(envelope.usage, source: "completion")
                 if let conv = envelope.conversation?.id, conv.hasPrefix("conv") {
                     onConversationId?(conv)
                 }
@@ -317,6 +352,10 @@ final class OpenAIService: Sendable {
             "max_output_tokens": currentMaxOutputTokens(),
             "store": false
         ]
+
+        if let cacheKey = promptCacheKey(systemPrompt: systemPrompt, context: context, model: model) {
+            body["prompt_cache_key"] = cacheKey
+        }
 
         // Build include array for tool outputs
         var includes: [String] = []
@@ -442,6 +481,12 @@ final class OpenAIService: Sendable {
                     if currentEvent == "response.completed" {
                         if let data = payload.data(using: .utf8),
                            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            if let completionEvent = try? JSONDecoder().decode(ResponsesCompletedEvent.self, from: data) {
+                                logPromptCacheUsage(
+                                    completionEvent.response?.usage ?? completionEvent.usage,
+                                    source: "stream"
+                                )
+                            }
                             // Attempt multiple shapes to find conversation id
                             func extractConvId(from any: Any?) -> String? {
                                 if let s = any as? String { return s }
@@ -622,6 +667,37 @@ final class OpenAIService: Sendable {
 }
 
 // MARK: - Response Models
+
+private struct ResponsesCompletedEvent: Decodable {
+    let response: CompletedResponse?
+    let usage: ResponsesUsage?
+
+    struct CompletedResponse: Decodable {
+        let usage: ResponsesUsage?
+    }
+}
+
+private struct ResponsesUsage: Decodable {
+    let inputTokens: Int?
+    let outputTokens: Int?
+    let inputTokenDetails: InputTokenDetails?
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case inputTokenDetails = "input_tokens_details"
+    }
+
+    struct InputTokenDetails: Decodable {
+        let cachedTokens: Int?
+        let cacheWriteTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case cachedTokens = "cached_tokens"
+            case cacheWriteTokens = "cache_write_tokens"
+        }
+    }
+}
 
 struct EmbeddingResponse: Codable {
     let data: [EmbeddingData]
