@@ -25,7 +25,7 @@ Please paste any relevant lines from the **Logs** tab here. Do NOT include raw d
 
 ## Environment Details
 - Device: [e.g. iPhone 16 Pro Max, iOS Simulator]
-- OS Version: [e.g. iOS 17.5, macOS Catalyst 14.2]
+- OS Version: [e.g. iOS 17.6]
 - Xcode Version: [e.g. 16.0]
 - OpenAI Model Used: [e.g. gpt-4o, gpt-5]
 - Pinecone Index Type: [e.g. serverless]

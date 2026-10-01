@@ -17,7 +17,7 @@ To compile and contribute to OpenCone, your workstation must have:
 - **IDE**: Xcode 16.0 or newer
 - **Languages**: Swift 5.10+
 - **Runtimes**: Python 3.x (required to execute the local secret scanner)
-- **Dependencies**: All packages are integrated via Swift Package Manager.
+- **Dependencies**: None; OpenCone uses only Apple frameworks, with no Swift packages, CocoaPods or Carthage.
 
 ---
 
@@ -32,8 +32,8 @@ To compile and contribute to OpenCone, your workstation must have:
    ```bash
    open OpenCone.xcodeproj
    ```
-3. **Configure Environment Variables**:
-   In Xcode, open the Scheme editor (**Product > Scheme > Edit Scheme...**). Under **Run > Arguments > Environment Variables**, you may add temporary keys (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_PROJECT_ID`) for local debugging. These keys are blocked from shipping in Release configurations by a runtime check.
+3. **API Keys**:
+   No build reads scheme environment variables for keys; enter your keys in the app. The Release guard only refuses them: a Release build whose environment sets `OPENAI_API_KEY`, `PINECONE_API_KEY` or `PINECONE_PROJECT_ID` stops with a `fatalError` when it initializes its services.
 
 ---
 

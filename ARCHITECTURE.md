@@ -6,12 +6,12 @@ This document provides a detailed technical breakdown of the OpenCone codebase, 
 
 ## 1. Architectural Thesis
 
-OpenCone is engineered as a **local-first front end and cloud-hybrid RAG (Retrieval-Augmented Generation) client** for Apple platforms. Rather than relying on custom middleware or a proprietary web dashboard, OpenCone performs document preparation on device and then talks directly to OpenAI and Pinecone for embeddings, vector retrieval, and answer generation.
+OpenCone is engineered as a **cloud-hybrid RAG (Retrieval-Augmented Generation) client** for iPhone. Rather than relying on custom middleware or a proprietary web dashboard, OpenCone performs document preparation on device and then talks directly to OpenAI and Pinecone for embeddings, vector retrieval, and answer generation.
 
 The architecture is built upon the **MVVM-S (Model-View-ViewModel-Service)** design pattern. It enforces strict separation of concerns:
 - **Views** are declarative SwiftUI structures that only render published state and bind user interactions.
 - **ViewModels** manage interface-specific workflows, coordinate task concurrency, and dispatch actions to the service layer.
-- **Services** are stateless utility managers or stateful singletons (e.g. Keychain access, Speech, network client layers) that wrap third-party API payloads, run local processing algorithms (OCR, tokenization), and handle network failures.
+- **Services** are stateless utility managers or stateful singletons (e.g. Keychain access, Speech, network client layers) that wrap third-party API payloads, run local processing algorithms (PDF text extraction, tokenization), and handle network failures.
 
 By leveraging Swift's modern concurrency (`async/await`, Task structures) and reactive publishing (Combine frameworks), OpenCone delivers a high-performance native client for a cloud-backed RAG pipeline while respecting sandboxed security boundaries.
 
@@ -83,7 +83,7 @@ flowchart TD
 
 ### App Shell & Lifecycle
 - **[OpenConeApp.swift](OpenCone/App/OpenConeApp.swift)**: Bootstrap layer. Operates as a state machine governing the transition from initial boot, welcome onboarding (API key registration), active main application UI, and unrecoverable errors. 
-- **Release Safety Enforcer**: Inside `enforceNoBundledSecrets()`, the app calls a fatal assertion in non-debug targets if hardcoded OpenAI/Pinecone environment credentials are detected.
+- **Release Safety Enforcer**: Inside `enforceNoBundledSecrets()`, the app calls a fatal assertion in non-debug targets if OpenAI/Pinecone keys are set as environment variables.
 
 ### Views (SwiftUI Presentation)
 - **[MainView.swift](OpenCone/App/MainView.swift)**: Hosts the primary tab switcher. Hooks into the scene lifecycle to trigger refresh updates (index stats, document states) on tab selections.
@@ -100,8 +100,8 @@ flowchart TD
 - **[OpenAIService.swift](OpenCone/Services/OpenAIService.swift)**: Connects to the Embeddings (`/v1/embeddings`) and Responses (`/v1/responses`) endpoints. Implements Server-Sent Events (SSE) stream decoding.
 - **[ResponsesClient.swift](OpenCone/Services/ResponsesClient.swift)**: Non-streamed Responses calls whose output is a decision rather than prose: the routing call, which returns `function_call` items, and drafting an index's one-line summary.
 - **[Routing](OpenCone/Features/Search/Routing/)**: `IndexRouter` builds the `search_index` tool and checks the model's calls; `IndexSurveyor` reads each index's namespaces, finds which OpenAI model built it, and drafts its summary; `IndexProfile` and `IndexCatalogStore` keep that per Pinecone project on the phone; `IndexSummariesSheet` lets the person rewrite a summary.
-- **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, resolves sandboxed security-scoped URLs, reads plaintext/docx data, and uses native `VNRecognizeTextRequest` OCR on image uploads.
-- **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively using boundary separators (such as JSON tags, markdown hashes, or newlines) and computes SHA256 hashes.
+- **[FileProcessorService.swift](OpenCone/Services/FileProcessorService.swift)**: Identifies file MIME types, extracts PDF text with `PDFKit`, and reads text formats as UTF-8. Its `VNRecognizeTextRequest` OCR path for images never runs, because the document picker does not offer images.
+- **[TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift)**: Segments raw text strings recursively, splitting every type on paragraphs, lines, sentences, then words, and computes SHA256 hashes.
 - **[SpeechRecognitionService.swift](OpenCone/Services/SpeechRecognitionService.swift)**: Listens to the device microphone, performs speech-to-text conversion via Apple's Speech API, and publishes normalize audio amplitudes (0.0 - 1.0) for UI waveforms.
 
 ---
@@ -125,7 +125,7 @@ OpenCone utilizes Swift's structured concurrency (`async/await`) to maintain res
 - **Main Actor Thread safety**: ViewModels are decorated with `@MainActor`. All property updates that mutate UI elements are guaranteed to execute on the main thread, eliminating thread-safety assertions.
 - **Task Boundaries**: Background workloads (such as text extraction and Pinecone vector uploads) are dispatched to detached tasks, freeing the main thread to handle user scrolls and animations.
 - **Task Cancellation**: Active streaming requests (`currentStreamTask`) are canceled when a user navigates away from the Search tab or requests a query stop, preventing memory leaks and resource drain.
-- **Autoreleasepool**: Local Vision OCR processes large image files in isolated pools to flush heavy native buffers immediately.
+- **Autoreleasepool**: Chunking and embedding loops run inside `autoreleasepool`.
 
 ---
 
@@ -134,7 +134,7 @@ OpenCone utilizes Swift's structured concurrency (`async/await`) to maintain res
 OpenCone integrates multi-layered network recovery patterns to cope with API failures:
 1. **Exponential Backoff**: Transient errors (e.g. 503 Service Unavailable or network dropouts) trigger up to 3 retry attempts with an increasing sleep duration.
 2. **Circuit Breaker**: Guarded by a circuit breaker state in `PineconeService`. If consecutive API requests fail beyond the threshold, the circuit trips to `.open`. Subsequent requests fail immediately to prevent request flooding, auto-resetting after a timeout or when the user changes indexes.
-3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task terminates the connection and returns a user-friendly error string.
+3. **Stream Watchdog**: A dedicated timeout watchdog task monitors the OpenAI SSE tokens stream. If no tokens are received within `Constants.watchdogDelayNanoseconds` (30 seconds), the task cancels the stream and retries the request once without streaming.
 
 ---
 
@@ -146,7 +146,7 @@ OpenCone integrates multi-layered network recovery patterns to cope with API fai
   - `model`: Defaults to the model catalog's `defaultModel`, `gpt-6-sol` (or custom parameters). The catalog (`OpenCone/Resources/ModelCatalog/ModelCatalog.json`, the same file OpenResponses ships, read by `CurrentModelCatalog` and `ModelCatalogStore`) sets the menu order, each model's reasoning efforts, and where a retired model moves; see `docs/model-catalog.md`.
   - `stream`: Set to `true`.
   - `input`: Formatted as structured message JSON objects.
-  - `tools`: Conditionally activates `web_search` or `code_interpreter` based on text context heuristics.
+  - `tools`: `web_search` and `code_interpreter` are off by default and enabled in Settings; `code_interpreter` is also gated by a keyword heuristic.
   - `reasoning.effort`: Sent for reasoning models (GPT-5.6, GPT-6 and later, `gpt-5`, o-series), kept to a level the model accepts (`CurrentModelCatalog.normalizedEffort`): GPT-6.1 Sol and GPT-6 Astra take `low` through `max` and reject `none`.
 - **Events Handled**:
   - `response.output_text.delta` / `response.text.delta`: Text streaming segments.
@@ -178,5 +178,5 @@ OpenCone connects to serverless Pinecone indexes using designated versions confi
 ## 9. Future Extension Points
 
 - **Local Vector Database (Offline RAG)**: Integrate local vector stores (e.g. SQLite vector extensions or native libraries) to enable offline semantic queries when internet access is unavailable.
-- **Multimodal Ingestion**: Feed images directly into OpenAI completions without pre-processing them via local Vision OCR.
+- **Multimodal Ingestion**: Feed images directly into OpenAI completions.
 - **Parallel File Processing**: Extend `DocumentsViewModel` to spin up parallel worker Tasks, speeding up multi-document imports.
