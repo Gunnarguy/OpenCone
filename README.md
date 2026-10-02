@@ -12,10 +12,12 @@
   <a href="https://apps.apple.com/us/app/opencone/id6744467668">
     <img alt="Download on the App Store" src="https://img.shields.io/badge/App%20Store-Download-0D96F6?style=for-the-badge&logo=appstore&logoColor=white">
   </a>
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-5.10-F05138?style=for-the-badge&logo=swift&logoColor=white">
+  <img alt="Swift" src="https://img.shields.io/badge/Swift-5%20language%20mode-F05138?style=for-the-badge&logo=swift&logoColor=white">
   <img alt="iOS" src="https://img.shields.io/badge/iOS-17.6%2B-111827?style=for-the-badge&logo=apple&logoColor=white">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge">
 </p>
+
+The App Store has version 3.0. This README describes `main`, which is version 3.1, in App Review since October 1, 2026.
 
 ---
 
@@ -188,7 +190,7 @@ flowchart LR
 | **App Entry** | [OpenConeApp.swift](OpenCone/App/OpenConeApp.swift) | Bootstrapping, AppState machine, and Release credential check. |
 | **Main UI** | [MainView.swift](OpenCone/App/MainView.swift) | Tabs (Ask, Documents, Settings) and view-model synchronization. The activity log is under Settings > Advanced. |
 | **Ask** | [SearchView.swift](OpenCone/Features/Search/SearchView.swift), [Components/](OpenCone/Features/Search/Components) | The conversation: status bar, where to search, Markdown answers with their sources, composer. |
-| **Ingestion View** | [DocumentsView.swift](OpenCone/Features/Documents/DocumentsView.swift) | Where uploads go, indexing progress, and the document list. |
+| **Ingestion View** | [DocumentsView.swift](OpenCone/Features/Documents/DocumentsView.swift), [DocumentDetailsView.swift](OpenCone/Features/Documents/DocumentDetailsView.swift) | Where uploads go, indexing progress, the document list, and each file's timing (read, split, embed, store). |
 | **Ingestion Engine** | [DocumentsViewModel.swift](OpenCone/Features/Documents/DocumentsViewModel.swift) | Pipeline scheduling, progress tracking, and bookmarks updates. |
 | **API Clients** | [PineconeService.swift](OpenCone/Services/PineconeService.swift), [OpenAIService.swift](OpenCone/Services/OpenAIService.swift) | Low-level REST connections, retry logic, SSE parsing, and circuit breakers. |
 | **Text Splitter** | [TextProcessorService.swift](OpenCone/Services/TextProcessorService.swift) | Content tokenization, recursive chunking, and hashing. |
@@ -228,8 +230,8 @@ flowchart LR
 ## Build & Run
 
 ### Prerequisites
-- macOS Sonoma or Sequoia
-- Xcode 16.0+
+- macOS 27 (the version it's built and tested on)
+- Xcode 27.0+
 - iOS 17.6+ Simulator or physical device
 - Active OpenAI and Pinecone Accounts
 
@@ -253,10 +255,12 @@ flowchart LR
 
 ## Testing
 
+The commands use a simulator named OpenCone. Create it once with `xcrun simctl create "OpenCone" "iPhone 18 Pro" com.apple.CoreSimulator.SimRuntime.iOS-27-0`.
+
 | Validation | Command / Procedure | Expected Result |
 |---|---|---|
-| **Build Project** | `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=iPhone 16" build` | Compilation completes with no errors. |
-| **Unit Tests** | `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=iPhone 16" -quiet` | All unit tests pass successfully. |
+| **Build Project** | `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=OpenCone" build` | Compilation completes with no errors. |
+| **Unit Tests** | `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination "platform=iOS Simulator,name=OpenCone" -quiet` | All unit tests pass successfully. |
 | **Secret Scan** | `python3 scripts/secret_scan.py` | Prints `✅ No secret patterns detected.` and exits with code 0. |
 | **Preflight check** | `scripts/preflight_check.sh` | Performs all scans, Plist verification, and runs tests. |
 | **Manual Ingestion** | Run app, pick a PDF, inspect Settings > Advanced > Activity log | Ingestion log shows success and vector counts update on dashboard. |
@@ -268,7 +272,7 @@ flowchart LR
 - **Local Sandbox**: Documents, bookmark descriptions, extraction steps, and logging occur strictly in the app sandbox.
 - **Network Boundaries**: Chunked document content and related metadata are sent to OpenAI and Pinecone for embeddings, vector storage, search, and answer generation. OpenCone is not a fully offline RAG system.
 - **Credentials**: Keys reside in the Keychain. Release builds throw a `fatalError` if API keys are set as scheme environment variables.
-- **Data Disposal**: Users can delete individual docs (clearing vector entries from Pinecone) or execute a full clean slate from **Settings > Data & Privacy > Reset Stored Keys & Preferences**.
+- **Data Disposal**: Users can delete individual docs (clearing vector entries from Pinecone) or execute a full clean slate from **Settings > General > Your data > Remove keys and reset everything** (in 3.0, **Settings > Data & Privacy > Reset Stored Keys & Preferences**).
 
 *For more details, see [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).*
 
