@@ -10,7 +10,10 @@ metadata on all fronts, then push to review". Mid-way he reported two bugs from 
 table drew wrapped text over its own rows, and a document's row in Documents didn't change after indexing.
 
 ## Status
-Done. OpenCone 3.1 is WAITING_FOR_REVIEW in App Store Connect: build 25 (Xcode Cloud run 25, commit
+2026-10-02: 3.1 is live, READY_FOR_SALE with build 25 (`release.py status`; the App Store lookup's release time is
+2026-10-02T16:28:19Z).  README and PRIVACY.md say so.  The rest of this section is as of the submission.
+
+Done. OpenCone 3.1 was WAITING_FOR_REVIEW in App Store Connect: build 25 (Xcode Cloud run 25, commit
 eeec127), submission `b6070ea6-f4e9-4d60-ae1e-02f9ddb4e477`, release type After Approval (it goes live on
 approval, as every earlier version did). eeec127 is also installed and launched on Gunnar's iPhone
 ("Gunnar's Hand Extension", `00008140-001130DA1863C01C`). There is no active objective after this.

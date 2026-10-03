@@ -1,8 +1,8 @@
 # OpenCone Privacy Policy
 
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-02
 
-This policy describes OpenCone 3.1, in App Review since 2026-10-01. In 3.0, the version on the App Store now, the routing request in section 2 doesn't happen (3.0 searches the index you pick), the activity log is the Logs tab, there's no Endpoints screen, and the reset is under **Settings > Data & Privacy > Reset All Data**.
+This policy describes OpenCone 3.1, on the App Store since 2026-10-02. If you're still on 3.0, the routing request in section 2 doesn't happen (3.0 searches the index you pick), the activity log is the Logs tab, there's no Endpoints screen, and the reset is under **Settings > Data & Privacy > Reset All Data**.
 
 OpenCone is a native RAG (Retrieval-Augmented Generation) client designed with a strong focus on privacy. This policy outlines how local files, metadata segments, and API authorization keys are processed, cached, and transmitted.
 

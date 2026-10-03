@@ -17,7 +17,7 @@
   <img alt="License" src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge">
 </p>
 
-The App Store has version 3.0. This README describes `main`, which is version 3.1, in App Review since October 1, 2026.
+The App Store has version 3.1, released October 2, 2026. This README describes `main`, which is that version.
 
 ---
 
