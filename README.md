@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://apps.apple.com/us/app/opencone/id6744467668">
+  <a href="https://apps.apple.com/app/apple-store/id6744467668?pt=127101782&ct=GH_readme&mt=8">
     <img alt="Download on the App Store" src="https://img.shields.io/badge/App%20Store-Download-0D96F6?style=for-the-badge&logo=appstore&logoColor=white">
   </a>
   <img alt="Swift" src="https://img.shields.io/badge/Swift-5%20language%20mode-F05138?style=for-the-badge&logo=swift&logoColor=white">
@@ -38,7 +38,7 @@ During queries, OpenCone executes semantic vector lookup against Pinecone, perfo
 | Architecture | MVVM-S |
 | Primary APIs | OpenAI (Embeddings, Responses API), Pinecone REST API, Apple Speech |
 | Storage | Keychain (`SecureSettingsStore`), `UserDefaults`, Sandbox Files |
-| App Store | [Download](https://apps.apple.com/us/app/opencone/id6744467668) |
+| App Store | [Download](https://apps.apple.com/app/apple-store/id6744467668?pt=127101782&ct=GH_readme&mt=8) |
 | Status | Active |
 | License | [MIT](LICENSE) |
 
