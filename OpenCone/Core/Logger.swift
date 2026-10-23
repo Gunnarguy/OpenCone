@@ -14,8 +14,6 @@ final class Logger: ObservableObject, Sendable {
         return formatter
     }()
 
-    private static let consoleDateFormatter = ISO8601DateFormatter()
-
     /// Published array of log entries, allowing SwiftUI views to react to changes.
     @Published var logEntries: [ProcessingLogEntry] = []
 
@@ -27,7 +25,6 @@ final class Logger: ObservableObject, Sendable {
 
     /// Adds a log entry with the specified level, message, and optional context.
     /// Updates the `logEntries` array on the main thread for UI safety.
-    /// Also prints the log message to the console for debugging.
     /// - Parameters:
     ///   - level: The severity level of the log entry (e.g., info, warning, error).
     ///   - message: The main content of the log message.
@@ -46,11 +43,6 @@ final class Logger: ObservableObject, Sendable {
             // Efficiently remove oldest entries by creating a new array slice.
             logEntries = Array(logEntries.dropFirst(logEntries.count - maxLogEntries))
         }
-
-        // Also print to the console for real-time debugging during development.
-        let timestamp = Self.consoleDateFormatter.string(from: entry.timestamp)
-        let contextInfo = context.map { " [\($0)]" } ?? "" // Use map for cleaner optional handling.
-        print("[\(timestamp)] [\(level.rawValue)]\(contextInfo): \(message)")
     }
 
     private func currentMinimumLevel() -> ProcessingLogEntry.LogLevel {
