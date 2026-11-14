@@ -121,6 +121,13 @@ private struct GeneralSettingsTab: View {
 
             Section {
                 LabeledContent("Version", value: Self.versionText)
+                // The App Store's own review page; Apple allows a standing link like this one, apart
+                // from the rating sheet the app asks for after an answer (`ReviewPromptService`).
+                if let review = URL(string: "https://apps.apple.com/app/id6744467668?action=write-review") {
+                    Link(destination: review) {
+                        Label("Rate OpenCone", systemImage: "star")
+                    }
+                }
                 if let privacy = URL(string: "https://github.com/Gunnarguy/OpenCone/blob/main/PRIVACY.md") {
                     Link(destination: privacy) {
                         Label("Privacy policy", systemImage: "hand.raised")

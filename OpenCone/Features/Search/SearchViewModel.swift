@@ -1602,6 +1602,8 @@ final class SearchViewModel: ObservableObject {
     ) async {
         // Stop pressed during the search: `cancelActiveSearch` has already answered the question
         if Task.isCancelled { return }
+        // For the rating request, which counts answers written from the person's own passages
+        let sourceCount = sources.count
 
         // Prepare streaming assistant message; its passages are there from the start, so a tag is
         // tappable while the answer is still being written
@@ -1664,6 +1666,7 @@ final class SearchViewModel: ObservableObject {
                             self.generatedAnswer = fallback
                             self.isSearching = false
                             self.lastSearchTime = searchStartTime
+                            self.noteFinishedAnswer(assistantMessageId, sourceCount: sourceCount)
                         }
                     } catch {
                         await MainActor.run {
@@ -1783,6 +1786,7 @@ final class SearchViewModel: ObservableObject {
                                     message: "Search completed",
                                     context: "traceId=\(traceId); Found \(resultCount) results"
                                 )
+                                self.noteFinishedAnswer(assistantMessageId, sourceCount: sourceCount)
                             }
                         }
                     }
@@ -1796,6 +1800,16 @@ final class SearchViewModel: ObservableObject {
                 self.handleError(SearchError.answerGenerationFailed(error))
             }
         }
+    }
+
+    /// Tell the rating request that an answer finished with text. An answer that failed, came back
+    /// empty or was stopped doesn't count (`ReviewPromptService`).
+    private func noteFinishedAnswer(_ id: UUID, sourceCount: Int) {
+        guard let answer = messages.first(where: { $0.id == id }),
+              answer.status == .normal,
+              !answer.text.isEmpty
+        else { return }
+        ReviewPromptService.shared.noteAnswer(sourceCount: sourceCount)
     }
 
     // MARK: - Conversation Threads

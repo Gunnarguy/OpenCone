@@ -37,6 +37,7 @@ the closing check on a device is still open.
 | `OpenCone/Features/Search/SearchViewModel.swift` | The search: `performSearch` runs one cancellable task that picks, by `SearchScope`, `routeAndAnswer` (Auto), `searchEverything` (Everything) or `searchOpenIndex` (One index, with `searchNamespaces` for all namespaces); all stream through `streamAnswer` |
 | `OpenCone/Features/Search/Routing/` | `IndexRouter` (the `search_index` tool, call checks, cap 5), `IndexSurveyor` (namespaces, model check, summary draft), `IndexProfile` and its store (with left-out indexes), `PassageText` (passage text and `[S#]` tagging) |
 | `OpenCone/Features/Search/SearchView.swift`, `Components/`, `SearchScopeViews.swift`, `AnswerSourcesViews.swift`, `AnswerSettingsViews.swift` | The Ask screen in OpenResponses' layout (2026-10-01): status bar, where to search, Markdown answers (`MarkdownText`), sources, composer, model picker, answer settings |
+| `OpenCone/App/ReviewPromptService.swift`, `MainView.askForRatingWhenInFront` | Apple's rating sheet (`requestReview`), asked for after the first finished answer written from passages or the third finished answer, once per version, 14 days apart (2026-11-14); Settings, About has the "Rate OpenCone" link |
 | `OpenCone/App/DemoMode.swift` | Debug-only `-OpenConeDemo` launch argument: sample indexes and conversation (an invented café's equipment manuals, no real brands), no keys, no requests; `-OpenConeDemoScreen <name>` opens one screen (the list is in the file). For screenshots |
 | `OpenCone/Features/Documents/` | Import, extraction, chunking, upsert; `DocumentsView` (the tab) and `DocumentDetailsView` |
 | `scripts/appstore_screenshots.py`, `scripts/asc/` | App Store screenshots (captions in the script) and the release steps: listing, review notes, screenshots, attach, submit |
@@ -55,8 +56,9 @@ the closing check on a device is still open.
 - Simulators are shared between sessions and get deleted. Use your own: `xcrun simctl list devices
   | grep " OpenCone ("`, and if it's missing, `xcrun simctl create "OpenCone" "iPhone 18 Pro"
   com.apple.CoreSimulator.SimRuntime.iOS-27-0` (only the iOS 27 runtime is installed). Write its
-  UDID here. Current: `OpenCone` `8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D` (iPhone 18 Pro, iOS 27.0,
-  created 2026-10-01). Never build or test on `OpenCone demo` (`5D5E8E61-...`): it holds Gunnar's
+  UDID here. Current: `OpenCone` `C79C772B-967A-4E85-B0A8-57B420CD63F1` (iPhone 18 Pro, iOS 27.0,
+  created 2026-11-14, when `simctl list` showed no OpenCone simulator at all: `8DBC8F9E-...`, `OpenCone demo`
+  and `OpenCone shots` were gone). Never build or test on `OpenCone demo` (`5D5E8E61-...`): it holds Gunnar's
   own API keys, and erasing it drops them. A test run leaves `OpenCone` shut down; boot it with
   `xcrun simctl boot` before installing. App Store screenshots use `OpenCone shots`
   `C606236C-157D-49D5-A378-AF37A5504B9C` (iPhone 18 Pro Max, the 6.9-inch size, created 2026-10-01).

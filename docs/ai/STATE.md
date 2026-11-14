@@ -1,67 +1,69 @@
 # Current State
 
-Updated: 2026-10-01
-Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD eeec127 = origin/main
-Last verified commit: eeec127
+Updated: 2026-11-14
+Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD 1acafb1 = the last commit before this work
+Last verified commit: 1acafb1
 
 ## Objective
-Gunnar, 2026-10-01: "yes update claude.md too. take the proper screenshots of this app, update the ASC
-metadata on all fronts, then push to review". Mid-way he reported two bugs from his iPhone: an answer's
-table drew wrapped text over its own rows, and a document's row in Documents didn't change after indexing.
+From Gunnar's OpenIntelligence session, 2026-11-14: add Apple's system rating request to OpenCone, on
+OpenIntelligence's pattern (`ReviewPromptService`), with a "Rate OpenCone" link in Settings and unit tests.
+On 2026-11-14 OpenCone had 200 first-time downloads and 1 US rating, and the app never asked.
+Commit locally; do not push, submit or open a PR.
 
 ## Status
-2026-10-02: 3.1 is live, READY_FOR_SALE with build 25 (`release.py status`; the App Store lookup's release time is
-2026-10-02T16:28:19Z).  README and PRIVACY.md say so.  The rest of this section is as of the submission.
+Done and committed locally on `main`, not pushed (the commit after 1acafb1, "Rating request"). Built and tested
+on the working tree that was committed. The version in the project is still 3.1, which is live (build 25, since
+2026-10-02); the rating request reaches people only in a new version, and choosing its number is Gunnar's.
 
-Done. OpenCone 3.1 was WAITING_FOR_REVIEW in App Store Connect: build 25 (Xcode Cloud run 25, commit
-eeec127), submission `b6070ea6-f4e9-4d60-ae1e-02f9ddb4e477`, release type After Approval (it goes live on
-approval, as every earlier version did). eeec127 is also installed and launched on Gunnar's iPhone
-("Gunnar's Hand Extension", `00008140-001130DA1863C01C`). There is no active objective after this.
+## What the change does
+| Rule | Value |
+|---|---|
+| Asks on | the first finished answer written from passages of the person's own index, or the third finished answer of any kind |
+| Counts as finished | the answer's status is `.normal` and it has text; failed, empty and stopped answers are not counted |
+| Per version | once (`reviewPrompt.lastAskedVersion` in UserDefaults) |
+| Between asks | at least 14 days (`reviewPrompt.lastAskedAt`) |
+| Never | under XCTest, in `-OpenConeDemo`, at launch, from a button |
+| Timing | 2 s after the answer ends, only while the scene is active and no answer is being written; otherwise held and made on the return to the foreground or when that answer ends |
+| "Asked" recorded | only after `requestReview()` was called (`didAsk`) |
 
-## Completed
-- Fixes in eeec127: `MarkdownTableView` gives each column one measured width (56 to 240 points, narrowed
-  to fit the answer) so wrapped cells grow their row; `DocumentModel ==` compares state, not only id, so
-  an indexed document's row redraws (the id alone is still hashed).
-- Demo content is an invented café's equipment manuals (no real brands); new demo screens `answer`,
-  `long-table`, `documents-indexing` (`App/DemoMode.swift`).
-- `scripts/appstore_screenshots.py` (captions, 1320 x 2868, no alpha) and `scripts/asc/release.py`
-  (status, listing, notes, shots, attach, submit; dry run without `--go`); `scripts/asc/listing-3.1.json`,
-  `scripts/asc/review-steps-3.1.txt`.
-- App Store Connect, all read back: subtitle "RAG chat for your Pinecone", description (2,433 chars),
-  keywords, promotional text, What's New, URLs, copyright 2026; review steps replaced below the
-  reviewer's credential lines, which were kept and never printed; 8 new screenshots in `APP_IPHONE_67`
-  replacing 9 from 2025; build 25 attached; submitted.
-- `CLAUDE.md` (code map, release steps, prompt-cache rule, shots simulator), `APP_STORE.md` rewritten.
-- Notion (IDs in `.claude/skills/notion-roadmap/SKILL.md`): "OpenCone 3.1" In Progress with the
-  submission note; new Completed rows "Answer tables overlapped their own rows" and "An indexed document's
-  row kept its old status"; 13 of today's rows moved to Target Release v3.1.
+- `OpenCone/App/ReviewPromptService.swift` (new): counts, the pure `shouldAsk`, `wantsPrompt`, `didAsk`.
+- `OpenCone/Features/Search/SearchViewModel.swift`: `noteFinishedAnswer`, called where `streamAnswer` ends an
+  answer (the stream's `onCompleted` and the watchdog's non-streamed fallback).
+- `OpenCone/App/MainView.swift`: `@Environment(\.requestReview)`, `askForRatingWhenInFront`, three `onChange`.
+- `OpenCone/Features/Settings/SettingsView.swift`: "Rate OpenCone" in General, About, opening
+  `https://apps.apple.com/app/id6744467668?action=write-review` (the id is `APP` in `scripts/asc/release.py`).
+- `OpenConeTests/Core/ReviewPromptServiceTests.swift` (new): 7 tests of `shouldAsk` and of counting nothing under tests.
+- `CLAUDE.md`: code map row and the new simulator UDID.
+- API read in the iOS 27.0 SDK on this Mac, `_StoreKit_SwiftUI.swiftinterface` lines 523 to 536 [code_verified]:
+  `RequestReviewAction`, iOS 16.0 and later, `@MainActor func callAsFunction()`, `EnvironmentValues.requestReview`.
 
 ## Active Constraints
-- Simulators: `OpenCone` `8DBC8F9E-...` for build and test; `OpenCone shots` `C606236C-157D-49D5-A378-AF37A5504B9C`
-  for store screenshots; never `OpenCone demo` (Gunnar's keys).
-- A test run shuts `OpenCone` down and rewrites `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist`;
-  boot it before installing, `gtimeout 60 git checkout --` the plist before committing.
-- Every push to `main` starts an Xcode Cloud archive and uploads a build; that is how builds reach App Store Connect.
-- Commit to `main`, no co-author trailers; push, ship and submit when Gunnar asks.
+- Simulators: on 2026-11-14 `xcrun simctl list devices` showed no OpenCone simulator: `OpenCone` `8DBC8F9E-...`,
+  `OpenCone shots` `C606236C-...` and `OpenCone demo` (Gunnar's keys) were all gone [measured]. A new `OpenCone`
+  `C79C772B-967A-4E85-B0A8-57B420CD63F1` (iPhone 18 Pro, iOS 27.0) was created for build and test. `OpenCone demo`
+  and `OpenCone shots` were not recreated: the demo one needs keys Gunnar types in himself.
+- `.gitignore` had an uncommitted change before this session (it ignores `/AGENTS.md`, `/.agents/`, `/.codex/`);
+  it is not this session's and is left uncommitted. `.claude/.state/` is untracked and left alone.
+- A test run rewrites `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist`;
+  `gtimeout 60 git checkout --` it before committing.
+- Every push to `main` starts an Xcode Cloud archive and uploads a build. Commit to `main`, no co-author
+  trailers; push, ship and submit only when Gunnar asks.
 
 ## Verification
-- `xcodebuild test ... -destination "id=8DBC8F9E-48CE-4D77-83C0-6AB1C349BE4D" -derivedDataPath /private/tmp/opencone-dd
-  -quiet -collect-test-diagnostics never -resultBundlePath <path>` -> 210 passed, 0 failed, 0 skipped (eeec127's tree).
+All on 2026-11-14, simulator `C79C772B-967A-4E85-B0A8-57B420CD63F1`, DerivedData `/private/tmp/opencone-dd`.
+- `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "id=C79C772B-..." -derivedDataPath
+  /private/tmp/opencone-dd build` -> `** BUILD SUCCEEDED **`, exit 0, no error lines [build_verified].
+- `xcodebuild test ... -collect-test-diagnostics never -resultBundlePath <path>` -> `** TEST SUCCEEDED **`; the
+  `.xcresult` summary: 217 passed, 0 failed, 0 skipped (210 before, plus the 7 in `ReviewPromptServiceTests`,
+  each listed as passed in the log) [test_verified].
 - `python3 scripts/secret_scan.py` -> "No secret patterns detected."
-- Documents fix measured on the simulator (`-OpenConeDemoScreen documents-indexing`): old equality left the row
-  "not indexed yet" while the button counted it; new equality turned it green. Table fix seen with `long-table`.
-- `release.py` outputs read: listing saved and read back; notes "kept credential lines intact"; all 8
-  screenshots COMPLETE and ordered; "attached: 25"; "submission b6070ea6-... is WAITING_FOR_REVIEW".
-- iPhone: build succeeded from `git checkout-index` of eeec127; "App installed"; "Launched application".
 
 ## Blockers / Unknowns
-- The reviewer's OpenAI and Pinecone keys in the review notes are from an earlier submission and were not
-  tested; if Apple reports it can't sign in or search, Gunnar updates them in App Store Connect.
-- The `v3.1` git tag points at 04267d1, not eeec127; moving it is Gunnar's call.
-- Still open on the roadmap: chunk size/overlap unwired; Pinecone control/data planes on 2024-07; unused
-  `fetchVectors`/`fetchVectorsByMetadata` (task chip offered).
+- The rating sheet itself was not seen. It shows in a development build, so the check is on a device or the
+  simulator with real keys: ask one question that returns passages, wait 2 s.
+- From before, unchanged: the `v3.1` tag points at 04267d1, not eeec127; chunk size/overlap unwired; Pinecone
+  control/data planes on 2024-07; unused `fetchVectors`/`fetchVectorsByMetadata`.
 
 ## Exact Next Action
-None. The objective is complete: 3.1 is waiting for review. Check it with
-`zsh -ic 'python3 scripts/asc/release.py status'`; on approval mark the Notion "OpenCone 3.1" row Completed
-and add `v3.2` as a Target Release option (the skill has the command). Otherwise ask Gunnar what to pick up.
+Gunnar's: see the sheet once in a development build (ship to the iPhone with the commands in `CLAUDE.md`, ask one
+question that returns passages, wait 2 seconds), then decide the next version number and push when ready.

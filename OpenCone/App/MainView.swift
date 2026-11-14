@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 /// Main view for the OpenCone application with tab navigation: Ask, Documents and Settings
@@ -8,6 +9,10 @@ struct MainView: View {
     @StateObject private var settingsViewModel: SettingsViewModel
 
     @State private var selectedTab = 0
+
+    @ObservedObject private var reviewPrompt = ReviewPromptService.shared
+    @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Initialize the main view with its required view models
     /// - Parameters:
@@ -64,6 +69,38 @@ struct MainView: View {
             Task {
                 await searchViewModel.loadIndexes()
             }
+        }
+        // Apple's rating sheet, asked for after a finished answer (`ReviewPromptService`). The system
+        // decides whether it actually appears (at most three times a year).
+        .onChange(of: reviewPrompt.wantsPrompt) { _, wants in
+            guard wants else { return }
+            askForRatingWhenInFront()
+        }
+        // A request held because the app wasn't in front, or because the next question was already
+        // being answered, is made on the return to the foreground or when that answer ends.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active, reviewPrompt.wantsPrompt { askForRatingWhenInFront() }
+        }
+        .onChange(of: searchViewModel.isSearching) { _, searching in
+            if !searching, reviewPrompt.wantsPrompt { askForRatingWhenInFront() }
+        }
+    }
+
+    /// Hands the rating request to StoreKit two seconds after the answer, and only while the app is in
+    /// front and no answer is being written. Otherwise it is held: no sheet can show in the background,
+    /// and recording the ask there would spend this version's one request on nothing.
+    private func askForRatingWhenInFront() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard reviewPrompt.wantsPrompt else { return }
+            guard scenePhase == .active, !searchViewModel.isSearching else {
+                Logger.shared.log(level: .info, message: "Rating request held", context: "scenePhase=\(scenePhase); searching=\(searchViewModel.isSearching)")
+                return
+            }
+            requestReview()
+            // Apple decides whether the sheet shows; this records only that it was asked.
+            Logger.shared.log(level: .info, message: "Rating requested")
+            reviewPrompt.didAsk()
         }
     }
 
