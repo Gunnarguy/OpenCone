@@ -1,8 +1,8 @@
 # Current State
 
-Updated: 2026-11-14
+Updated: 2026-11-17
 Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD 1acafb1 = the last commit before this work
-Last verified commit: 1acafb1
+Last verified commit: fe9d398
 
 ## Objective
 From Gunnar's OpenIntelligence session, 2026-11-14: add Apple's system rating request to OpenCone, on
@@ -65,5 +65,10 @@ All on 2026-11-14, simulator `C79C772B-967A-4E85-B0A8-57B420CD63F1`, DerivedData
   control/data planes on 2024-07; unused `fetchVectors`/`fetchVectorsByMetadata`.
 
 ## Exact Next Action
-Gunnar's: see the sheet once in a development build (ship to the iPhone with the commands in `CLAUDE.md`, ask one
-question that returns passages, wait 2 seconds), then decide the next version number and push when ready.
+2026-11-17, Gunnar: "also do opencone ... OpenCone is 3.2". MARKETING_VERSION is 3.2 (was 3.1) and `main` is pushed, which starts
+the Xcode Cloud archive of 3.2 (the rating request is its one change). Verified before the push on simulator
+55AF7E43-E80D-4DAE-8C53-D4F1234B64F6: `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination 'id=...'
+-derivedDataPath /private/tmp/opencone-dd` -> ** TEST SUCCEEDED **, 0 failed test cases. Next, Gunnar's or at his word:
+`zsh -ic 'python3 scripts/asc/release.py status'` to see the build, write the 3.2 What's New (no `listing-3.2.json` exists yet),
+attach the build and submit. The 3.2 version already exists in App Store Connect (Prepare for Submission, created 2026-11-17).
+China mainland: OpenCone is not sold there (`CANNOT_SELL`), so the new Security Assessment and AIGC rows stay at "Missing Info".

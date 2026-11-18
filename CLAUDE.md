@@ -5,6 +5,7 @@ person's own OpenAI and Pinecone keys. Documents are read and chunked on the pho
 OpenAI, stored and searched in the person's own Pinecone index, and answered through OpenAI's
 Responses API with citations. Version 3.1 is live (since 2026-10-02): build 25 from commit eeec127, READY_FOR_SALE in App Store
 Connect (`zsh -ic 'python3 scripts/asc/release.py status'`). The `v3.1` git tag points at 04267d1, older than what 3.1 ships.
+`main` is 3.2 since 2026-11-17 (MARKETING_VERSION, Gunnar's number): 3.1 plus the rating request. Not submitted.
 
 ## Start here
 

@@ -17,7 +17,7 @@
   <img alt="License" src="https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge">
 </p>
 
-The App Store has version 3.1, released October 2, 2026. This README describes `main`, which is that version.
+The App Store has version 3.1, released October 2, 2026. This README describes `main`, which is 3.2: 3.1 plus an App Store rating request (Apple's own sheet, after a finished answer) and a "Rate OpenCone" link in Settings.
 
 ---
 
