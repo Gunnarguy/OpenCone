@@ -4,8 +4,11 @@ OpenCone is Gunnar's second App Store app (id 6744467668): an iPhone RAG client 
 person's own OpenAI and Pinecone keys. Documents are read and chunked on the phone, embedded with
 OpenAI, stored and searched in the person's own Pinecone index, and answered through OpenAI's
 Responses API with citations. Version 3.1 is live (since 2026-10-02): build 25 from commit eeec127, READY_FOR_SALE in App Store
-Connect (`zsh -ic 'python3 scripts/asc/release.py status'`). The `v3.1` git tag points at 04267d1, older than what 3.1 ships.
-`main` is 3.2 since 2026-11-17 (MARKETING_VERSION, Gunnar's number): 3.1 plus the rating request. Not submitted.
+Connect (`zsh -ic 'python3 scripts/asc/release.py status'`). Version 3.2 (3.1 plus the rating request) is
+WAITING_FOR_REVIEW since 2026-11-19: build 27 from commit 4d3abee, release type After Approval. Each GitHub release
+(`OpenCone 3.1`, `OpenCone 3.2`, ...) is tagged on the commit Xcode Cloud archived for that App Store build; `v3.1`
+was moved from 04267d1 to eeec127 on 2026-11-19 to match. When 3.2 goes live, make its release Latest and change its
+first line from "Submitted for App Review" to "Released <date>".
 
 ## Start here
 
@@ -117,12 +120,16 @@ change is a dry run until `--go`:
 
 ```bash
 zsh -ic 'python3 scripts/asc/release.py status'
-zsh -ic 'python3 scripts/asc/release.py listing scripts/asc/listing-3.1.json --go'
-zsh -ic 'python3 scripts/asc/release.py notes scripts/asc/review-steps-3.1.txt --go'
+zsh -ic 'python3 scripts/asc/release.py listing scripts/asc/listing-3.2.json --go'
+zsh -ic 'python3 scripts/asc/release.py notes scripts/asc/review-steps-3.2.txt --go'
 zsh -ic 'python3 scripts/asc/release.py shots fastlane/screenshots/en-US --go'
 zsh -ic 'python3 scripts/asc/release.py attach <build> --go'
 zsh -ic 'python3 scripts/asc/release.py submit --go'
 ```
+
+`release.py` names one version in its constants (`VERSION`, `VERSION_LOC`, `REVIEW_DETAIL`); point them at the next
+version's ids before using it. Since November 2026 the age rating has questions `submit` fails without
+(`socialMedia` and the like, on the app info's `ageRatingDeclaration`); OpenCone answers No to all four.
 
 Screenshots: capture each demo screen on `OpenCone shots` with the status bar overridden (9:41, full
 battery), then `python3 scripts/appstore_screenshots.py <raw dir> fastlane/screenshots/en-US`

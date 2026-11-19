@@ -1,74 +1,43 @@
 # Current State
 
-Updated: 2026-11-17
-Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`; HEAD 1acafb1 = the last commit before this work
-Last verified commit: fe9d398
+Updated: 2026-11-19
+Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`
+Last verified commit: 4d3abee
 
 ## Objective
-From Gunnar's OpenIntelligence session, 2026-11-14: add Apple's system rating request to OpenCone, on
-OpenIntelligence's pattern (`ReviewPromptService`), with a "Rate OpenCone" link in Settings and unit tests.
-On 2026-11-14 OpenCone had 200 first-time downloads and 1 US rating, and the app never asked.
-Commit locally; do not push, submit or open a PR.
+Gunnar, 2026-11-19: "also, please normalize and match my github release for this apps version.  i want this on the
+app store". OpenCone 3.2 is 3.1 plus the App Store rating request (fe9d398) and the version bump (4d3abee).
 
 ## Status
-Done and committed locally on `main`, not pushed (the commit after 1acafb1, "Rating request"). Built and tested
-on the working tree that was committed. The version in the project is still 3.1, which is live (build 25, since
-2026-10-02); the rating request reaches people only in a new version, and choosing its number is Gunnar's.
+Done. 3.2 is WAITING_FOR_REVIEW (submission 60bdbed2-efb9-428d-9ff5-e72f98bf80b0, 2026-11-19), build 27 attached
+(Xcode Cloud run 27, commit 4d3abee, VALID, uploaded 2026-11-17), release type After Approval, so it goes live on approval.
 
-## What the change does
-| Rule | Value |
+| What | Value |
 |---|---|
-| Asks on | the first finished answer written from passages of the person's own index, or the third finished answer of any kind |
-| Counts as finished | the answer's status is `.normal` and it has text; failed, empty and stopped answers are not counted |
-| Per version | once (`reviewPrompt.lastAskedVersion` in UserDefaults) |
-| Between asks | at least 14 days (`reviewPrompt.lastAskedAt`) |
-| Never | under XCTest, in `-OpenConeDemo`, at launch, from a button |
-| Timing | 2 s after the answer ends, only while the scene is active and no answer is being written; otherwise held and made on the return to the foreground or when that answer ends |
-| "Asked" recorded | only after `requestReview()` was called (`didAsk`) |
-
-- `OpenCone/App/ReviewPromptService.swift` (new): counts, the pure `shouldAsk`, `wantsPrompt`, `didAsk`.
-- `OpenCone/Features/Search/SearchViewModel.swift`: `noteFinishedAnswer`, called where `streamAnswer` ends an
-  answer (the stream's `onCompleted` and the watchdog's non-streamed fallback).
-- `OpenCone/App/MainView.swift`: `@Environment(\.requestReview)`, `askForRatingWhenInFront`, three `onChange`.
-- `OpenCone/Features/Settings/SettingsView.swift`: "Rate OpenCone" in General, About, opening
-  `https://apps.apple.com/app/id6744467668?action=write-review` (the id is `APP` in `scripts/asc/release.py`).
-- `OpenConeTests/Core/ReviewPromptServiceTests.swift` (new): 7 tests of `shouldAsk` and of counting nothing under tests.
-- `CLAUDE.md`: code map row and the new simulator UDID.
-- API read in the iOS 27.0 SDK on this Mac, `_StoreKit_SwiftUI.swiftinterface` lines 523 to 536 [code_verified]:
-  `RequestReviewAction`, iOS 16.0 and later, `@MainActor func callAsFunction()`, `EnvironmentValues.requestReview`.
+| What's New | `scripts/asc/listing-3.2.json` (464 characters), saved and read back |
+| Review notes | `scripts/asc/review-steps-3.2.txt`: 3.1's steps plus step 6, the rating sheet and "Rate OpenCone"; the 8 credential lines kept |
+| Age rating | four new questions answered No on the 3.2 app info (`socialMedia`, `socialMediaAgeRestricted`, `sharedLocation`, `datingAndRelationships`); the first submit failed with "You must provide a value for the attribute 'socialMedia'". Rating still 4+ |
+| Screenshots | the 8 from 3.1, carried over by App Store Connect |
+| China mainland | not sold there (`CANNOT_SELL`), so the AIGC and Security Assessment rows stay empty |
+| GitHub | "Release 3.1" renamed "OpenCone 3.1" with the backfilled releases' format; tag `v3.1` moved from 04267d1 to eeec127 (run 25's commit). "OpenCone 3.2" created at 4d3abee, not marked Latest |
 
 ## Active Constraints
-- Simulators: on 2026-11-14 `xcrun simctl list devices` showed no OpenCone simulator: `OpenCone` `8DBC8F9E-...`,
-  `OpenCone shots` `C606236C-...` and `OpenCone demo` (Gunnar's keys) were all gone [measured]. A new `OpenCone`
-  `C79C772B-967A-4E85-B0A8-57B420CD63F1` (iPhone 18 Pro, iOS 27.0) was created for build and test. `OpenCone demo`
-  and `OpenCone shots` were not recreated: the demo one needs keys Gunnar types in himself.
-- `.gitignore` had an uncommitted change before this session (it ignores `/AGENTS.md`, `/.agents/`, `/.codex/`);
-  it is not this session's and is left uncommitted. `.claude/.state/` is untracked and left alone.
-- A test run rewrites `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist`;
-  `gtimeout 60 git checkout --` it before committing.
-- Every push to `main` starts an Xcode Cloud archive and uploads a build. Commit to `main`, no co-author
-  trailers; push, ship and submit only when Gunnar asks.
+- Simulator `OpenCone` `C79C772B-967A-4E85-B0A8-57B420CD63F1` (created 2026-11-14; another session tested on 55AF7E43 on 2026-11-17).
+  `OpenCone demo` and `OpenCone shots` were gone on 2026-11-14 and were not recreated.
+- `.gitignore` has an uncommitted change that is not this work; `.claude/.state/` is untracked. Both left alone.
+- A test run rewrites `OpenConeTests/Core/Settings/PineconePreferenceResolverTests.swift.plist`; restore it before committing.
+- Every push to `main` without `[ci skip]` starts an Xcode Cloud archive. Push, ship and submit only at Gunnar's word.
 
 ## Verification
-All on 2026-11-14, simulator `C79C772B-967A-4E85-B0A8-57B420CD63F1`, DerivedData `/private/tmp/opencone-dd`.
-- `xcodebuild -project OpenCone.xcodeproj -scheme OpenCone -destination "id=C79C772B-..." -derivedDataPath
-  /private/tmp/opencone-dd build` -> `** BUILD SUCCEEDED **`, exit 0, no error lines [build_verified].
-- `xcodebuild test ... -collect-test-diagnostics never -resultBundlePath <path>` -> `** TEST SUCCEEDED **`; the
-  `.xcresult` summary: 217 passed, 0 failed, 0 skipped (210 before, plus the 7 in `ReviewPromptServiceTests`,
-  each listed as passed in the log) [test_verified].
-- `python3 scripts/secret_scan.py` -> "No secret patterns detected."
+- `zsh -ic 'python3 scripts/asc/release.py submit --go'` -> "submission 60bdbed2-... is WAITING_FOR_REVIEW; version 3.2 is WAITING_FOR_REVIEW".
+- `release.py notes ... --go` -> "saved: kept credential lines intact (1596 characters)"; `attach 27 --go` -> "attached: 27".
+- Tests for the rating request: 217 passed, 0 failed (2026-11-14, simulator C79C772B); TEST SUCCEEDED (2026-11-17, 55AF7E43).
+- `gh release list` shows OpenCone 1.0, 2.0, 2.2, 3, 3.1 (Latest), 3.2; `git ls-remote --tags` has v3.1 at eeec127 and v3.2 at 4d3abee.
 
 ## Blockers / Unknowns
-- The rating sheet itself was not seen. It shows in a development build, so the check is on a device or the
-  simulator with real keys: ask one question that returns passages, wait 2 s.
-- From before, unchanged: the `v3.1` tag points at 04267d1, not eeec127; chunk size/overlap unwired; Pinecone
-  control/data planes on 2024-07; unused `fetchVectors`/`fetchVectorsByMetadata`.
+- The rating sheet itself has not been seen on a device.
+- Unchanged from before: chunk size/overlap unwired; Pinecone control/data planes on 2024-07; unused `fetchVectors`.
 
 ## Exact Next Action
-2026-11-17, Gunnar: "also do opencone ... OpenCone is 3.2". MARKETING_VERSION is 3.2 (was 3.1) and `main` is pushed, which starts
-the Xcode Cloud archive of 3.2 (the rating request is its one change). Verified before the push on simulator
-55AF7E43-E80D-4DAE-8C53-D4F1234B64F6: `xcodebuild test -project OpenCone.xcodeproj -scheme OpenCone -destination 'id=...'
--derivedDataPath /private/tmp/opencone-dd` -> ** TEST SUCCEEDED **, 0 failed test cases. Next, Gunnar's or at his word:
-`zsh -ic 'python3 scripts/asc/release.py status'` to see the build, write the 3.2 What's New (no `listing-3.2.json` exists yet),
-attach the build and submit. The 3.2 version already exists in App Store Connect (Prepare for Submission, created 2026-11-17).
-China mainland: OpenCone is not sold there (`CANNOT_SELL`), so the new Security Assessment and AIGC rows stay at "Missing Info".
+When `release.py status` says 3.2 is READY_FOR_SALE: `gh release edit v3.2 -R Gunnarguy/OpenCone --latest`, change the
+release's first line to "Released <date>.", and update README.md ("The App Store has version 3.1") and CLAUDE.md.

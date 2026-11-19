@@ -1,0 +1,3 @@
+{
+  "whatsNew": "After an answer from your own Pinecone index, OpenCone can now ask you to rate it, using Apple's own rating sheet.  It asks at most once per version and never in the middle of an answer, and Apple decides whether the sheet actually shows.\n\nIf you'd rather do it yourself, Settings > General > About has a Rate OpenCone link that opens the App Store's review page.\n\nStill no account, still your own OpenAI and Pinecone keys, and they stay in your iPhone's Keychain."
+}

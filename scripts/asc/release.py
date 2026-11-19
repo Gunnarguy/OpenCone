@@ -21,11 +21,11 @@ from pathlib import Path
 import jwt
 
 APP = "6744467668"
-VERSION = "da441423-1583-4a7f-9f6b-a78e07daac06"        # 3.1, iOS
-VERSION_STRING = "3.1"
-VERSION_LOC = "86a435c9-489f-45b1-a877-31fabb501275"    # 3.1 en-US
+VERSION = "aee60eed-2df1-4c2e-9e49-9d0f8a78afce"        # 3.2, iOS (3.1 was da441423-1583-4a7f-9f6b-a78e07daac06)
+VERSION_STRING = "3.2"
+VERSION_LOC = "c0075b5f-ce73-4716-9e5e-02800c09455a"    # 3.2 en-US (3.1 was 86a435c9-489f-45b1-a877-31fabb501275)
 APP_INFO_LOC = "a30a63b6-fb54-45d2-8fb4-0f11129467bb"   # the editable app info's en-US
-REVIEW_DETAIL = "5e03d3a1-3bcf-4841-9371-bcfb04bc1ab8"
+REVIEW_DETAIL = "384d610c-9258-4323-acde-8e5d794f572e"  # 3.2 (3.1 was 5e03d3a1-3bcf-4841-9371-bcfb04bc1ab8)
 SHOT_TYPE = "APP_IPHONE_67"                             # holds the 1320 x 2868 (6.9-inch) screenshots
 OPEN = {"READY_FOR_REVIEW", "WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES"}
 LIMITS = {"subtitle": 30, "promotionalText": 170, "description": 4000, "keywords": 100, "whatsNew": 4000}
