@@ -14,7 +14,8 @@ Done. 3.2 is WAITING_FOR_REVIEW (submission 60bdbed2-efb9-428d-9ff5-e72f98bf80b0
 
 | What | Value |
 |---|---|
-| What's New | `scripts/asc/listing-3.2.json` (464 characters), saved and read back |
+| What's New | `scripts/asc/listing-3.2.json` (539 characters), laid out like OpenIntelligence's `fastlane/metadata/en-US/release_notes.txt` (a summary line, CAPS sections, spaced bullets, a closing line), saved and read back |
+| Description | 3.1's plus one bullet under ANSWER SETTINGS: new OpenAI models show up on their own, and models being shut down leave 30 days ahead (2,723 characters), saved while in review and read back |
 | Review notes | `scripts/asc/review-steps-3.2.txt`: 3.1's steps plus step 6, the rating sheet and "Rate OpenCone"; the 8 credential lines kept |
 | Age rating | four new questions answered No on the 3.2 app info (`socialMedia`, `socialMediaAgeRestricted`, `sharedLocation`, `datingAndRelationships`); the first submit failed with "You must provide a value for the attribute 'socialMedia'". Rating still 4+ |
 | Screenshots | the 8 from 3.1, carried over by App Store Connect |
