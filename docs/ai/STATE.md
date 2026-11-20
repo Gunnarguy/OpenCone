@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-11-19
+Updated: 2026-11-19 (evening)
 Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`
 Last verified commit: 4d3abee
 
@@ -9,8 +9,9 @@ Gunnar, 2026-11-19: "also, please normalize and match my github release for this
 app store". OpenCone 3.2 is 3.1 plus the App Store rating request (fe9d398) and the version bump (4d3abee).
 
 ## Status
-Done. 3.2 is WAITING_FOR_REVIEW (submission 60bdbed2-efb9-428d-9ff5-e72f98bf80b0, 2026-11-19), build 27 attached
-(Xcode Cloud run 27, commit 4d3abee, VALID, uploaded 2026-11-17), release type After Approval, so it goes live on approval.
+Done. 3.2 is live: READY_FOR_SALE in App Store Connect, and the App Store lookup gives version 3.2 released
+2026-11-20T03:18:42Z (November 19, Pacific). Build 27 (Xcode Cloud run 27, commit 4d3abee). The GitHub release
+"OpenCone 3.2" is Latest and its first line says "Released November 19, 2026.".
 
 | What | Value |
 |---|---|
@@ -40,5 +41,5 @@ Done. 3.2 is WAITING_FOR_REVIEW (submission 60bdbed2-efb9-428d-9ff5-e72f98bf80b0
 - Unchanged from before: chunk size/overlap unwired; Pinecone control/data planes on 2024-07; unused `fetchVectors`.
 
 ## Exact Next Action
-When `release.py status` says 3.2 is READY_FOR_SALE: `gh release edit v3.2 -R Gunnarguy/OpenCone --latest`, change the
-release's first line to "Released <date>.", and update README.md ("The App Store has version 3.1") and CLAUDE.md.
+None for 3.2. Next release: point `release.py`'s `VERSION`, `VERSION_LOC` and `REVIEW_DETAIL` at the new version, write
+`listing-<v>.json` (What's New in OpenIntelligence's layout, plain for a small update), and ask Gunnar what goes in it.

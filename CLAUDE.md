@@ -3,12 +3,11 @@
 OpenCone is Gunnar's second App Store app (id 6744467668): an iPhone RAG client that runs on the
 person's own OpenAI and Pinecone keys. Documents are read and chunked on the phone, embedded with
 OpenAI, stored and searched in the person's own Pinecone index, and answered through OpenAI's
-Responses API with citations. Version 3.1 is live (since 2026-10-02): build 25 from commit eeec127, READY_FOR_SALE in App Store
-Connect (`zsh -ic 'python3 scripts/asc/release.py status'`). Version 3.2 (3.1 plus the rating request) is
-WAITING_FOR_REVIEW since 2026-11-19: build 27 from commit 4d3abee, release type After Approval. Each GitHub release
-(`OpenCone 3.1`, `OpenCone 3.2`, ...) is tagged on the commit Xcode Cloud archived for that App Store build; `v3.1`
-was moved from 04267d1 to eeec127 on 2026-11-19 to match. When 3.2 goes live, make its release Latest and change its
-first line from "Submitted for App Review" to "Released <date>".
+Responses API with citations. Version 3.2 (3.1 plus the rating request) is live since 2026-11-19 (the App Store
+lookup's release time is 2026-11-20T03:18:42Z): build 27 from commit 4d3abee, READY_FOR_SALE in App Store Connect
+(`zsh -ic 'python3 scripts/asc/release.py status'`). Each GitHub release (`OpenCone 3.1`, `OpenCone 3.2`, ...) is
+tagged on the commit Xcode Cloud archived for that App Store build, and its first line names the build, the commit and
+the release date; the live version's release is Latest. `v3.1` was moved from 04267d1 to eeec127 on 2026-11-19 to match.
 
 ## Start here
 
