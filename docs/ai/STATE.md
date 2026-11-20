@@ -1,8 +1,8 @@
 # Current State
 
-Updated: 2026-11-19 (evening)
+Updated: 2026-11-20
 Branch/worktree: `main` in the iCloud tree `~/Documents/GitHub/OpenCone`
-Last verified commit: 4d3abee
+Last verified commit: bdfaf67 (App Store build 27 is 4d3abee)
 
 ## Objective
 Gunnar, 2026-11-19: "also, please normalize and match my github release for this apps version.  i want this on the
@@ -21,7 +21,13 @@ Done. 3.2 is live: READY_FOR_SALE in App Store Connect, and the App Store lookup
 | Age rating | four new questions answered No on the 3.2 app info (`socialMedia`, `socialMediaAgeRestricted`, `sharedLocation`, `datingAndRelationships`); the first submit failed with "You must provide a value for the attribute 'socialMedia'". Rating still 4+ |
 | Screenshots | the 8 from 3.1, carried over by App Store Connect |
 | China mainland | not sold there (`CANNOT_SELL`), so the AIGC and Security Assessment rows stay empty |
-| GitHub | "Release 3.1" renamed "OpenCone 3.1" with the backfilled releases' format; tag `v3.1` moved from 04267d1 to eeec127 (run 25's commit). "OpenCone 3.2" created at 4d3abee, not marked Latest |
+| GitHub | "Release 3.1" renamed "OpenCone 3.1" with the backfilled releases' format; tag `v3.1` moved from 04267d1 to eeec127 (run 25's commit). "OpenCone 3.2" at 4d3abee, Latest since 2026-11-19 |
+
+## Where this work is recorded (2026-11-20)
+The rating request and the 3.2 release were started from an OpenIntelligence session (2026-11-14) but ran in this
+repo; the transcript is under this repo's Claude project. Everything durable now lives here: this file, `CLAUDE.md`,
+the auto memory for this folder, and three Notion rows: "OpenCone 3.2 on the App Store", "Ask for an App Store rating
+with Apple's sheet", and the trap "Going live gives the app a new App Info and new ids". 3.1's row is closed (live 2026-10-02).
 
 ## Active Constraints
 - Simulator `OpenCone` `C79C772B-967A-4E85-B0A8-57B420CD63F1` (created 2026-11-14; another session tested on 55AF7E43 on 2026-11-17).
@@ -34,7 +40,7 @@ Done. 3.2 is live: READY_FOR_SALE in App Store Connect, and the App Store lookup
 - `zsh -ic 'python3 scripts/asc/release.py submit --go'` -> "submission 60bdbed2-... is WAITING_FOR_REVIEW; version 3.2 is WAITING_FOR_REVIEW".
 - `release.py notes ... --go` -> "saved: kept credential lines intact (1596 characters)"; `attach 27 --go` -> "attached: 27".
 - Tests for the rating request: 217 passed, 0 failed (2026-11-14, simulator C79C772B); TEST SUCCEEDED (2026-11-17, 55AF7E43).
-- `gh release list` shows OpenCone 1.0, 2.0, 2.2, 3, 3.1 (Latest), 3.2; `git ls-remote --tags` has v3.1 at eeec127 and v3.2 at 4d3abee.
+- `gh release list` shows OpenCone 1.0, 2.0, 2.2, 3, 3.1, 3.2 (Latest); `git ls-remote --tags` has v3.1 at eeec127 and v3.2 at 4d3abee.
 
 ## Blockers / Unknowns
 - The rating sheet itself has not been seen on a device.

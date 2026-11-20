@@ -89,14 +89,14 @@ Never invent an option; the API refuses a value that isn't one.
 | `Kind` | `Feature`, `Fix`, `Release`, `Verification` (work); `Decision`, `Trap` (knowledge) |
 | `Component` | `Ingestion`, `Pinecone`, `Search & answer`, `OpenAI & models`, `UI`, `Settings & keys`, `App Store listing`, `Build & release`, `Architecture`, `Docs & agents` |
 | `Priority` | `High`, `Medium`, `Low` |
-| `Target Release` | `v1.0`, `v2.0`, `v2.2`, `v3`, `v3.1`, `Future Backlog` |
+| `Target Release` | `v1.0`, `v2.0`, `v2.2`, `v3`, `v3.1`, `v3.2` (added 2026-11-20), `Future Backlog` |
 | `Owner` | `Agent`, `Gunnar on a device`, `Gunnar in App Store Connect`, `Gunnar decides`, `Either` |
 | `Evidence` | `device_verified`, `measured`, `test_verified`, `build_verified`, `code_verified`, `unverified`. Empty means not recorded. |
 | `Where` | Text: the file, symbol, script or doc to open first |
 | Dates | `Added`, `Completed`, set through `date:<name>:start` |
 
-**Adding the next release option** (`v3.2` once 3.1 is out): `notion-update-data-source` with
-`ALTER COLUMN "Target Release" SET SELECT('v1.0':gray, 'v2.0':brown, 'v2.2':orange, 'v3':green, 'v3.1':blue, 'v3.2':purple, 'Future Backlog':pink) COMMENT 'The App Store version that carries the change. New work defaults to Future Backlog; the triage rule is in .claude/skills/notion-roadmap/SKILL.md.'`,
+**Adding the next release option** (`v3.3` once there is a 3.3): `notion-update-data-source` with
+`ALTER COLUMN "Target Release" SET SELECT('v1.0':gray, 'v2.0':brown, 'v2.2':orange, 'v3':green, 'v3.1':blue, 'v3.2':purple, 'v3.3':yellow, 'Future Backlog':pink) COMMENT 'The App Store version that carries the change. New work defaults to Future Backlog; the triage rule is in .claude/skills/notion-roadmap/SKILL.md.'`,
 restating every existing option by name and colour so existing rows keep their values. Keep the
 `COMMENT`: without it the ALTER clears the column's description (OpenManual lost it that way on
 2026-09-29).
